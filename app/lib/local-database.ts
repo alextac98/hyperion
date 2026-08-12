@@ -19,12 +19,50 @@ export type CollectionRecord = {
   updatedAt: string;
 };
 
+export type PageLinkRecord = {
+  targetId: string;
+  label: string;
+  kind: "inline" | "manual";
+};
+
+export type PageIconRecord =
+  | { type: "emoji"; unicode: string }
+  | { type: "affine-icon"; name: string; color: string };
+
+export function normalizePageIcon(value: unknown): PageIconRecord | null {
+  if (typeof value === "string" && value.trim()) {
+    return { type: "emoji", unicode: value.trim() };
+  }
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<PageIconRecord> & { unicode?: unknown; name?: unknown; color?: unknown };
+  if (candidate.type === "emoji" && typeof candidate.unicode === "string" && candidate.unicode.trim()) {
+    return { type: "emoji", unicode: candidate.unicode.trim() };
+  }
+  if (candidate.type === "affine-icon" && typeof candidate.name === "string" && candidate.name.trim()) {
+    return {
+      type: "affine-icon",
+      name: candidate.name.trim(),
+      color: typeof candidate.color === "string" && candidate.color.trim() ? candidate.color : "#4d7cfe",
+    };
+  }
+  return null;
+}
+
+export function pageIconText(icon: PageIconRecord | null) {
+  return icon?.type === "emoji" ? icon.unicode : icon ? "◆" : "";
+}
+
 export type NoteRecord = {
   id: string;
   vaultId: string;
   title: string;
+  icon: PageIconRecord | null;
+  aliases: string[];
   body: string;
   tags: string[];
+  links: PageLinkRecord[];
+  parentId: string | null;
+  sortOrder: number;
   collectionIds: string[];
   favorite: boolean;
   trashed: boolean;
@@ -44,7 +82,7 @@ export type VaultPreferences = {
 
 export type VaultBundle = {
   format: "hyperion-vault";
-  version: 1;
+  version: 1 | 2 | 3 | 4 | 5;
   exportedAt: string;
   vault: VaultRecord;
   notes: NoteRecord[];
@@ -72,7 +110,7 @@ export interface KnowledgeRepository {
 export const DEFAULT_VAULT_ID = "hyperion";
 
 const DATABASE_NAME = "hyperion-local";
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 8;
 const NOTES_STORE = "notes";
 const VAULTS_STORE = "vaults";
 const COLLECTIONS_STORE = "collections";
@@ -120,8 +158,13 @@ function makeSeedNotes(): NoteRecord[] {
       id: "welcome-to-hyperion",
       vaultId: DEFAULT_VAULT_ID,
       title: "Welcome to Hyperion",
-      body: `Hyperion is a quiet place for the things you want to remember.\n\nThis vault lives on this device. There are no accounts, no workspace members, and no remote sync.\n\nStart with a thought\nWrite naturally, use the slash menu for blocks, and connect an idea by mentioning another note in double brackets — like [[The garden and the stream]].\n\nLet knowledge grow\nUse collections for projects, tags for themes, favorites for ideas you revisit, and backlinks to notice relationships you did not plan.`,
+      icon: { type: "emoji", unicode: "👋" },
+      aliases: [],
+      body: `Hyperion is a quiet place for the things you want to remember.\n\nThis vault lives on this device. There are no accounts, no workspace members, and no remote sync.\n\nStart with a thought\nWrite naturally, use the slash menu for blocks, and connect an idea by mentioning another page in double brackets — like [[The garden and the stream]].\n\nLet knowledge grow\nNest pages inside other pages, use tags for themes, favorite ideas you revisit, and follow backlinks to notice relationships you did not plan.`,
       tags: ["hyperion", "guide"],
+      links: [{ targetId: "garden-and-stream", label: "The garden and the stream", kind: "inline" }],
+      parentId: null,
+      sortOrder: 1_000,
       collectionIds: ["knowledge-garden"],
       favorite: true,
       trashed: false,
@@ -132,8 +175,13 @@ function makeSeedNotes(): NoteRecord[] {
       id: "garden-and-stream",
       vaultId: DEFAULT_VAULT_ID,
       title: "The garden and the stream",
+      icon: { type: "emoji", unicode: "🌱" },
+      aliases: [],
       body: `A personal knowledge base has two tempos.\n\nThe stream is what passes by: fleeting notes, daily observations, half-formed questions. The garden is what receives deliberate care: durable ideas, maps of a subject, and writing that becomes clearer over time.\n\nHyperion should make capture feel immediate without making every note feel temporary. The bridge between the two is review.\n\nRelated: [[Reading workflow]]`,
       tags: ["thinking", "knowledge"],
+      links: [{ targetId: "reading-workflow", label: "Reading workflow", kind: "inline" }],
+      parentId: "welcome-to-hyperion",
+      sortOrder: 1_000,
       collectionIds: ["knowledge-garden"],
       favorite: true,
       trashed: false,
@@ -144,8 +192,13 @@ function makeSeedNotes(): NoteRecord[] {
       id: "reading-workflow",
       vaultId: DEFAULT_VAULT_ID,
       title: "Reading workflow",
+      icon: { type: "emoji", unicode: "📚" },
+      aliases: [],
       body: `Capture the source and the question that brought you to it.\n\nDuring reading\n• Mark only ideas that change your model.\n• Add a sentence in your own words.\n• Link the idea to something already in the vault.\n\nAfter reading\nReturn within a day and turn the useful fragments into permanent notes. A highlight without context is only a souvenir.`,
       tags: ["reading", "workflow"],
+      links: [],
+      parentId: "welcome-to-hyperion",
+      sortOrder: 2_000,
       collectionIds: ["reading"],
       favorite: false,
       trashed: false,
@@ -156,8 +209,13 @@ function makeSeedNotes(): NoteRecord[] {
       id: "project-atlas",
       vaultId: DEFAULT_VAULT_ID,
       title: "Project Atlas",
+      icon: { type: "emoji", unicode: "🗺️" },
+      aliases: [],
       body: `A small experiment in mapping the concepts I return to most.\n\nQuestions\n• Which notes act as bridges between unrelated subjects?\n• Which ideas have not changed in a year?\n• Can an index emerge from use instead of being designed in advance?`,
       tags: ["projects", "knowledge"],
+      links: [],
+      parentId: null,
+      sortOrder: 2_000,
       collectionIds: ["projects"],
       favorite: false,
       trashed: false,
@@ -168,8 +226,13 @@ function makeSeedNotes(): NoteRecord[] {
       id: "commonplace-book",
       vaultId: DEFAULT_VAULT_ID,
       title: "A commonplace book",
+      icon: { type: "emoji", unicode: "📖" },
+      aliases: [],
       body: `A commonplace book is not a diary and not quite an archive. It is a working collection of passages, observations, and ideas arranged for reuse.\n\nThe important distinction is intention: collecting should make future thinking easier, not simply make the collection larger.`,
       tags: ["history", "knowledge"],
+      links: [],
+      parentId: "reading-workflow",
+      sortOrder: 1_000,
       collectionIds: ["knowledge-garden", "reading"],
       favorite: false,
       trashed: false,
@@ -180,8 +243,13 @@ function makeSeedNotes(): NoteRecord[] {
       id: "today-inbox",
       vaultId: DEFAULT_VAULT_ID,
       title: new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(new Date()),
+      icon: { type: "emoji", unicode: "📅" },
+      aliases: [],
       body: `Morning notes\n\n• Review the open questions in Project Atlas.\n• Capture the essay idea about tools that become places.\n• Revisit [[Reading workflow]].`,
       tags: ["journal"],
+      links: [{ targetId: "reading-workflow", label: "Reading workflow", kind: "inline" }],
+      parentId: null,
+      sortOrder: 3_000,
       collectionIds: [],
       favorite: false,
       trashed: false,
@@ -233,20 +301,54 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!database.objectStoreNames.contains(PREFERENCES_STORE)) {
         database.createObjectStore(PREFERENCES_STORE, { keyPath: "vaultId" });
       }
-      if (transaction && (event as IDBVersionChangeEvent).oldVersion < 2) {
+      if (transaction && (event as IDBVersionChangeEvent).oldVersion < 8) {
         const notes = transaction.objectStore(NOTES_STORE);
-        const cursorRequest = notes.openCursor();
-        cursorRequest.onsuccess = () => {
-          const cursor = cursorRequest.result;
+        const collections = transaction.objectStore(COLLECTIONS_STORE);
+        const oldVersion = (event as IDBVersionChangeEvent).oldVersion;
+        const noteCursor = notes.openCursor();
+        noteCursor.onsuccess = () => {
+          const cursor = noteCursor.result;
           if (!cursor) return;
           const legacy = cursor.value as Partial<NoteRecord>;
+          const firstCollectionId = legacy.collectionIds?.[0];
           cursor.update({
             ...legacy,
             vaultId: legacy.vaultId ?? DEFAULT_VAULT_ID,
+            icon: normalizePageIcon(legacy.icon),
+            aliases: legacy.aliases ?? [],
+            links: legacy.links ?? [],
+            parentId: legacy.parentId ?? (oldVersion < 4 && firstCollectionId ? `collection-page:${firstCollectionId}` : null),
+            sortOrder: Number.isFinite(legacy.sortOrder) ? legacy.sortOrder : 0,
             collectionIds: legacy.collectionIds ?? [],
           });
           cursor.continue();
         };
+        if (oldVersion < 4) {
+          const collectionCursor = collections.openCursor();
+          collectionCursor.onsuccess = () => {
+            const cursor = collectionCursor.result;
+            if (!cursor) return;
+            const collection = cursor.value as CollectionRecord;
+            notes.put({
+              id: `collection-page:${collection.id}`,
+              vaultId: collection.vaultId,
+              title: collection.name,
+              icon: { type: "emoji", unicode: "📁" },
+              aliases: [],
+              body: "",
+              tags: [],
+              links: [],
+              parentId: null,
+              sortOrder: 0,
+              collectionIds: [],
+              favorite: false,
+              trashed: false,
+              createdAt: collection.createdAt,
+              updatedAt: collection.updatedAt,
+            } satisfies NoteRecord);
+            cursor.continue();
+          };
+        }
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -335,7 +437,17 @@ class IndexedDbKnowledgeRepository implements KnowledgeRepository {
   async listNotes(vaultId: string) {
     const database = await openDatabase();
     const notes = await getAll<NoteRecord>(database, NOTES_STORE);
-    return notes.filter((note) => note.vaultId === vaultId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return notes
+      .filter((note) => note.vaultId === vaultId)
+      .map((note) => ({
+        ...note,
+        icon: normalizePageIcon(note.icon),
+        aliases: note.aliases ?? [],
+        links: note.links ?? [],
+        parentId: note.parentId ?? null,
+        sortOrder: Number.isFinite(note.sortOrder) ? note.sortOrder : 0,
+      }))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   async saveNote(note: NoteRecord) {
@@ -397,15 +509,20 @@ class IndexedDbKnowledgeRepository implements KnowledgeRepository {
 
 export const knowledgeRepository: KnowledgeRepository = new IndexedDbKnowledgeRepository();
 
-export function createBlankNote(vaultId: string, collectionId?: string): NoteRecord {
+export function createBlankNote(vaultId: string, parentId: string | null = null): NoteRecord {
   const now = timestamp();
   return {
     id: crypto.randomUUID(),
     vaultId,
     title: "Untitled",
+    icon: null,
+    aliases: [],
     body: "",
     tags: [],
-    collectionIds: collectionId ? [collectionId] : [],
+    links: [],
+    parentId,
+    sortOrder: Date.now(),
+    collectionIds: [],
     favorite: false,
     trashed: false,
     createdAt: now,
