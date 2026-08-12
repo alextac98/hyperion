@@ -64,6 +64,24 @@ import {
 type View = "note" | "home" | "all" | "journal" | "tags" | "trash" | "collection";
 type Composer = { type: "vault" | "collection"; value: string } | null;
 
+const DEFAULT_SIDEBAR_WIDTH = 272;
+const MIN_SIDEBAR_WIDTH = 224;
+const MAX_SIDEBAR_WIDTH = 420;
+const SIDEBAR_WIDTH_STORAGE_KEY = "hyperion:sidebar-width";
+
+function clampSidebarWidth(width: number) {
+  return Math.round(Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width)));
+}
+
+function getStoredSidebarWidth() {
+  try {
+    const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+    return Number.isFinite(storedWidth) && storedWidth > 0 ? clampSidebarWidth(storedWidth) : DEFAULT_SIDEBAR_WIDTH;
+  } catch {
+    return DEFAULT_SIDEBAR_WIDTH;
+  }
+}
+
 const FALLBACK_PREFERENCES: VaultPreferences = {
   vaultId: DEFAULT_VAULT_ID,
   theme: "system",
@@ -120,12 +138,14 @@ export default function HyperionApp() {
   const [view, setView] = useState<View>("home");
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(getStoredSidebarWidth);
+  const [sidebarResizing, setSidebarResizing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [favoritesOpen, setFavoritesOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [vaultMenuOpen, setVaultMenuOpen] = useState(false);
-  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [insertOpen, setInsertOpen] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
@@ -138,6 +158,8 @@ export default function HyperionApp() {
   const tagInputRef = useRef<HTMLInputElement>(null);
   const composerInputRef = useRef<HTMLInputElement>(null);
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const sidebarWidthRef = useRef(sidebarWidth);
+  const sidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   const activeVault = vaults.find((vault) => vault.id === vaultId);
   const activeNote = notes.find((note) => note.id === activeId);
@@ -273,6 +295,55 @@ export default function HyperionApp() {
     if (composer) composerInputRef.current?.focus();
   }, [composer]);
 
+  const applySidebarWidth = useCallback((width: number, persist = false) => {
+    const nextWidth = clampSidebarWidth(width);
+    sidebarWidthRef.current = nextWidth;
+    setSidebarWidth(nextWidth);
+    if (persist) {
+      try {
+        localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(nextWidth));
+      } catch {
+        // The resize should still work when browser storage is unavailable.
+      }
+    }
+  }, []);
+
+  const startSidebarResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0 || window.innerWidth <= 720) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    sidebarResizeRef.current = { startX: event.clientX, startWidth: sidebarWidthRef.current };
+    setSidebarResizing(true);
+  };
+
+  const moveSidebarResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const resize = sidebarResizeRef.current;
+    if (!resize) return;
+    applySidebarWidth(resize.startWidth + event.clientX - resize.startX);
+  };
+
+  const finishSidebarResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!sidebarResizeRef.current) return;
+    sidebarResizeRef.current = null;
+    setSidebarResizing(false);
+    applySidebarWidth(sidebarWidthRef.current, true);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const resizeSidebarWithKeyboard = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const step = event.shiftKey ? 24 : 8;
+    let nextWidth: number | null = null;
+    if (event.key === "ArrowLeft") nextWidth = sidebarWidthRef.current - step;
+    if (event.key === "ArrowRight") nextWidth = sidebarWidthRef.current + step;
+    if (event.key === "Home") nextWidth = MIN_SIDEBAR_WIDTH;
+    if (event.key === "End") nextWidth = MAX_SIDEBAR_WIDTH;
+    if (nextWidth === null) return;
+    event.preventDefault();
+    applySidebarWidth(nextWidth, true);
+  };
+
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return activeNotes.slice(0, 8);
@@ -385,7 +456,7 @@ export default function HyperionApp() {
         await importEditorDocuments(vault.id, documents);
       }
       await loadVault(vault.id, [...vaults, vault]);
-      setPreferencesOpen(false);
+      setSettingsOpen(false);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not import this vault");
     } finally {
@@ -403,7 +474,10 @@ export default function HyperionApp() {
   }
 
   return (
-    <main className="app-shell">
+    <main
+      className={`app-shell${sidebarResizing ? " sidebar-resizing" : ""}`}
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
+    >
       {sidebarOpen && <button className="mobile-scrim" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} />}
       <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}`}>
         <div className="workspace-header">
@@ -425,7 +499,6 @@ export default function HyperionApp() {
                 ))}
                 <div className="popover-divider" />
                 <button onClick={() => { setComposer({ type: "vault", value: "" }); setVaultMenuOpen(false); }}><Plus size={16} /> New vault</button>
-                <button onClick={() => { setPreferencesOpen(true); setVaultMenuOpen(false); }}><GearSix size={16} /> Vault settings</button>
               </div>
             )}
           </div>
@@ -473,9 +546,20 @@ export default function HyperionApp() {
 
         <div className="sidebar-footer">
           <button className={view === "trash" ? "active" : ""} onClick={() => navigateView("trash")}><Trash size={17} /><span>Trash</span>{trashedNotes.length > 0 && <em>{trashedNotes.length}</em>}</button>
-          <button onClick={() => setPreferencesOpen(true)}><GearSix size={17} /><span>Preferences</span></button>
-          <div className="local-status" title="Editor documents and metadata are stored only in this browser"><span className="status-dot" /><span>Local database</span><Archive size={15} /></div>
+          <button onClick={() => setSettingsOpen(true)}><GearSix size={17} /><span>Settings</span></button>
         </div>
+        {sidebarOpen && <button
+          type="button"
+          className="sidebar-resize-handle"
+          aria-label={`Resize sidebar, ${sidebarWidth} pixels`}
+          title="Drag to resize · Double-click to reset"
+          onPointerDown={startSidebarResize}
+          onPointerMove={moveSidebarResize}
+          onPointerUp={finishSidebarResize}
+          onPointerCancel={finishSidebarResize}
+          onKeyDown={resizeSidebarWithKeyboard}
+          onDoubleClick={() => applySidebarWidth(DEFAULT_SIDEBAR_WIDTH, true)}
+        />}
       </aside>
 
       <section className="workspace">
@@ -486,7 +570,6 @@ export default function HyperionApp() {
           </div>
           <div className="topbar-actions">
             <span className={`save-status ${saveStatus}`}>{saveStatus === "saved" ? <Check size={13} weight="bold" /> : <span className="saving-spinner" />}{saveStatus === "saved" ? "Saved locally" : "Saving"}</span>
-            <button className="icon-button" aria-label="Open preferences" onClick={() => setPreferencesOpen(true)}><GearSix size={18} /></button>
             {view === "note" && <button className={`icon-button${detailsOpen ? " active" : ""}`} aria-label="Toggle note details" onClick={() => setDetailsOpen((open) => !open)}><ListBullets size={19} /></button>}
           </div>
         </header>
@@ -563,7 +646,7 @@ export default function HyperionApp() {
 
       {searchOpen && <div className="dialog-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeSearch()}><section className="search-dialog" role="dialog" aria-modal="true" aria-label="Search Hyperion"><div className="search-field"><MagnifyingGlass size={21} /><input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchResults[0]) { selectNote(searchResults[0].id); closeSearch(); } }} placeholder="Search titles, text, tags, and collections…" /><kbd>ESC</kbd></div><div className="search-caption"><span>{searchQuery ? `${searchResults.length} results` : "Recently edited"}</span><small>{activeVault?.name} · local</small></div><div className="search-results">{searchResults.map((note, index) => <button key={note.id} className={index === 0 ? "selected" : ""} onClick={() => { selectNote(note.id); closeSearch(); }}><span className="result-icon"><FileText size={18} /></span><span className="result-copy"><strong>{note.title}</strong><span>{notePreview(note)}</span></span><span className="result-meta">{relativeTime(note.updatedAt)}</span></button>)}{!searchResults.length && <div className="no-results"><MagnifyingGlass size={24} /><span>No matching notes</span></div>}</div><footer className="dialog-footer"><span><kbd>↵</kbd> Open</span><span className="dialog-brand"><HyperionMark small /> Hyperion</span></footer></section></div>}
 
-      {preferencesOpen && activeVault && <PreferencesDialog vault={activeVault} vaultCount={vaults.length} preferences={preferences} onClose={() => setPreferencesOpen(false)} onPreferences={savePreferencePatch} onVault={async (patch) => { const updated = { ...activeVault, ...patch }; await knowledgeRepository.updateVault(updated); setVaults((current) => current.map((vault) => vault.id === updated.id ? updated : vault)); }} onExport={() => void exportVault()} onImport={() => importRef.current?.click()} onDelete={async () => { if (vaults.length <= 1 || !confirm(`Delete the “${activeVault.name}” vault and all of its local notes?`)) return; await knowledgeRepository.deleteVault(activeVault.id); const nextVaults = vaults.filter((vault) => vault.id !== activeVault.id); setVaults(nextVaults); setPreferencesOpen(false); await loadVault(nextVaults[0].id, nextVaults); }} />}
+      {settingsOpen && activeVault && <SettingsDialog vault={activeVault} vaultCount={vaults.length} preferences={preferences} onClose={() => setSettingsOpen(false)} onPreferences={savePreferencePatch} onVault={async (patch) => { const updated = { ...activeVault, ...patch }; await knowledgeRepository.updateVault(updated); setVaults((current) => current.map((vault) => vault.id === updated.id ? updated : vault)); }} onExport={() => void exportVault()} onImport={() => importRef.current?.click()} onDelete={async () => { if (vaults.length <= 1 || !confirm(`Delete the “${activeVault.name}” vault and all of its local notes?`)) return; await knowledgeRepository.deleteVault(activeVault.id); const nextVaults = vaults.filter((vault) => vault.id !== activeVault.id); setVaults(nextVaults); setSettingsOpen(false); await loadVault(nextVaults[0].id, nextVaults); }} />}
       <input ref={importRef} className="hidden-input" type="file" accept=".json,.hyperion.json,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importVault(file); }} />
 
       {composer && <div className="dialog-layer"><form className="composer-dialog" onSubmit={submitComposer}><div className="dialog-icon">{composer.type === "vault" ? <Database size={22} /> : <FolderSimple size={22} />}</div><h2>New {composer.type === "vault" ? "vault" : "folder"}</h2><p>{composer.type === "vault" ? "A separate local knowledge space with its own notes and settings." : "Group related notes inside an Organize folder."}</p><input ref={composerInputRef} value={composer.value} onChange={(event) => setComposer({ ...composer, value: event.target.value })} placeholder={composer.type === "vault" ? "Vault name" : "Folder name"} /><div className="dialog-actions"><button type="button" onClick={() => setComposer(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!composer.value.trim()}>Create</button></div></form></div>}
@@ -664,16 +747,16 @@ function EmptyState({ icon, title, description, action }: { icon: React.ReactNod
   return <div className="empty-state"><div className="empty-state-icon">{icon}</div><h2>{title}</h2><p>{description}</p>{action}</div>;
 }
 
-function PreferencesDialog({ vault, vaultCount, preferences, onClose, onPreferences, onVault, onExport, onImport, onDelete }: { vault: VaultRecord; vaultCount: number; preferences: VaultPreferences; onClose: () => void; onPreferences: (patch: Partial<VaultPreferences>) => Promise<void>; onVault: (patch: Partial<VaultRecord>) => Promise<void>; onExport: () => void; onImport: () => void; onDelete: () => void }) {
+function SettingsDialog({ vault, vaultCount, preferences, onClose, onPreferences, onVault, onExport, onImport, onDelete }: { vault: VaultRecord; vaultCount: number; preferences: VaultPreferences; onClose: () => void; onPreferences: (patch: Partial<VaultPreferences>) => Promise<void>; onVault: (patch: Partial<VaultRecord>) => Promise<void>; onExport: () => void; onImport: () => void; onDelete: () => void }) {
   const [tab, setTab] = useState<"general" | "editor" | "appearance" | "data">("general");
   const [name, setName] = useState(vault.name);
   const [description, setDescription] = useState(vault.description);
   const themes: { value: ThemePreference; label: string; icon: React.ReactNode }[] = [{ value: "system", label: "System", icon: <Sparkle size={18} /> }, { value: "light", label: "Light", icon: <Sun size={18} /> }, { value: "dark", label: "Dark", icon: <Moon size={18} /> }];
-  return <div className="dialog-layer"><section className="preferences-dialog" role="dialog" aria-modal="true" aria-label="Preferences"><header><div><HyperionMark small /><span><strong>Preferences</strong><small>{vault.name}</small></span></div><button onClick={onClose}><X size={19} /></button></header><div className="preferences-body"><nav>{(["general", "editor", "appearance", "data"] as const).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "general" ? <GearSix size={17} /> : item === "editor" ? <BookOpenText size={17} /> : item === "appearance" ? <Sun size={17} /> : <Database size={17} />}<span>{item[0].toUpperCase() + item.slice(1)}</span></button>)}</nav><div className="preferences-content">
+  return <div className="dialog-layer"><section className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings"><header><div><HyperionMark small /><span><strong>Settings</strong><small>{vault.name}</small></span></div><button onClick={onClose}><X size={19} /></button></header><div className="settings-body"><nav>{(["general", "editor", "appearance", "data"] as const).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "general" ? <GearSix size={17} /> : item === "editor" ? <BookOpenText size={17} /> : item === "appearance" ? <Sun size={17} /> : <Database size={17} />}<span>{item[0].toUpperCase() + item.slice(1)}</span></button>)}</nav><div className="settings-content">
     {tab === "general" && <><div className="settings-heading"><h2>General</h2><p>Name and describe this local vault.</p></div><label className="setting-field"><span>Vault name</span><input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => name.trim() && void onVault({ name: name.trim() })} /></label><label className="setting-field"><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} onBlur={() => void onVault({ description })} /></label><SettingToggle title="Open note details" description="Show outline, backlinks, and properties when opening a note." checked={preferences.showDetails} onChange={(checked) => void onPreferences({ showDetails: checked })} /></>}
     {tab === "editor" && <><div className="settings-heading"><h2>Editor</h2><p>Configure the AFFiNE block editor for this vault.</p></div><SettingToggle title="Spell check" description="Use the browser’s local spell checker while writing." checked={preferences.spellcheck} onChange={(checked) => void onPreferences({ spellcheck: checked })} /><label className="setting-range"><span><strong>Editor text size</strong><small>Adjust text between 14 and 22 pixels.</small></span><input type="range" min="14" max="22" value={preferences.editorFontSize} onChange={(event) => void onPreferences({ editorFontSize: Number(event.target.value) })} /><output>{preferences.editorFontSize}px</output></label><div className="settings-note"><BookOpenText size={19} /><span><strong>Rich blocks are enabled</strong><small>Type / for tables, database views, code, LaTeX, callouts, media, embeds, and more. Select text for inline formatting.</small></span></div></>}
     {tab === "appearance" && <><div className="settings-heading"><h2>Appearance</h2><p>Choose a theme and comfortable writing width.</p></div><div className="setting-block"><span>Theme</span><div className="theme-options">{themes.map((theme) => <button key={theme.value} className={preferences.theme === theme.value ? "active" : ""} onClick={() => void onPreferences({ theme: theme.value })}>{theme.icon}<span>{theme.label}</span>{preferences.theme === theme.value && <Check size={14} />}</button>)}</div></div><div className="setting-block"><span>Editor width</span><div className="segmented-control">{(["compact", "comfortable", "wide"] as const).map((width) => <button key={width} className={preferences.editorWidth === width ? "active" : ""} onClick={() => void onPreferences({ editorWidth: width })}>{width[0].toUpperCase() + width.slice(1)}</button>)}</div></div></>}
-    {tab === "data" && <><div className="settings-heading"><h2>Data</h2><p>Everything remains local unless you export it yourself.</p></div><div className="data-setting"><span className="data-setting-icon"><DownloadSimple size={20} /></span><span><strong>Export this vault</strong><small>Download notes, collections, preferences, and full block documents.</small></span><button onClick={onExport}>Export</button></div><div className="data-setting"><span className="data-setting-icon"><UploadSimple size={20} /></span><span><strong>Import a vault</strong><small>Import a Hyperion backup as a new, separate local vault.</small></span><button onClick={onImport}>Import</button></div><div className="local-data-note"><Archive size={18} /><span><strong>No account or cloud sync</strong><small>Hyperion uses IndexedDB and Yjs in this browser. Nothing is uploaded by the app.</small></span></div>{vaultCount > 1 && <div className="danger-zone"><span><strong>Delete vault</strong><small>Remove this vault and its metadata from this browser.</small></span><button onClick={onDelete}>Delete vault</button></div>}</>}
+    {tab === "data" && <><div className="settings-heading"><h2>Data</h2><p>Everything remains local unless you export it yourself.</p></div><div className="data-setting"><span className="data-setting-icon"><DownloadSimple size={20} /></span><span><strong>Export this vault</strong><small>Download notes, collections, settings, and full block documents.</small></span><button onClick={onExport}>Export</button></div><div className="data-setting"><span className="data-setting-icon"><UploadSimple size={20} /></span><span><strong>Import a vault</strong><small>Import a Hyperion backup as a new, separate local vault.</small></span><button onClick={onImport}>Import</button></div><div className="local-data-note"><Archive size={18} /><span><strong>No account or cloud sync</strong><small>Hyperion uses IndexedDB and Yjs in this browser. Nothing is uploaded by the app.</small></span></div>{vaultCount > 1 && <div className="danger-zone"><span><strong>Delete vault</strong><small>Remove this vault and its metadata from this browser.</small></span><button onClick={onDelete}>Delete vault</button></div>}</>}
   </div></div><footer><span>Changes save automatically to this browser.</span><button className="primary-button" onClick={onClose}>Done</button></footer></section></div>;
 }
 

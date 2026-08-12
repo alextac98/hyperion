@@ -37,5 +37,5 @@ test("includes rich local editing and organization", async () => {
   assert.match(appSource, />Organize</);
   assert.match(appSource, /organizer-folder-notes/);
   assert.match(appSource, /Collections/);
-  assert.match(appSource, /PreferencesDialog/);
+  assert.match(appSource, /SettingsDialog/);
 });
