@@ -185,6 +185,50 @@ kbd {
   opacity: 1;
 }
 
+.sidebar-resizing,
+.sidebar-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.sidebar-resizing .sidebar {
+  transition: none;
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  width: 7px;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resize-handle::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  content: "";
+  transition: background 120ms ease;
+}
+
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle:focus-visible::after,
+.sidebar-resizing .sidebar-resize-handle::after {
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+.sidebar-resize-handle:focus-visible {
+  outline-offset: -3px;
+}
+
 .workspace-header {
   display: flex;
   height: 58px;
@@ -568,32 +612,6 @@ kbd {
   flex: 0 0 auto;
   padding: 8px;
   border-top: 1px solid var(--line);
-}
-
-.local-status {
-  display: flex;
-  height: 31px;
-  align-items: center;
-  gap: 7px;
-  margin: 5px 3px 0;
-  padding: 0 7px;
-  border-radius: 7px;
-  background: var(--green-soft);
-  color: var(--green);
-  font-size: 10.5px;
-  font-weight: 620;
-}
-
-.local-status > span:nth-child(2) {
-  flex: 1;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 12%, transparent);
 }
 
 .workspace {
@@ -1599,7 +1617,9 @@ kbd {
 @media (max-width: 720px) {
   :root { --sidebar-width: min(86vw, 292px); }
   .sidebar { position: fixed; inset: 0 auto 0 0; box-shadow: 14px 0 40px rgb(20 22 18 / 14%); }
+  .sidebar-open { width: min(86vw, 292px); }
   .sidebar:not(.sidebar-open) { transform: translateX(-100%); }
+  .sidebar-resize-handle { display: none; }
   .mobile-scrim { position: fixed; z-index: 19; inset: 0; display: block; width: 100%; height: 100%; background: rgb(20 22 19 / 22%); }
   .topbar { padding-inline: 10px; }
   .breadcrumbs > span,
@@ -1937,20 +1957,20 @@ kbd {
 .trash-list > div > span small { margin-top: 4px; color: var(--text-faint); font-size: 9.5px; }
 .trash-list > div > button { height: 29px; padding: 0 9px; border-radius: 6px; background: var(--panel); color: var(--text-soft); font-size: 9.5px; }
 
-.preferences-dialog { width: min(780px, 100%); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface-raised); box-shadow: var(--shadow-lg); }
-.preferences-dialog > header { display: flex; height: 61px; align-items: center; justify-content: space-between; padding: 0 17px; border-bottom: 1px solid var(--line); }
-.preferences-dialog > header > div { display: flex; align-items: center; gap: 10px; }
-.preferences-dialog > header > div > span { display: flex; flex-direction: column; }
-.preferences-dialog > header strong { font-size: 13px; }
-.preferences-dialog > header small { margin-top: 3px; color: var(--text-faint); font-size: 9.5px; }
-.preferences-dialog > header > button { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 7px; background: transparent; color: var(--text-soft); }
-.preferences-dialog > header > button:hover { background: var(--hover); }
-.preferences-body { display: grid; min-height: 440px; grid-template-columns: 175px 1fr; }
-.preferences-body > nav { padding: 13px 9px; border-right: 1px solid var(--line); background: var(--panel); }
-.preferences-body > nav button { display: flex; width: 100%; height: 35px; align-items: center; gap: 8px; padding: 0 9px; border-radius: 7px; background: transparent; color: var(--text-soft); font-size: 11px; text-align: left; }
-.preferences-body > nav button:hover,
-.preferences-body > nav button.active { background: var(--hover); color: var(--text); }
-.preferences-content { padding: 28px 32px 34px; }
+.settings-dialog { width: min(780px, 100%); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface-raised); box-shadow: var(--shadow-lg); }
+.settings-dialog > header { display: flex; height: 61px; align-items: center; justify-content: space-between; padding: 0 17px; border-bottom: 1px solid var(--line); }
+.settings-dialog > header > div { display: flex; align-items: center; gap: 10px; }
+.settings-dialog > header > div > span { display: flex; flex-direction: column; }
+.settings-dialog > header strong { font-size: 13px; }
+.settings-dialog > header small { margin-top: 3px; color: var(--text-faint); font-size: 9.5px; }
+.settings-dialog > header > button { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 7px; background: transparent; color: var(--text-soft); }
+.settings-dialog > header > button:hover { background: var(--hover); }
+.settings-body { display: grid; min-height: 440px; grid-template-columns: 175px 1fr; }
+.settings-body > nav { padding: 13px 9px; border-right: 1px solid var(--line); background: var(--panel); }
+.settings-body > nav button { display: flex; width: 100%; height: 35px; align-items: center; gap: 8px; padding: 0 9px; border-radius: 7px; background: transparent; color: var(--text-soft); font-size: 11px; text-align: left; }
+.settings-body > nav button:hover,
+.settings-body > nav button.active { background: var(--hover); color: var(--text); }
+.settings-content { padding: 28px 32px 34px; }
 .settings-heading { margin-bottom: 27px; }
 .settings-heading h2 { margin: 0; font-size: 20px; letter-spacing: -.02em; }
 .settings-heading p { margin: 7px 0 0; color: var(--text-faint); font-size: 10.5px; }
@@ -2003,8 +2023,8 @@ kbd {
 .danger-zone strong { color: var(--danger); font-size: 10.5px; }
 .danger-zone small { margin-top: 4px; color: var(--text-faint); font-size: 9px; }
 .danger-zone button { height: 31px; padding: 0 10px; border-radius: 7px; background: var(--danger-soft); color: var(--danger); font-size: 9.5px; }
-.preferences-dialog > footer { display: flex; height: 56px; align-items: center; justify-content: space-between; padding: 0 17px; border-top: 1px solid var(--line); background: var(--panel); }
-.preferences-dialog > footer > span { color: var(--text-faint); font-size: 9.5px; }
+.settings-dialog > footer { display: flex; height: 56px; align-items: center; justify-content: space-between; padding: 0 17px; border-top: 1px solid var(--line); background: var(--panel); }
+.settings-dialog > footer > span { color: var(--text-faint); font-size: 9.5px; }
 
 .composer-dialog { width: min(410px, 100%); padding: 28px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface-raised); box-shadow: var(--shadow-lg); }
 .dialog-icon { display: grid; width: 44px; height: 44px; place-items: center; margin-bottom: 18px; border-radius: 11px; background: var(--accent-soft); color: var(--accent-text); }
@@ -2028,9 +2048,9 @@ kbd {
 @media (max-width: 820px) {
   .details-panel { display: none; }
   .note-card-grid.wide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .preferences-dialog { max-height: calc(100vh - 30px); overflow-y: auto; }
-  .preferences-body { grid-template-columns: 135px 1fr; }
-  .preferences-content { padding-inline: 22px; }
+  .settings-dialog { max-height: calc(100vh - 30px); overflow-y: auto; }
+  .settings-body { grid-template-columns: 135px 1fr; }
+  .settings-content { padding-inline: 22px; }
 }
 
 @media (max-width: 720px) {
@@ -2050,9 +2070,9 @@ kbd {
   .table-tags { display: none; }
   .tags-layout { grid-template-columns: 1fr; }
   .tags-layout aside { padding-right: 0; padding-bottom: 15px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .preferences-body { display: block; }
-  .preferences-body > nav { display: flex; overflow-x: auto; padding: 7px; border-right: 0; border-bottom: 1px solid var(--line); }
-  .preferences-body > nav button { width: auto; flex: 0 0 auto; }
-  .preferences-content { padding: 22px 18px 28px; }
+  .settings-body { display: block; }
+  .settings-body > nav { display: flex; overflow-x: auto; padding: 7px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .settings-body > nav button { width: auto; flex: 0 0 auto; }
+  .settings-content { padding: 22px 18px 28px; }
   .theme-options { grid-template-columns: 1fr; }
 }

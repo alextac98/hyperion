@@ -14,7 +14,7 @@ Hyperin is intended to be a personal knowledge base for your ideas, notes, meeti
   notes, and sidebar tags
 - Sortable/filterable table and card views, backlinks, favorites, journal,
   search, and trash
-- Working vault, editor, appearance, and data preferences
+- Working vault, editor, appearance, and data settings
 - Keyboard shortcuts for search (`Command/Ctrl + K`) and new notes
 - Responsive light and dark interfaces
 - A repository boundary that can later support a desktop SQLite adapter
