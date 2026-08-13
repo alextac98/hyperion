@@ -275,7 +275,7 @@ export function PageIconPicker({ note, onChange }: { note: NoteRecord; onChange:
       aria-expanded={open}
       title={note.icon ? "Change page icon" : "Add page icon"}
       onClick={() => setOpen((current) => !current)}
-    >{note.icon ? <PageIcon note={note} size={60} /> : <><Smiley size={16} weight="fill" /><span>Add icon</span></>}</button>
+    >{note.icon ? <PageIcon note={note} size={38} /> : <><Smiley size={16} weight="fill" /><span>Add icon</span></>}</button>
     {open && <div className="popover page-icon-picker" role="dialog" aria-label="Choose a page icon">
       <header className="page-icon-picker-header">
         <div className="page-icon-tabs" role="tablist" aria-label="Page icon type">
