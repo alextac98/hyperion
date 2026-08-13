@@ -25,13 +25,14 @@ test("keeps all knowledge persistence on the device", async () => {
 });
 
 test("includes rich local editing and organization", async () => {
-  const [editorSource, appSource, databaseSource, linksSource, iconPickerSource, emojiCatalogSource] = await Promise.all([
+  const [editorSource, appSource, databaseSource, linksSource, iconPickerSource, emojiCatalogSource, globalStyles] = await Promise.all([
     readFile(new URL("app/editor/blocksuite-runtime.ts", projectRoot), "utf8"),
     readFile(new URL("app/HyperionApp.tsx", projectRoot), "utf8"),
     readFile(new URL("app/lib/local-database.ts", projectRoot), "utf8"),
     readFile(new URL("app/lib/page-links.ts", projectRoot), "utf8"),
     readFile(new URL("app/components/PageIconPicker.tsx", projectRoot), "utf8"),
     readFile(new URL("node_modules/emojibase-data/en/compact.json", projectRoot), "utf8"),
+    readFile(new URL("app/globals.css", projectRoot), "utf8"),
   ]);
   const emojiCatalog = JSON.parse(emojiCatalogSource);
   const pickerEmoji = emojiCatalog.filter((emoji) => Number.isInteger(emoji.group) && emoji.group !== 2);
@@ -39,14 +40,27 @@ test("includes rich local editing and organization", async () => {
   assert.match(editorSource, /getInternalViewExtensions/);
   assert.match(editorSource, /affine:table/);
   assert.match(editorSource, /IndexedDBDocSource/);
+  assert.match(editorSource, /event\.key\.toLowerCase\(\) !== "a"/);
+  assert.match(editorSource, /scope\.selection\.create\(TextSelection/);
+  assert.match(editorSource, /event\.stopImmediatePropagation\(\)/);
+  assert.match(editorSource, /extension !== PageDraggingAreaViewExtension/);
   assert.match(appSource, /New vault/);
   assert.match(appSource, />Organize</);
   assert.match(appSource, /organizer-children/);
-  assert.match(appSource, /Parent page/);
+  assert.doesNotMatch(appSource, /Parent page/);
+  assert.match(appSource, /className="details-tags"/);
+  assert.match(appSource, /className="details-page-links"/);
+  assert.doesNotMatch(appSource, /editor-commandbar/);
+  assert.doesNotMatch(appSource, /insert-button/);
+  assert.doesNotMatch(appSource, /commandbar-hint/);
+  assert.match(appSource, /topbar-favorite/);
+  assert.match(appSource, /topbar-history/);
+  assert.match(appSource, /topbar-more/);
   assert.match(appSource, /onMoveNote/);
   assert.match(appSource, /Drop here for top level/);
   assert.match(appSource, /PAGE_DRAG_TYPE/);
-  assert.match(appSource, /organizer-drag-handle/);
+  assert.doesNotMatch(appSource, /organizer-drag-handle/);
+  assert.match(appSource, /className="organizer-page-link" draggable/);
   assert.match(appSource, /setData\(PAGE_DRAG_TYPE/);
   assert.match(appSource, /PageDropPlacement/);
   assert.match(appSource, /position < 0\.28/);
@@ -75,4 +89,6 @@ test("includes rich local editing and organization", async () => {
   assert.match(linksSource, /WIKI_LINK_PATTERN/);
   assert.match(appSource, /sidebarResizeRef/);
   assert.match(appSource, /SettingsDialog/);
+  assert.match(globalStyles, /::selection\s*{[^}]*color:\s*var\(--text\)/s);
+  assert.match(globalStyles, /::selection\s*{[^}]*-webkit-text-fill-color:\s*var\(--text\)/s);
 });

@@ -1,16 +1,21 @@
 import { StoreExtensionManager, ViewExtensionManager } from "@blocksuite/affine/ext-loader";
 import { getInternalStoreExtensions } from "@blocksuite/affine/extensions/store";
 import { getInternalViewExtensions } from "@blocksuite/affine/extensions/view";
-import { BlockStdScope } from "@blocksuite/affine/std";
+import { BlockStdScope, TextSelection } from "@blocksuite/affine/std";
 import { TableDataManager } from "@blocksuite/affine/blocks/table";
 import type { Store } from "@blocksuite/affine/store";
 import { Text } from "@blocksuite/affine/store";
 import { TestWorkspace } from "@blocksuite/affine/store/test";
 import { IndexedDBBlobSource, IndexedDBDocSource } from "@blocksuite/affine/sync";
+import { PageDraggingAreaViewExtension } from "@blocksuite/affine/widgets/page-dragging-area/view";
 import * as Y from "yjs";
 
 const storeManager = new StoreExtensionManager(getInternalStoreExtensions());
-const viewManager = new ViewExtensionManager(getInternalViewExtensions());
+const viewManager = new ViewExtensionManager(
+  getInternalViewExtensions().filter(
+    (extension) => extension !== PageDraggingAreaViewExtension,
+  ),
+);
 const pageExtensions = viewManager.get("page");
 
 const workspacePromises = new Map<string, Promise<TestWorkspace>>();
@@ -165,6 +170,66 @@ export function renderPageEditor(store: Store) {
   const editorContainer = document.createElement("div");
   editorContainer.className = "page-editor hyperion-blocksuite-page";
   editorContainer.append(scope.render());
+
+  // BlockSuite progressively changes repeated Select All presses from text
+  // selection into paragraph-block selection. Hyperion keeps Select All
+  // text-only so an extra Cmd/Ctrl+A can never turn the page into opaque
+  // block overlays.
+  viewport.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.key.toLowerCase() !== "a" ||
+        (!event.metaKey && !event.ctrlKey) ||
+        event.altKey ||
+        event.shiftKey ||
+        !event.composedPath().some((target) => target === editorContainer)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      type TextBlockElement = HTMLElement & {
+        model?: { text?: { length: number } };
+      };
+
+      const textBlocks = Array.from(
+        editorContainer.querySelectorAll<HTMLElement>(".inline-editor"),
+      ).reduce<TextBlockElement[]>((blocks, inlineEditor) => {
+        const block = inlineEditor.closest<HTMLElement>(
+          "[data-block-id]",
+        ) as TextBlockElement | null;
+        if (block?.model?.text && !blocks.includes(block)) blocks.push(block);
+        return blocks;
+      }, []);
+      if (!textBlocks.length) return;
+
+      const first = textBlocks[0];
+      const last = textBlocks[textBlocks.length - 1];
+      const from = {
+        blockId: first.dataset.blockId,
+        index: 0,
+        length: first.model?.text?.length ?? 0,
+      };
+      const to =
+        first === last
+          ? null
+          : {
+              blockId: last.dataset.blockId,
+              index: 0,
+              length: last.model?.text?.length ?? 0,
+            };
+
+      scope.selection.setGroup("note", [
+        scope.selection.create(TextSelection, { from, to }),
+      ]);
+    },
+    { capture: true },
+  );
+
   viewport.append(title, editorContainer);
   return { viewport, scope };
 }
