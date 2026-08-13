@@ -2036,8 +2036,6 @@ kbd {
   min-height: calc(100vh - var(--topbar-height));
 }
 
-.editor-capabilities kbd { padding: 2px 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--panel); color: var(--text-soft); font-size: 9px; }
-
 .page-icon-row {
   position: relative;
   z-index: 14;
@@ -2284,8 +2282,6 @@ kbd {
 .editor-opening { position: absolute; z-index: 2; left: 50%; display: flex; align-items: center; gap: 8px; margin-top: 84px; color: var(--text-faint); font-size: 11px; transform: translateX(-50%); }
 .editor-loading .blocksuite-mount-inner { opacity: .35; }
 
-.editor-capabilities p { margin: 0 0 9px; color: var(--text-faint); font-size: 10px; line-height: 1.55; }
-.editor-capabilities small { color: var(--text-soft); font-size: 9.5px; }
 .heading-actions { display: flex; align-items: center; gap: 7px; }
 .heading-accent { display: block; width: 30px; height: 5px; margin-bottom: 16px; border-radius: 10px; }
 .danger-text { color: var(--danger) !important; }

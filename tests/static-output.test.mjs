@@ -56,6 +56,7 @@ test("includes rich local editing and organization", async () => {
   assert.match(appSource, /topbar-favorite/);
   assert.match(appSource, /topbar-history/);
   assert.match(appSource, /topbar-more/);
+  assert.doesNotMatch(appSource, /Editor blocks/);
   assert.match(appSource, /onMoveNote/);
   assert.match(appSource, /Drop here for top level/);
   assert.match(appSource, /PAGE_DRAG_TYPE/);
