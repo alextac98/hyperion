@@ -8,11 +8,9 @@ import {
   CaretDown,
   CaretRight,
   Check,
-  Code,
   Database,
   DownloadSimple,
   DotsThree,
-  DotsSixVertical,
   FilePlus,
   FileText,
   FolderSimple,
@@ -20,21 +18,16 @@ import {
   Hash,
   House,
   ListBullets,
-  ListChecks,
-  LinkSimple,
   MagnifyingGlass,
   Moon,
   Plus,
-  Quotes,
   Rows,
   SidebarSimple,
   Sparkle,
   SquaresFour,
   Star,
   Sun,
-  Table,
   Tag,
-  TextHTwo,
   Trash,
   UploadSimple,
   X,
@@ -47,8 +40,6 @@ import {
   duplicateEditorDocument,
   exportEditorDocuments,
   importEditorDocuments,
-  insertBlock,
-  insertTable,
   removeEditorDocument,
 } from "./editor/blocksuite-runtime";
 import {
@@ -194,7 +185,6 @@ export default function HyperionApp() {
   const [vaultMenuOpen, setVaultMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [insertOpen, setInsertOpen] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
   const [addingTag, setAddingTag] = useState(false);
   const [composer, setComposer] = useState<Composer>(null);
@@ -312,7 +302,8 @@ export default function HyperionApp() {
     setActiveId(id);
     setView("note");
     setMoreOpen(false);
-    setInsertOpen(false);
+    setAddingTag(false);
+    setTagDraft("");
     setEditorStore(null);
     localStorage.setItem(`hyperion:last-note:${vaultId}`, id);
     if (window.innerWidth <= 720) setSidebarOpen(false);
@@ -346,7 +337,6 @@ export default function HyperionApp() {
       if (event.key === "Escape") {
         closeSearch();
         setMoreOpen(false);
-        setInsertOpen(false);
         setVaultMenuOpen(false);
       }
     };
@@ -598,7 +588,6 @@ export default function HyperionApp() {
 
   const heading = view === "note" ? activeNote?.title : ({ home: "Home", all: "All pages", journal: "Journal", tags: "Tags", trash: "Trash" } as const)[view as Exclude<View, "note">];
   const activeAncestors = activeNote ? ancestorPath(activeNotes, activeNote) : [];
-  const unavailableParentIds = activeNote ? descendantIds(activeNotes, activeNote.id).add(activeNote.id) : new Set<string>();
   const outgoingLinks = activeNote ? [...new Set(activeNote.links.map((link) => link.targetId))]
     .flatMap((targetId) => {
       const target = activeNotes.find((note) => note.id === targetId);
@@ -701,11 +690,20 @@ export default function HyperionApp() {
         <header className="topbar">
           <div className="topbar-left">
             {!sidebarOpen && <button className="icon-button" aria-label="Open sidebar" onClick={() => setSidebarOpen(true)}><SidebarSimple size={19} /></button>}
+            {view === "note" && activeNote && <button className={`icon-button topbar-favorite${activeNote.favorite ? " active" : ""}`} aria-label={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} title={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} onClick={() => updateNoteById(activeNote.id, { favorite: !activeNote.favorite }, true)}><Star size={17} weight={activeNote.favorite ? "fill" : "regular"} /></button>}
             <div className="breadcrumbs"><span>{activeVault?.name ?? "Hyperion"}</span>{activeAncestors.map((ancestor) => <span className="breadcrumb-parent" key={ancestor.id}><CaretRight size={12} /><button onClick={() => selectNote(ancestor.id)}><PageIcon note={ancestor} size={12} />{ancestor.title}</button></span>)}<CaretRight size={12} />{view === "note" && activeNote && <PageIcon note={activeNote} size={13} />}<strong>{heading ?? "Untitled"}</strong></div>
           </div>
           <div className="topbar-actions">
+            {view === "note" && activeNote && <div className="topbar-history" aria-label="Editing history">
+              <button className="icon-button" aria-label="Undo" title="Undo" onClick={() => editorStore?.undo()} disabled={!editorStore}><ArrowCounterClockwise size={16} /></button>
+              <button className="icon-button" aria-label="Redo" title="Redo" onClick={() => editorStore?.redo()} disabled={!editorStore}><ArrowClockwise size={16} /></button>
+            </div>}
             <span className={`save-status ${saveStatus}`}>{saveStatus === "saved" ? <Check size={13} weight="bold" /> : <span className="saving-spinner" />}{saveStatus === "saved" ? "Saved locally" : "Saving"}</span>
             {view === "note" && <button className={`icon-button${detailsOpen ? " active" : ""}`} aria-label="Toggle note details" onClick={() => setDetailsOpen((open) => !open)}><ListBullets size={19} /></button>}
+            {view === "note" && activeNote && <div className="more-wrap topbar-more">
+              <button className="icon-button" aria-label="More page actions" title="More actions" onClick={() => setMoreOpen((open) => !open)}><DotsThree size={21} weight="bold" /></button>
+              {moreOpen && <div className="popover note-menu"><button onClick={() => void duplicateNote(activeNote)}><FilePlus size={17} /> Duplicate page</button><button className="danger" onClick={() => { updateNoteById(activeNote.id, { trashed: true, favorite: false }, true); navigateView("home"); }}><Trash size={17} /> Move to trash</button></div>}
+            </div>}
           </div>
         </header>
 
@@ -713,46 +711,6 @@ export default function HyperionApp() {
           <section className="main-content">
             {view === "note" && activeNote ? (
               <article className="note-workspace">
-                <div className="editor-commandbar">
-                  <div className="commandbar-group">
-                    <button title="Undo" onClick={() => editorStore?.undo()} disabled={!editorStore}><ArrowCounterClockwise size={17} /></button>
-                    <button title="Redo" onClick={() => editorStore?.redo()} disabled={!editorStore}><ArrowClockwise size={17} /></button>
-                  </div>
-                  <div className="commandbar-group insert-wrap">
-                    <button className="insert-button" onClick={() => setInsertOpen((open) => !open)}><Plus size={15} weight="bold" /> Insert <CaretDown size={12} /></button>
-                    {insertOpen && editorStore && <div className="popover insert-menu">
-                      <button onClick={() => { insertBlock(editorStore, "heading"); setInsertOpen(false); }}><TextHTwo size={17} /><span><strong>Heading</strong><small>Section heading</small></span></button>
-                      <button onClick={() => { insertBlock(editorStore, "todo"); setInsertOpen(false); }}><ListChecks size={17} /><span><strong>To-do</strong><small>Checkbox item</small></span></button>
-                      <button onClick={() => { insertTable(editorStore); setInsertOpen(false); }}><Table size={17} /><span><strong>Table</strong><small>Editable 3 × 3 table</small></span></button>
-                      <button onClick={() => { insertBlock(editorStore, "code"); setInsertOpen(false); }}><Code size={17} /><span><strong>Code</strong><small>Syntax-highlighted block</small></span></button>
-                      <button onClick={() => { insertBlock(editorStore, "quote"); setInsertOpen(false); }}><Quotes size={17} /><span><strong>Quote</strong><small>Quotation block</small></span></button>
-                    </div>}
-                  </div>
-                  <span className="commandbar-hint"><kbd>/</kbd> all blocks · select text to format</span>
-                  <button className={`favorite-command${activeNote.favorite ? " active" : ""}`} title="Favorite" onClick={() => updateNoteById(activeNote.id, { favorite: !activeNote.favorite }, true)}><Star size={18} weight={activeNote.favorite ? "fill" : "regular"} /></button>
-                  <div className="more-wrap">
-                    <button title="More actions" onClick={() => setMoreOpen((open) => !open)}><DotsThree size={21} weight="bold" /></button>
-                    {moreOpen && <div className="popover note-menu"><button onClick={() => void duplicateNote(activeNote)}><FilePlus size={17} /> Duplicate page</button><button className="danger" onClick={() => { updateNoteById(activeNote.id, { trashed: true, favorite: false }, true); navigateView("home"); }}><Trash size={17} /> Move to trash</button></div>}
-                  </div>
-                </div>
-
-                <div className="note-properties-strip">
-                  <div className="property-row"><span className="property-label"><Tag size={14} /> Tags</span><div className="property-values">
-                    {activeNote.tags.map((tag) => <span className="tag-pill" key={tag}>#{tag}<button onClick={() => updateNoteById(activeNote.id, { tags: activeNote.tags.filter((item) => item !== tag) }, true)}><X size={10} /></button></span>)}
-                    {addingTag ? <form onSubmit={submitTag}><input ref={tagInputRef} value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} onBlur={() => !tagDraft && setAddingTag(false)} placeholder="New tag" /></form> : <button className="add-property" onClick={() => setAddingTag(true)}><Plus size={12} /> Add</button>}
-                  </div></div>
-                  <div className="property-row"><span className="property-label"><FolderSimple size={14} /> Parent page</span><div className="property-values">
-                    <select aria-label="Parent page" value={activeNote.parentId ?? ""} onChange={(event) => moveNote(activeNote.id, event.target.value || null)}><option value="">Top level</option>{activeNotes.filter((note) => !unavailableParentIds.has(note.id)).sort((a, b) => a.title.localeCompare(b.title)).map((note) => <option value={note.id} key={note.id}>{pageIconText(note.icon) ? `${pageIconText(note.icon)} ` : ""}{ancestorPath(activeNotes, note).map((parent) => parent.title).concat(note.title).join(" / ")}</option>)}</select>
-                  </div></div>
-                  <div className="property-row"><span className="property-label"><LinkSimple size={14} /> Page links</span><div className="property-values">
-                    {outgoingLinks.map((note) => {
-                      const inline = activeNote.links.some((link) => link.targetId === note.id && link.kind === "inline");
-                      return <span className="page-link-pill" key={note.id} title={inline ? `Bound to [[${activeNote.links.find((link) => link.targetId === note.id && link.kind === "inline")?.label}]] by page ID` : "Bound by page ID"}><button className="page-link-name" onClick={() => selectNote(note.id)}><PageIcon note={note} size={12} />{note.title}</button>{manualLinkIds.has(note.id) && <button aria-label={`Remove link to ${note.title}`} onClick={() => removePageLink(activeNote, note.id)}><X size={10} /></button>}</span>;
-                    })}
-                    <select aria-label="Link another page" value="" onChange={(event) => event.target.value && addPageLink(activeNote, event.target.value)}><option value="">+ Link a page</option>{activeNotes.filter((note) => note.id !== activeNote.id && !outgoingLinkIds.has(note.id)).sort((a, b) => a.title.localeCompare(b.title)).map((note) => <option value={note.id} key={note.id}>{pageIconText(note.icon) ? `${pageIconText(note.icon)} ` : ""}{note.title}</option>)}</select>
-                  </div></div>
-                </div>
-
                 <div className={`page-icon-row width-${preferences.editorWidth}`}>
                   <PageIconPicker key={activeNote.id} note={activeNote} onChange={(icon) => updateNoteById(activeNote.id, { icon }, true)} />
                 </div>
@@ -780,7 +738,17 @@ export default function HyperionApp() {
 
           {detailsOpen && view === "note" && activeNote && <aside className="details-panel">
             <section><div className="details-title"><span>On this page</span><em>{outline.length}</em></div><div className="outline-list">{outline.length ? outline.map((line, index) => <button key={`${line}-${index}`}><span className={index === 0 ? "outline-marker active" : "outline-marker"} /><span>{line}</span></button>) : <p>No headings yet</p>}</div></section>
-            <section><div className="details-title"><span>Page links</span><em>{outgoingLinks.length}</em></div>{outgoingLinks.length ? <div className="backlinks-list">{outgoingLinks.map((note) => <button key={note.id} onClick={() => selectNote(note.id)}><PageIcon note={note} size={15} /><span>{note.title}</span><ArrowRight size={13} /></button>)}</div> : <p className="details-inline-empty">Link another page from its property above or mention it with double brackets.</p>}</section>
+            <section className="details-tags"><div className="details-title"><span>Tags</span><em>{activeNote.tags.length}</em></div><div className="details-tag-list">
+              {activeNote.tags.map((tag) => <span className="tag-pill" key={tag}>#{tag}<button aria-label={`Remove tag ${tag}`} onClick={() => updateNoteById(activeNote.id, { tags: activeNote.tags.filter((item) => item !== tag) }, true)}><X size={10} /></button></span>)}
+              {addingTag ? <form onSubmit={submitTag}><input ref={tagInputRef} value={tagDraft} onChange={(event) => setTagDraft(event.target.value)} onBlur={() => !tagDraft && setAddingTag(false)} placeholder="New tag" aria-label="New tag" /></form> : <button className="details-add-button" onClick={() => setAddingTag(true)}><Plus size={12} /> Add tag</button>}
+            </div></section>
+            <section className="details-page-links"><div className="details-title"><span>Page links</span><em>{outgoingLinks.length}</em></div>
+              {outgoingLinks.length ? <div className="details-link-list">{outgoingLinks.map((note) => {
+                const inline = activeNote.links.some((link) => link.targetId === note.id && link.kind === "inline");
+                return <div className="details-link-row" key={note.id} title={inline ? `Bound to [[${activeNote.links.find((link) => link.targetId === note.id && link.kind === "inline")?.label}]] by page ID` : "Bound by page ID"}><button className="details-link-open" onClick={() => selectNote(note.id)}><PageIcon note={note} size={15} /><span>{note.title}</span><ArrowRight size={13} /></button>{manualLinkIds.has(note.id) && <button className="details-link-remove" aria-label={`Remove link to ${note.title}`} onClick={() => removePageLink(activeNote, note.id)}><X size={11} /></button>}</div>;
+              })}</div> : <p className="details-inline-empty">No linked pages yet. Mention one with double brackets or choose a page below.</p>}
+              <select className="details-link-select" aria-label="Link another page" value="" onChange={(event) => event.target.value && addPageLink(activeNote, event.target.value)}><option value="">+ Link a page</option>{activeNotes.filter((note) => note.id !== activeNote.id && !outgoingLinkIds.has(note.id)).sort((a, b) => a.title.localeCompare(b.title)).map((note) => <option value={note.id} key={note.id}>{pageIconText(note.icon) ? `${pageIconText(note.icon)} ` : ""}{note.title}</option>)}</select>
+            </section>
             <section><div className="details-title"><span>Backlinks</span><em>{backlinks.length}</em></div>{backlinks.length ? <div className="backlinks-list">{backlinks.map((note) => <button key={note.id} onClick={() => selectNote(note.id)}><PageIcon note={note} size={15} /><span>{note.title}</span><ArrowRight size={13} /></button>)}</div> : <div className="details-empty"><span className="linked-rings"><i /><i /></span><p>No pages link here yet.</p><small>Mention with [[{activeNote.title}]]</small></div>}</section>
             <section className="details-properties"><div className="details-title"><span>Properties</span></div><dl><div><dt>Created</dt><dd>{dateLabel(activeNote.createdAt)}</dd></div><div><dt>Edited</dt><dd>{relativeTime(activeNote.updatedAt)}</dd></div><div><dt>Words</dt><dd>{activeNote.body.trim().split(/\s+/).filter(Boolean).length}</dd></div><div><dt>Identity</dt><dd title={activeNote.id}>Stable through moves</dd></div>{activeNote.aliases.length > 0 && <div><dt>Former names</dt><dd title={activeNote.aliases.join(", ")}>{activeNote.aliases.length}</dd></div>}<div><dt>Storage</dt><dd>Local vault</dd></div></dl></section>
             <section className="editor-capabilities"><div className="details-title"><span>Editor blocks</span></div><p>Text, headings, lists, to-dos, callouts, code, LaTeX, dividers, tables, database tables, kanban, images, attachments, bookmarks, and embeds.</p><small>Type <kbd>/</kbd> on an empty line.</small></section>
@@ -917,7 +885,6 @@ function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote,
       >
         {children.length ? <button className="organizer-disclosure" aria-label={`${isExpanded ? "Collapse" : "Expand"} ${note.title}`} aria-expanded={isExpanded} onClick={() => togglePage(note.id)}><CaretRight className={isExpanded ? "expanded" : ""} size={12} weight="bold" /></button> : <span className="organizer-disclosure-spacer" />}
         <button className="organizer-page-link" draggable onDragStart={(event) => beginDrag(event, note.id)} onDragEnd={clearDrag} onClick={() => onOpenNote(note.id)} title={`${note.title} · Drag above, below, or into another page`}><PageIcon note={note} size={16} weight={children.length ? "fill" : "regular"} /><span>{note.title}</span></button>
-        <button className="organizer-drag-handle" draggable aria-grabbed={draggedId === note.id} onDragStart={(event) => beginDrag(event, note.id)} onDragEnd={clearDrag} aria-label={`Drag ${note.title}`} title="Drag to reorder or nest page"><DotsSixVertical size={14} weight="bold" /></button>
         <button className="organizer-add-child" aria-label={`Add a page inside ${note.title}`} title="Add child page" onClick={() => { setExpanded((current) => new Set(current).add(note.id)); onCreatePage(note.id); }}><Plus size={12} weight="bold" /></button>
       </div>
       {isExpanded && children.length > 0 && <div className="organizer-children" role="group" aria-label={`${note.title} child pages`}>{children.map((child) => renderPage(child, depth + 1))}</div>}
