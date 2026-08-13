@@ -710,7 +710,7 @@ export default function HyperionApp() {
         <div className="content-shell">
           <section className="main-content">
             {view === "note" && activeNote ? (
-              <article className="note-workspace">
+              <article className={`note-workspace${activeNote.icon ? " has-page-icon" : ""}`}>
                 <div className={`page-icon-row width-${preferences.editorWidth}`}>
                   <PageIconPicker key={activeNote.id} note={activeNote} onChange={(icon) => updateNoteById(activeNote.id, { icon }, true)} />
                 </div>

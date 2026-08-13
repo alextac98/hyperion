@@ -69,6 +69,8 @@ test("includes rich local editing and organization", async () => {
   assert.match(appSource, /--organizer-drop-inset/);
   assert.match(appSource, /PAGE_ORDER_STEP/);
   assert.match(appSource, /PageIconPicker/);
+  assert.match(appSource, /note-workspace.*has-page-icon/);
+  assert.match(iconPickerSource, /note\.icon \? <PageIcon note=\{note\} size=\{38\}/);
   assert.match(iconPickerSource, /EMOJI_GROUPS/);
   assert.match(iconPickerSource, /emojibase-data\/en\/compact\.json/);
   assert.match(iconPickerSource, /emojiForSkinTone/);
