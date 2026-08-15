@@ -32,10 +32,10 @@ and an Electron desktop app with a consistent bundled Chromium runtime.
 
 ## Development and builds
 
-- `npm run dev:web` starts the browser target.
-- `npm run dev:desktop` starts the Electron desktop target.
-- `npm run build:web` creates static web assets.
-- `npm run build:desktop` creates native desktop packages.
+- `pnpm dev:web` starts the browser target.
+- `pnpm dev:desktop` starts the Electron desktop target.
+- `pnpm build:web` creates static web assets.
+- `pnpm build:desktop` creates native desktop packages.
 
 See [development](docs/development.md), [building](docs/building.md), and
 [architecture](docs/architecture.md) for requirements and details.

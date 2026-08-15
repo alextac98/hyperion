@@ -108,8 +108,9 @@ test("includes rich local editing and organization", async () => {
 });
 
 test("configures web and desktop build targets", async () => {
-  const [packageSource, builderConfig, electronMain, preload, desktopRepository, desktopEditorStorage, buildingDocs] = await Promise.all([
+  const [packageSource, pnpmConfig, builderConfig, electronMain, preload, desktopRepository, desktopEditorStorage, buildingDocs] = await Promise.all([
     readFile(new URL("package.json", projectRoot), "utf8"),
+    readFile(new URL("pnpm-workspace.yaml", projectRoot), "utf8"),
     readFile(new URL("electron-builder.yml", projectRoot), "utf8"),
     readFile(new URL("electron/main.ts", projectRoot), "utf8"),
     readFile(new URL("electron/preload.cts", projectRoot), "utf8"),
@@ -133,9 +134,13 @@ test("configures web and desktop build targets", async () => {
   assert.match(desktopRepository, /implements KnowledgeRepository/);
   assert.match(desktopEditorStorage, /implements DocSource/);
   assert.match(desktopEditorStorage, /implements BlobSource/);
-  assert.match(buildingDocs, /npm run build:web/);
-  assert.match(buildingDocs, /npm run build:desktop/);
+  assert.equal(packageJson.packageManager, "pnpm@11.1.0");
+  assert.match(pnpmConfig, /allowBuilds:[^]*esbuild: true/);
+  assert.match(buildingDocs, /pnpm build:web/);
+  assert.match(buildingDocs, /pnpm build:desktop/);
   assert.match(buildingDocs, /hyperion\.sqlite3/);
   assert.match(buildingDocs, /Electron/);
+  await access(new URL("pnpm-lock.yaml", projectRoot));
+  await assert.rejects(access(new URL("package-lock.json", projectRoot)));
   await assert.rejects(access(new URL("src-tauri", projectRoot)));
 });

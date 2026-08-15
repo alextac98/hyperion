@@ -1,18 +1,18 @@
 # Building Hyperion
 
-Both deliverables use the same source under `app/`. Run `npm install` before
+Both deliverables use the same source under `app/`. Run `pnpm install` before
 the first build.
 
 ## Web app
 
 ```sh
-npm run build:web
+pnpm build:web
 ```
 
 The deployable static files are written to `dist/`. Preview them locally with:
 
 ```sh
-npm run preview
+pnpm preview
 ```
 
 The web build is static and has no backend. Knowledge records, editor documents,
@@ -23,7 +23,7 @@ and assets remain in that browser's IndexedDB storage.
 Install the platform's normal packaging tools, then run:
 
 ```sh
-npm run build:desktop
+pnpm build:desktop
 ```
 
 The command builds the shared web assets and Electron processes, then uses
@@ -41,9 +41,9 @@ To create an unpacked application for quick local inspection, first build the
 web and Electron code and then ask electron-builder for a directory target:
 
 ```sh
-npm run build:web
-npm run build:electron
-npx electron-builder --dir
+pnpm build:web
+pnpm build:electron
+pnpm exec electron-builder --dir
 ```
 
 ## Desktop storage behavior
@@ -69,10 +69,10 @@ does not delete either database.
 Before packaging a release, run:
 
 ```sh
-npm test
-npm run lint
-npm run check:desktop
-npm run test:desktop
+pnpm test
+pnpm lint
+pnpm check:desktop
+pnpm test:desktop
 ```
 
 For a signed release, also install the produced package on a clean OS account,
