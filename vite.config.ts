@@ -45,6 +45,7 @@ function transformBlocksuiteDecorators() {
 }
 
 export default defineConfig({
+  base: "./",
   plugins: [
     transformBlocksuiteDecorators(),
     vanillaExtractPlugin({

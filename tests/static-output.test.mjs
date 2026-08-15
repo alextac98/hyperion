@@ -8,27 +8,37 @@ test("builds the local Hyperion application", async () => {
   const html = await readFile(new URL("dist/index.html", projectRoot), "utf8");
   assert.match(html, /<title>Hyperion — Personal Knowledge Base<\/title>/i);
   assert.match(html, /id="root"/);
+  assert.match(html, /(?:src|href)="\.\/assets\//);
   assert.doesNotMatch(html, /sign.?in|account|cloud sync/i);
 });
 
 test("keeps all knowledge persistence on the device", async () => {
-  const [databaseSource, appSource] = await Promise.all([
+  const [databaseSource, appSource, runtimeSource, desktopSource] = await Promise.all([
     readFile(new URL("app/lib/local-database.ts", projectRoot), "utf8"),
     readFile(new URL("app/HyperionApp.tsx", projectRoot), "utf8"),
+    readFile(new URL("app/platform/runtime.ts", projectRoot), "utf8"),
+    readFile(new URL("electron/database.ts", projectRoot), "utf8"),
   ]);
 
   assert.match(databaseSource, /indexedDB\.open/);
   assert.match(databaseSource, /KnowledgeRepository/);
+  assert.match(runtimeSource, /ElectronKnowledgeRepository/);
+  assert.match(runtimeSource, /IndexedDbKnowledgeRepository/);
+  assert.match(desktopSource, /CREATE TABLE IF NOT EXISTS notes/);
+  assert.match(desktopSource, /CREATE TABLE IF NOT EXISTS editor_updates/);
+  assert.match(desktopSource, /CREATE TABLE IF NOT EXISTS assets/);
+  assert.match(desktopSource, /\.config.*hyperion/);
   assert.match(appSource, /No account or cloud sync/i);
   assert.doesNotMatch(appSource, /sign.?in|sign.?out|fetch\s*\(|XMLHttpRequest|new WebSocket/i);
   await assert.rejects(access(new URL(".openai/hosting.json", projectRoot)));
 });
 
 test("includes rich local editing and organization", async () => {
-  const [editorSource, appSource, databaseSource, linksSource, iconPickerSource, emojiCatalogSource, globalStyles] = await Promise.all([
+  const [editorSource, appSource, databaseSource, runtimeSource, linksSource, iconPickerSource, emojiCatalogSource, globalStyles] = await Promise.all([
     readFile(new URL("app/editor/blocksuite-runtime.ts", projectRoot), "utf8"),
     readFile(new URL("app/HyperionApp.tsx", projectRoot), "utf8"),
     readFile(new URL("app/lib/local-database.ts", projectRoot), "utf8"),
+    readFile(new URL("app/platform/runtime.ts", projectRoot), "utf8"),
     readFile(new URL("app/lib/page-links.ts", projectRoot), "utf8"),
     readFile(new URL("app/components/PageIconPicker.tsx", projectRoot), "utf8"),
     readFile(new URL("node_modules/emojibase-data/en/compact.json", projectRoot), "utf8"),
@@ -39,7 +49,8 @@ test("includes rich local editing and organization", async () => {
 
   assert.match(editorSource, /getInternalViewExtensions/);
   assert.match(editorSource, /affine:table/);
-  assert.match(editorSource, /IndexedDBDocSource/);
+  assert.match(editorSource, /platformRuntime\.createEditorStorage/);
+  assert.match(runtimeSource, /IndexedDBDocSource/);
   assert.match(editorSource, /event\.key\.toLowerCase\(\) !== "a"/);
   assert.match(editorSource, /scope\.selection\.create\(TextSelection/);
   assert.match(editorSource, /event\.stopImmediatePropagation\(\)/);
@@ -94,4 +105,37 @@ test("includes rich local editing and organization", async () => {
   assert.match(appSource, /SettingsDialog/);
   assert.match(globalStyles, /::selection\s*{[^}]*color:\s*var\(--text\)/s);
   assert.match(globalStyles, /::selection\s*{[^}]*-webkit-text-fill-color:\s*var\(--text\)/s);
+});
+
+test("configures web and desktop build targets", async () => {
+  const [packageSource, builderConfig, electronMain, preload, desktopRepository, desktopEditorStorage, buildingDocs] = await Promise.all([
+    readFile(new URL("package.json", projectRoot), "utf8"),
+    readFile(new URL("electron-builder.yml", projectRoot), "utf8"),
+    readFile(new URL("electron/main.ts", projectRoot), "utf8"),
+    readFile(new URL("electron/preload.cts", projectRoot), "utf8"),
+    readFile(new URL("app/platform/desktop/electron-repository.ts", projectRoot), "utf8"),
+    readFile(new URL("app/platform/desktop/electron-editor-storage.ts", projectRoot), "utf8"),
+    readFile(new URL("docs/building.md", projectRoot), "utf8"),
+  ]);
+  const packageJson = JSON.parse(packageSource);
+
+  assert.equal(packageJson.scripts["dev:web"], "vite");
+  assert.match(packageJson.scripts["dev:desktop"], /electron/);
+  assert.match(packageJson.scripts["build:desktop"], /electron-builder/);
+  assert.equal(packageJson.main, "dist-electron/main.js");
+  assert.match(builderConfig, /dist\/\*\*\/\*/);
+  assert.match(electronMain, /contextIsolation: true/);
+  assert.match(electronMain, /nodeIntegration: false/);
+  assert.match(electronMain, /sandbox: true/);
+  assert.match(electronMain, /isTrustedRendererUrl/);
+  assert.match(preload, /contextBridge\.exposeInMainWorld/);
+  assert.doesNotMatch(preload, /exposeInMainWorld\(\s*["']hyperionDesktop["']\s*,\s*ipcRenderer/);
+  assert.match(desktopRepository, /implements KnowledgeRepository/);
+  assert.match(desktopEditorStorage, /implements DocSource/);
+  assert.match(desktopEditorStorage, /implements BlobSource/);
+  assert.match(buildingDocs, /npm run build:web/);
+  assert.match(buildingDocs, /npm run build:desktop/);
+  assert.match(buildingDocs, /hyperion\.sqlite3/);
+  assert.match(buildingDocs, /Electron/);
+  await assert.rejects(access(new URL("src-tauri", projectRoot)));
 });

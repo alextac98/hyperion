@@ -1,42 +1,78 @@
 # Architecture
 
-Hyperion is browser-first and local-first. It keeps knowledge data on the
-user's device and does not depend on an application server or remote database.
+Hyperion is a local-first application with a shared React product surface and
+explicit platform adapters. The web and desktop builds use the same editor,
+navigation, domain records, backup format, and repository contract. Platform
+code decides how those records and BlockSuite documents are persisted.
+
+```text
+app/                         shared product UI and domain behavior
+├── editor/                  shared BlockSuite editor integration
+├── lib/local-database.ts    records, repository contract, web IndexedDB adapter
+└── platform/
+    ├── runtime.ts           web/desktop composition root and capabilities
+    └── desktop/             Electron repository and editor-storage clients
+
+electron/                    desktop-only trusted boundary
+├── main.ts                  window, IPC allowlist, dialogs, native services
+├── preload.cts              narrow context-isolated renderer bridge
+└── database.ts              SQLite, storage migration, documents, and assets
+```
+
+The composition root is intentionally small. A later mobile shell can provide
+the same `KnowledgeRepository`, editor document source, blob source, and
+capability services without forking `HyperionApp`.
+
+## Platform behavior
+
+| Concern | Web | Desktop |
+| --- | --- | --- |
+| Shell | Browser/Vite | Electron with bundled Chromium |
+| Knowledge records | IndexedDB | SQLite |
+| BlockSuite/Yjs state | IndexedDB | SQLite BLOB rows |
+| Embedded assets | IndexedDB | SQLite BLOB rows |
+| Storage location | Browser-managed | User-selectable folder |
+| Native local AI | Unavailable | Native capability boundary |
+
+`app/platform/runtime.ts` is the only target-selection point. It detects the
+Electron preload bridge and supplies the appropriate repository and editor sources.
+Shared UI code must use that runtime or an injected interface instead of
+calling native APIs directly.
+
+## Desktop data
+
+The native layer creates `hyperion.sqlite3` in `~/.config/hyperion` by default.
+It contains vaults, notes, collections, preferences, Yjs updates, and assets.
+The Data settings screen can select another folder. When the target has no
+Hyperion database, the native layer copies the existing database with SQLite's
+online backup API before switching. When the target already contains
+`hyperion.sqlite3`, Hyperion opens that existing database. The selected folder
+is remembered in `~/.config/hyperion/storage-location`.
+
+SQLite access stays in Electron's main process. The renderer receives typed
+records or base64-encoded document and asset payloads through an explicit
+preload API; it never receives arbitrary filesystem, Node.js, or SQL access.
+Context isolation and Chromium's renderer sandbox remain enabled, navigation
+is restricted to Hyperion's own content, and IPC calls validate their sender.
 
 ## Data model
 
-All knowledge data is accessed through the `KnowledgeRepository` interface in
-`app/lib/local-database.ts`. The browser implementation stores vault metadata
-in IndexedDB. BlockSuite stores each vault's Yjs editor documents and local
-assets in separate IndexedDB databases.
+All knowledge data uses the `KnowledgeRepository` interface in
+`app/lib/local-database.ts`. Pages form the Organize hierarchy through
+`NoteRecord.parentId`, while `NoteRecord.sortOrder` preserves sibling order.
+Permanent note IDs keep page links stable through moves and renames. Previous
+titles live in `aliases`, and inline and manual links both target IDs.
 
-Pages form the Organize hierarchy through `NoteRecord.parentId`, while
-`NoteRecord.sortOrder` preserves user-defined sibling order. A page is both
-editable content and a potential parent, so the tree does not need a separate
-folder entity. Tree rows accept drops before, inside, or after another page.
-Legacy collections remain in backups for compatibility and are converted to
-editable parent pages during the IndexedDB v4 migration. IndexedDB v6 adds
-persisted page order for existing vaults.
+The desktop tables keep an indexed ID, vault ID, and sorting fields alongside
+the complete JSON record. This preserves backup compatibility while allowing
+schema-independent record evolution. Editor documents remain Yjs updates, so
+the editor semantics are identical across targets.
 
-`NoteRecord.icon` is optional display metadata attached to the page itself. It
-can hold either a Unicode emoji or a named, colored interface icon, and travels
-with the page when the hierarchy or title changes. It is rendered in the
-Organize tree, page links, search, and library views. IndexedDB v8 upgrades the
-original string-only icon field to structured data, and vault backup format v5
-preserves both icon variants across export and import. The emoji picker reads
-the localized Unicode Emoji 17 catalog from `emojibase-data`, including the
-full macOS category set, searchable CLDR names and keywords, flags, joined
-sequences, and skin-tone variants.
+## Desktop-only capabilities
 
-Page identity is independent from both hierarchy and display name. The
-permanent `NoteRecord.id` is the target for stored page links, `parentId` can
-change whenever a page is dragged, and `title` can change without rewriting
-links. Previous stable titles are retained in `aliases` so old names remain
-searchable and newly encountered wiki references can still be resolved. Inline
-`[[Page name]]` references are reconciled to `PageLinkRecord.targetId` values;
-manual quick links use the same target IDs. IndexedDB v5 adds these identity
-fields, and vault backup format v3 remaps both parent and link IDs on import.
-
-The repository boundary can support other storage implementations in the
-future. For example, a desktop shell could provide SQLite and filesystem
-adapters without changing the editor and navigation surfaces.
+`platformRuntime.capabilities` distinguishes native features from portable
+features. A native local-AI service boundary and status command now exist so a
+future speech-to-text or text-to-speech provider can run outside the webview
+without changing shared UI code. No model or voice engine is bundled yet; the
+status API reports that honestly. Add providers behind this native boundary,
+not directly inside React components.

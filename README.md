@@ -1,6 +1,8 @@
 # Hyperion
 
-Hyperin is intended to be a personal knowledge base for your ideas, notes, meeting transcriptions, and more. It is currently under active development, so only has a web target (desktop app coming soon). Please come back for the first usable release!
+Hyperion is a local-first personal knowledge base for ideas, notes, meeting
+transcriptions, and more. It ships from one shared React codebase as a web app
+and an Electron desktop app with a consistent bundled Chromium runtime.
 
 ## Current capabilities
 
@@ -9,7 +11,9 @@ Hyperin is intended to be a personal knowledge base for your ideas, notes, meeti
   kanban, images, attachments, bookmarks, and embeds
 - Independent local vaults with switching, creation, deletion, JSON backup,
   and restore
-- Notes and editor documents stored in IndexedDB with automatic local saving
+- Browser-local IndexedDB storage for the web target
+- A desktop SQLite database containing notes, rich editor documents, and assets,
+  stored in `~/.config/hyperion` by default with a user-selectable location
 - A resizable sidebar with a collapsible Organize tree where every page can
   contain child pages, with drag-and-drop nesting and persistent sibling order
 - AFFiNE-style page icons with the complete Unicode Emoji 17 catalog used by
@@ -23,7 +27,18 @@ Hyperin is intended to be a personal knowledge base for your ideas, notes, meeti
 - Working vault, editor, appearance, and data settings
 - Keyboard shortcuts for search (`Command/Ctrl + K`) and new notes
 - Responsive light and dark interfaces
-- A repository boundary that can later support a desktop SQLite adapter
+- Platform repository and capability boundaries designed for future mobile and
+  native local-AI voice integrations
+
+## Development and builds
+
+- `npm run dev:web` starts the browser target.
+- `npm run dev:desktop` starts the Electron desktop target.
+- `npm run build:web` creates static web assets.
+- `npm run build:desktop` creates native desktop packages.
+
+See [development](docs/development.md), [building](docs/building.md), and
+[architecture](docs/architecture.md) for requirements and details.
 
 ## Attributions
 

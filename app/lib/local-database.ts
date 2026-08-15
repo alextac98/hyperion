@@ -116,7 +116,7 @@ const VAULTS_STORE = "vaults";
 const COLLECTIONS_STORE = "collections";
 const PREFERENCES_STORE = "preferences";
 
-const DEFAULT_PREFERENCES: Omit<VaultPreferences, "vaultId"> = {
+export const DEFAULT_PREFERENCES: Omit<VaultPreferences, "vaultId"> = {
   theme: "system",
   editorFontSize: 17,
   editorWidth: "comfortable",
@@ -129,7 +129,7 @@ function timestamp() {
   return new Date().toISOString();
 }
 
-function makeDefaultVault(): VaultRecord {
+export function makeDefaultVault(): VaultRecord {
   const now = timestamp();
   return {
     id: DEFAULT_VAULT_ID,
@@ -141,7 +141,7 @@ function makeDefaultVault(): VaultRecord {
   };
 }
 
-function makeSeedCollections(): CollectionRecord[] {
+export function makeSeedCollections(): CollectionRecord[] {
   const now = timestamp();
   return [
     { id: "knowledge-garden", vaultId: DEFAULT_VAULT_ID, name: "Knowledge garden", color: "#6f63d9", createdAt: now, updatedAt: now },
@@ -150,7 +150,7 @@ function makeSeedCollections(): CollectionRecord[] {
   ];
 }
 
-function makeSeedNotes(): NoteRecord[] {
+export function makeSeedNotes(): NoteRecord[] {
   const now = Date.now();
   const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
   return [
@@ -362,7 +362,7 @@ async function getAll<T>(database: IDBDatabase, storeName: string): Promise<T[]>
   return requestResult(transaction.objectStore(storeName).getAll() as IDBRequest<T[]>);
 }
 
-class IndexedDbKnowledgeRepository implements KnowledgeRepository {
+export class IndexedDbKnowledgeRepository implements KnowledgeRepository {
   async initialize(): Promise<void> {
     const database = await openDatabase();
     const transaction = database.transaction(
@@ -506,8 +506,6 @@ class IndexedDbKnowledgeRepository implements KnowledgeRepository {
     await transactionComplete(transaction);
   }
 }
-
-export const knowledgeRepository: KnowledgeRepository = new IndexedDbKnowledgeRepository();
 
 export function createBlankNote(vaultId: string, parentId: string | null = null): NoteRecord {
   const now = timestamp();
