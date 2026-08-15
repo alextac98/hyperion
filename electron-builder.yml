@@ -1,0 +1,33 @@
+appId: app.hyperion.desktop
+productName: Hyperion
+asar: true
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - "!node_modules/**/*"
+
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+  target:
+    - dmg
+    - zip
+
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+
+linux:
+  category: Office
+  icon: build/icon.png
+  target:
+    - AppImage
+
+npmRebuild: false

@@ -6,9 +6,9 @@ import { TableDataManager } from "@blocksuite/affine/blocks/table";
 import type { Store } from "@blocksuite/affine/store";
 import { Text } from "@blocksuite/affine/store";
 import { TestWorkspace } from "@blocksuite/affine/store/test";
-import { IndexedDBBlobSource, IndexedDBDocSource } from "@blocksuite/affine/sync";
 import { PageDraggingAreaViewExtension } from "@blocksuite/affine/widgets/page-dragging-area/view";
 import * as Y from "yjs";
+import { platformRuntime } from "../platform/runtime";
 
 const storeManager = new StoreExtensionManager(getInternalStoreExtensions());
 const viewManager = new ViewExtensionManager(
@@ -48,15 +48,12 @@ function repairDuplicateRoots(store: Store) {
   store.resetHistory();
 }
 
-function databaseName(vaultId: string) {
-  return `hyperion-blocks-${vaultId}`;
-}
-
 async function createWorkspace(vaultId: string) {
+  const storage = platformRuntime.createEditorStorage(vaultId);
   const workspace = new TestWorkspace({
     id: `hyperion:${vaultId}`,
-    docSources: { main: new IndexedDBDocSource(databaseName(vaultId)) },
-    blobSources: { main: new IndexedDBBlobSource(`hyperion-assets-${vaultId}`) },
+    docSources: { main: storage.doc },
+    blobSources: { main: storage.blobs },
   });
   workspace.storeExtensions = storeManager.get("store");
   workspace.start();
@@ -307,6 +304,7 @@ export async function importEditorDocuments(vaultId: string, documents: Record<s
 export async function removeEditorDocument(vaultId: string, noteId: string) {
   const workspace = await getVaultWorkspace(vaultId);
   if (workspace.getDoc(noteId)) workspace.removeDoc(noteId);
+  await platformRuntime.deleteEditorDocument(vaultId, noteId);
   storePromises.delete(`${vaultId}:${noteId}`);
 }
 
