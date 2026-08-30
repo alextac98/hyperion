@@ -1,16 +1,51 @@
 import react from "@vitejs/plugin-react";
 import { vanillaExtractPlugin } from "@vanilla-extract/vite-plugin";
 import { defineConfig } from "vite";
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import ts from "typescript";
 
-const blocksuitePackages = readdirSync(
-  fileURLToPath(new URL("./node_modules/@blocksuite/", import.meta.url)),
-  { withFileTypes: true },
-)
-  .filter(entry => entry.isDirectory())
-  .map(entry => `@blocksuite/${entry.name}`);
+const nodeModulesDirectory = fileURLToPath(new URL("./node_modules/", import.meta.url));
+
+function readBlocksuitePackageNames(scopeDirectory: string) {
+  if (!existsSync(scopeDirectory)) {
+    return [];
+  }
+
+  return readdirSync(scopeDirectory, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() || entry.isSymbolicLink())
+    .map(entry => `@blocksuite/${entry.name}`);
+}
+
+function findBlocksuitePackages() {
+  const packageNames = new Set(
+    readBlocksuitePackageNames(join(nodeModulesDirectory, "@blocksuite")),
+  );
+  const pnpmVirtualStore = join(nodeModulesDirectory, ".pnpm");
+
+  if (existsSync(pnpmVirtualStore)) {
+    for (const entry of readdirSync(pnpmVirtualStore, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const scopeDirectory = join(
+        pnpmVirtualStore,
+        entry.name,
+        "node_modules",
+        "@blocksuite",
+      );
+      for (const packageName of readBlocksuitePackageNames(scopeDirectory)) {
+        packageNames.add(packageName);
+      }
+    }
+  }
+
+  return [...packageNames].sort();
+}
+
+const blocksuitePackages = findBlocksuitePackages();
 
 function transformBlocksuiteDecorators() {
   return {
