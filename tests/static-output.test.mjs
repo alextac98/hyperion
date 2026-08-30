@@ -108,9 +108,10 @@ test("includes rich local editing and organization", async () => {
 });
 
 test("configures web and desktop build targets", async () => {
-  const [packageSource, pnpmConfig, builderConfig, electronMain, preload, desktopRepository, desktopEditorStorage, buildingDocs] = await Promise.all([
+  const [packageSource, pnpmConfig, viteConfig, builderConfig, electronMain, preload, desktopRepository, desktopEditorStorage, buildingDocs] = await Promise.all([
     readFile(new URL("package.json", projectRoot), "utf8"),
     readFile(new URL("pnpm-workspace.yaml", projectRoot), "utf8"),
+    readFile(new URL("vite.config.ts", projectRoot), "utf8"),
     readFile(new URL("electron-builder.yml", projectRoot), "utf8"),
     readFile(new URL("electron/main.ts", projectRoot), "utf8"),
     readFile(new URL("electron/preload.cts", projectRoot), "utf8"),
@@ -136,6 +137,20 @@ test("configures web and desktop build targets", async () => {
   assert.match(desktopEditorStorage, /implements BlobSource/);
   assert.equal(packageJson.packageManager, "pnpm@11.1.0");
   assert.match(pnpmConfig, /allowBuilds:[^]*esbuild: true/);
+  assert.match(viteConfig, /entry\.isSymbolicLink\(\)/);
+  assert.match(viteConfig, /nodeModulesDirectory, "\.pnpm"/);
+  for (const dependency of [
+    "bind-event-listener",
+    "bytes",
+    "debug",
+    "deepmerge",
+    "extend",
+    "lodash.ismatch",
+    "picocolors",
+  ]) {
+    assert.ok(packageJson.devDependencies[dependency]);
+    assert.match(viteConfig, new RegExp(`include: \\[[^\\]]*${dependency}`));
+  }
   assert.match(buildingDocs, /pnpm build:web/);
   assert.match(buildingDocs, /pnpm build:desktop/);
   assert.match(buildingDocs, /hyperion\.sqlite3/);
