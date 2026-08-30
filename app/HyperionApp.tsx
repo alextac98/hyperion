@@ -71,6 +71,7 @@ type Composer =
 type PageDropPlacement = "before" | "inside" | "after";
 type PageDropTarget = { noteId: string | null; placement: PageDropPlacement };
 type PageContextMenuState = { noteId: string; x: number; y: number };
+type PageSearchMatch = { range: Range; element: HTMLElement };
 const PAGE_DRAG_TYPE = "application/x-hyperion-page";
 const PAGE_ORDER_STEP = 1_000;
 
@@ -120,6 +121,56 @@ function dateLabel(isoDate: string) {
 
 function notePreview(note: NoteRecord) {
   return note.body.replace(/\s+/g, " ").trim() || "Empty page";
+}
+
+function findTextMatches(root: HTMLElement, query: string): PageSearchMatch[] {
+  const needle = query.trim().toLocaleLowerCase();
+  if (!needle) return [];
+  const matches: PageSearchMatch[] = [];
+
+  const visit = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent ?? "";
+      const normalized = text.toLocaleLowerCase();
+      let index = normalized.indexOf(needle);
+      while (index >= 0) {
+        const element = node.parentElement;
+        if (element) {
+          const range = document.createRange();
+          range.setStart(node, index);
+          range.setEnd(node, index + needle.length);
+          matches.push({ range, element });
+        }
+        index = normalized.indexOf(needle, index + needle.length);
+      }
+      return;
+    }
+    if (node instanceof Element && node.shadowRoot) visit(node.shadowRoot);
+    node.childNodes.forEach(visit);
+  };
+
+  visit(root);
+  return matches;
+}
+
+function updatePageSearchHighlights(matches: PageSearchMatch[], activeIndex: number) {
+  if (!("highlights" in CSS) || typeof Highlight === "undefined") return;
+  if (!document.getElementById("hyperion-page-search-highlights")) {
+    const styles = document.createElement("style");
+    styles.id = "hyperion-page-search-highlights";
+    styles.textContent = "::highlight(hyperion-page-search){color:inherit;background:rgb(240 201 77 / 55%)}::highlight(hyperion-page-search-active){color:inherit;background:#f0b429}";
+    document.head.append(styles);
+  }
+  CSS.highlights.delete("hyperion-page-search");
+  CSS.highlights.delete("hyperion-page-search-active");
+  if (!matches.length) return;
+  CSS.highlights.set("hyperion-page-search", new Highlight(...matches.map(({ range }) => range)));
+  const active = matches[activeIndex];
+  if (active) CSS.highlights.set("hyperion-page-search-active", new Highlight(active.range));
+}
+
+function revealPageSearchMatch(match: PageSearchMatch) {
+  match.element.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
 function comparePageOrder(first: NoteRecord, second: NoteRecord) {
@@ -188,6 +239,10 @@ export default function HyperionApp() {
   const [favoritesOpen, setFavoritesOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [pageSearchOpen, setPageSearchOpen] = useState(false);
+  const [pageSearchQuery, setPageSearchQuery] = useState("");
+  const [pageSearchIndex, setPageSearchIndex] = useState(0);
+  const [pageSearchCount, setPageSearchCount] = useState(0);
   const [vaultMenuOpen, setVaultMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -199,6 +254,8 @@ export default function HyperionApp() {
   const [editorStore, setEditorStore] = useState<EditorStore | null>(null);
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const pageSearchRef = useRef<HTMLInputElement>(null);
+  const pageSearchMatchesRef = useRef<PageSearchMatch[]>([]);
   const importRef = useRef<HTMLInputElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const composerInputRef = useRef<HTMLInputElement>(null);
@@ -321,6 +378,8 @@ export default function HyperionApp() {
     setTagDraft("");
     setEditorStore(null);
     setPageContextMenu(null);
+    setPageSearchOpen(false);
+    setPageSearchQuery("");
     localStorage.setItem(`hyperion:last-note:${vaultId}`, id);
     if (window.innerWidth <= 720) setSidebarOpen(false);
   }, [vaultId]);
@@ -339,12 +398,29 @@ export default function HyperionApp() {
     setSearchQuery("");
   }, []);
 
+  const closePageSearch = useCallback(() => {
+    setPageSearchOpen(false);
+    setPageSearchQuery("");
+    setPageSearchCount(0);
+    pageSearchMatchesRef.current = [];
+    if ("highlights" in CSS) {
+      CSS.highlights.delete("hyperion-page-search");
+      CSS.highlights.delete("hyperion-page-search-active");
+    }
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const command = event.metaKey || event.ctrlKey;
-      if (command && event.key.toLowerCase() === "k") {
+      if (command && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
+        closePageSearch();
         setSearchOpen(true);
+      }
+      if (command && !event.shiftKey && event.key.toLowerCase() === "f" && view === "note" && activeNote) {
+        event.preventDefault();
+        closeSearch();
+        setPageSearchOpen(true);
       }
       if (command && event.key.toLowerCase() === "n") {
         event.preventDefault();
@@ -352,6 +428,7 @@ export default function HyperionApp() {
       }
       if (event.key === "Escape") {
         closeSearch();
+        closePageSearch();
         setMoreOpen(false);
         setVaultMenuOpen(false);
         setPageContextMenu(null);
@@ -360,11 +437,38 @@ export default function HyperionApp() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeSearch, createNote]);
+  }, [activeNote, closePageSearch, closeSearch, createNote, view]);
 
   useEffect(() => {
     if (searchOpen) setTimeout(() => searchRef.current?.focus(), 30);
   }, [searchOpen]);
+
+  useEffect(() => {
+    if (pageSearchOpen) setTimeout(() => pageSearchRef.current?.focus(), 30);
+  }, [pageSearchOpen]);
+
+  useEffect(() => {
+    if (!pageSearchOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const editor = document.querySelector<HTMLElement>(".note-workspace .blocksuite-mount");
+      const matches = editor ? findTextMatches(editor, pageSearchQuery) : [];
+      pageSearchMatchesRef.current = matches;
+      setPageSearchCount(matches.length);
+      setPageSearchIndex(0);
+      updatePageSearchHighlights(matches, 0);
+      if (matches[0]) revealPageSearchMatch(matches[0]);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeId, pageSearchOpen, pageSearchQuery]);
+
+  const movePageSearch = (direction: 1 | -1) => {
+    const matches = pageSearchMatchesRef.current;
+    if (!matches.length) return;
+    const next = (pageSearchIndex + direction + matches.length) % matches.length;
+    setPageSearchIndex(next);
+    updatePageSearchHighlights(matches, next);
+    revealPageSearchMatch(matches[next]);
+  };
 
   useEffect(() => {
     if (addingTag) tagInputRef.current?.focus();
@@ -693,7 +797,7 @@ export default function HyperionApp() {
         <button className="new-note-button" onClick={() => void createNote()}><Plus size={17} weight="bold" /><span>New page</span><kbd>⌘ N</kbd></button>
 
         <nav className="primary-nav" aria-label="Knowledge base">
-          <button onClick={() => setSearchOpen(true)}><MagnifyingGlass size={18} /><span>Search</span><kbd>⌘ K</kbd></button>
+          <button onClick={() => { closePageSearch(); setSearchOpen(true); }}><MagnifyingGlass size={18} /><span>Search</span><kbd>⌘ ⇧ F</kbd></button>
           <button className={view === "home" ? "active" : ""} onClick={() => navigateView("home")}><House size={18} /><span>Home</span></button>
           <button className={view === "journal" ? "active" : ""} onClick={() => navigateView("journal")}><CalendarBlank size={18} /><span>Journal</span></button>
           <button className={view === "tags" ? "active" : ""} onClick={() => navigateView("tags")}><Tag size={18} /><span>Tags</span></button>
@@ -803,6 +907,8 @@ export default function HyperionApp() {
           </aside>}
         </div>
       </section>
+
+      {pageSearchOpen && <div className="page-search-bar" role="search" aria-label="Search this page"><MagnifyingGlass size={17} /><input ref={pageSearchRef} value={pageSearchQuery} onChange={(event) => setPageSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); movePageSearch(event.shiftKey ? -1 : 1); } }} placeholder="Find on this page…" aria-label="Find on this page" /><span className="page-search-count" aria-live="polite">{pageSearchQuery ? pageSearchCount ? `${pageSearchIndex + 1} of ${pageSearchCount}` : "No results" : ""}</span><button type="button" aria-label="Previous result" onClick={() => movePageSearch(-1)} disabled={!pageSearchCount}>↑</button><button type="button" aria-label="Next result" onClick={() => movePageSearch(1)} disabled={!pageSearchCount}>↓</button><button type="button" aria-label="Close page search" onClick={closePageSearch}><X size={15} /></button></div>}
 
       {searchOpen && <div className="dialog-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeSearch()}><section className="search-dialog" role="dialog" aria-modal="true" aria-label="Search Hyperion"><div className="search-field"><MagnifyingGlass size={21} /><input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchResults[0]) { selectNote(searchResults[0].id); closeSearch(); } }} placeholder="Search titles, text, tags, and page paths…" /><kbd>ESC</kbd></div><div className="search-caption"><span>{searchQuery ? `${searchResults.length} results` : "Recently edited"}</span><small>{activeVault?.name} · local</small></div><div className="search-results">{searchResults.map((note, index) => <button key={note.id} className={index === 0 ? "selected" : ""} onClick={() => { selectNote(note.id); closeSearch(); }}><span className="result-icon"><PageIcon note={note} size={18} /></span><span className="result-copy"><strong>{note.title}</strong><span>{notePreview(note)}</span></span><span className="result-meta">{relativeTime(note.updatedAt)}</span></button>)}{!searchResults.length && <div className="no-results"><MagnifyingGlass size={24} /><span>No matching pages</span></div>}</div><footer className="dialog-footer"><span><kbd>↵</kbd> Open</span><span className="dialog-brand"><HyperionMark small /> Hyperion</span></footer></section></div>}
 

@@ -1833,6 +1833,29 @@ kbd {
 
 @keyframes fade-in { from { opacity: 0; } }
 
+.page-search-bar {
+  position: fixed;
+  z-index: 90;
+  top: 58px;
+  right: 18px;
+  display: flex;
+  height: 42px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+
+.page-search-bar > svg { flex: 0 0 auto; color: var(--text-faint); }
+.page-search-bar input { width: min(240px, 38vw); border: 0; outline: 0; background: transparent; font-size: 12px; }
+.page-search-count { min-width: 58px; color: var(--text-faint); font-size: 9px; text-align: right; }
+.page-search-bar button { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 5px; background: transparent; color: var(--text-soft); font-size: 13px; }
+.page-search-bar button:hover:not(:disabled) { background: var(--panel); color: var(--text); }
+.page-search-bar button:disabled { opacity: 0.35; }
+
 .search-dialog {
   width: min(620px, 100%);
   overflow: hidden;
