@@ -56,7 +56,9 @@ test("includes rich local editing and organization", async () => {
   assert.match(editorSource, /event\.stopImmediatePropagation\(\)/);
   assert.match(editorSource, /extension !== PageDraggingAreaViewExtension/);
   assert.match(appSource, /New vault/);
-  assert.match(appSource, />Organize</);
+  assert.match(appSource, /function SidebarSectionHeading/);
+  assert.match(appSource, /label="Organize"/);
+  assert.match(appSource, /favoriteNotes\.length > 0 && <section/);
   assert.match(appSource, /organizer-children/);
   assert.doesNotMatch(appSource, /Parent page/);
   assert.match(appSource, /className="details-tags"/);
@@ -73,6 +75,11 @@ test("includes rich local editing and organization", async () => {
   assert.match(appSource, /PAGE_DRAG_TYPE/);
   assert.doesNotMatch(appSource, /organizer-drag-handle/);
   assert.match(appSource, /className="organizer-page-link" draggable/);
+  assert.match(appSource, /function PageContextMenu/);
+  assert.match(appSource, /onContextMenu=\{\(event\) => onContextMenu\(event, note\.id\)\}/);
+  assert.match(appSource, /className="archive" role="menuitem"[^>]*><Archive[^>]*><span>Archive<\/span>/);
+  assert.match(appSource, /className="danger" role="menuitem"[^>]*><Trash[^>]*><span>Trash<\/span>/);
+  assert.match(appSource, /function ArchiveView/);
   assert.match(appSource, /setData\(PAGE_DRAG_TYPE/);
   assert.match(appSource, /PageDropPlacement/);
   assert.match(appSource, /position < 0\.28/);
@@ -97,8 +104,9 @@ test("includes rich local editing and organization", async () => {
   assert.match(appSource, /Stable through moves/);
   assert.match(databaseSource, /targetId: string/);
   assert.match(databaseSource, /sortOrder: number/);
+  assert.match(databaseSource, /archived: boolean/);
   assert.match(databaseSource, /icon: PageIconRecord \| null/);
-  assert.match(databaseSource, /DATABASE_VERSION = 8/);
+  assert.match(databaseSource, /DATABASE_VERSION = 9/);
   assert.match(linksSource, /reconcilePageLinks/);
   assert.match(linksSource, /WIKI_LINK_PATTERN/);
   assert.match(appSource, /sidebarResizeRef/);

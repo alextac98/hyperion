@@ -65,6 +65,7 @@ export type NoteRecord = {
   sortOrder: number;
   collectionIds: string[];
   favorite: boolean;
+  archived: boolean;
   trashed: boolean;
   createdAt: string;
   updatedAt: string;
@@ -82,7 +83,7 @@ export type VaultPreferences = {
 
 export type VaultBundle = {
   format: "hyperion-vault";
-  version: 1 | 2 | 3 | 4 | 5;
+  version: 1 | 2 | 3 | 4 | 5 | 6;
   exportedAt: string;
   vault: VaultRecord;
   notes: NoteRecord[];
@@ -110,7 +111,7 @@ export interface KnowledgeRepository {
 export const DEFAULT_VAULT_ID = "hyperion";
 
 const DATABASE_NAME = "hyperion-local";
-const DATABASE_VERSION = 8;
+const DATABASE_VERSION = 9;
 const NOTES_STORE = "notes";
 const VAULTS_STORE = "vaults";
 const COLLECTIONS_STORE = "collections";
@@ -167,6 +168,7 @@ export function makeSeedNotes(): NoteRecord[] {
       sortOrder: 1_000,
       collectionIds: ["knowledge-garden"],
       favorite: true,
+      archived: false,
       trashed: false,
       createdAt: ago(240),
       updatedAt: ago(2),
@@ -184,6 +186,7 @@ export function makeSeedNotes(): NoteRecord[] {
       sortOrder: 1_000,
       collectionIds: ["knowledge-garden"],
       favorite: true,
+      archived: false,
       trashed: false,
       createdAt: ago(10_200),
       updatedAt: ago(46),
@@ -201,6 +204,7 @@ export function makeSeedNotes(): NoteRecord[] {
       sortOrder: 2_000,
       collectionIds: ["reading"],
       favorite: false,
+      archived: false,
       trashed: false,
       createdAt: ago(9_600),
       updatedAt: ago(190),
@@ -218,6 +222,7 @@ export function makeSeedNotes(): NoteRecord[] {
       sortOrder: 2_000,
       collectionIds: ["projects"],
       favorite: false,
+      archived: false,
       trashed: false,
       createdAt: ago(8_200),
       updatedAt: ago(380),
@@ -235,6 +240,7 @@ export function makeSeedNotes(): NoteRecord[] {
       sortOrder: 1_000,
       collectionIds: ["knowledge-garden", "reading"],
       favorite: false,
+      archived: false,
       trashed: false,
       createdAt: ago(7_000),
       updatedAt: ago(1_440),
@@ -252,6 +258,7 @@ export function makeSeedNotes(): NoteRecord[] {
       sortOrder: 3_000,
       collectionIds: [],
       favorite: false,
+      archived: false,
       trashed: false,
       createdAt: ago(60),
       updatedAt: ago(28),
@@ -301,7 +308,7 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!database.objectStoreNames.contains(PREFERENCES_STORE)) {
         database.createObjectStore(PREFERENCES_STORE, { keyPath: "vaultId" });
       }
-      if (transaction && (event as IDBVersionChangeEvent).oldVersion < 8) {
+      if (transaction && (event as IDBVersionChangeEvent).oldVersion < 9) {
         const notes = transaction.objectStore(NOTES_STORE);
         const collections = transaction.objectStore(COLLECTIONS_STORE);
         const oldVersion = (event as IDBVersionChangeEvent).oldVersion;
@@ -320,6 +327,7 @@ function openDatabase(): Promise<IDBDatabase> {
             parentId: legacy.parentId ?? (oldVersion < 4 && firstCollectionId ? `collection-page:${firstCollectionId}` : null),
             sortOrder: Number.isFinite(legacy.sortOrder) ? legacy.sortOrder : 0,
             collectionIds: legacy.collectionIds ?? [],
+            archived: legacy.archived ?? false,
           });
           cursor.continue();
         };
@@ -342,6 +350,7 @@ function openDatabase(): Promise<IDBDatabase> {
               sortOrder: 0,
               collectionIds: [],
               favorite: false,
+              archived: false,
               trashed: false,
               createdAt: collection.createdAt,
               updatedAt: collection.updatedAt,
@@ -446,6 +455,7 @@ export class IndexedDbKnowledgeRepository implements KnowledgeRepository {
         links: note.links ?? [],
         parentId: note.parentId ?? null,
         sortOrder: Number.isFinite(note.sortOrder) ? note.sortOrder : 0,
+        archived: note.archived ?? false,
       }))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
@@ -522,6 +532,7 @@ export function createBlankNote(vaultId: string, parentId: string | null = null)
     sortOrder: Date.now(),
     collectionIds: [],
     favorite: false,
+    archived: false,
     trashed: false,
     createdAt: now,
     updatedAt: now,
