@@ -73,6 +73,7 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
       links: note.links ?? [],
       parentId: note.parentId ?? null,
       sortOrder: Number.isFinite(note.sortOrder) ? note.sortOrder : 0,
+      archived: note.archived ?? false,
     }));
   }
 

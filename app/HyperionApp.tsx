@@ -20,6 +20,7 @@ import {
   ListBullets,
   MagnifyingGlass,
   Moon,
+  PencilSimple,
   Plus,
   Rows,
   SidebarSimple,
@@ -61,10 +62,15 @@ import {
   reconcilePageLinks,
 } from "./lib/page-links";
 
-type View = "note" | "home" | "all" | "journal" | "tags" | "trash";
-type Composer = { type: "vault"; value: string } | { type: "page"; value: string; parentId: string | null } | null;
+type View = "note" | "home" | "all" | "journal" | "tags" | "archive" | "trash";
+type Composer =
+  | { type: "vault"; value: string }
+  | { type: "page"; value: string; parentId: string | null }
+  | { type: "rename"; value: string; noteId: string }
+  | null;
 type PageDropPlacement = "before" | "inside" | "after";
 type PageDropTarget = { noteId: string | null; placement: PageDropPlacement };
+type PageContextMenuState = { noteId: string; x: number; y: number };
 const PAGE_DRAG_TYPE = "application/x-hyperion-page";
 const PAGE_ORDER_STEP = 1_000;
 
@@ -185,6 +191,7 @@ export default function HyperionApp() {
   const [vaultMenuOpen, setVaultMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [pageContextMenu, setPageContextMenu] = useState<PageContextMenuState | null>(null);
   const [tagDraft, setTagDraft] = useState("");
   const [addingTag, setAddingTag] = useState(false);
   const [composer, setComposer] = useState<Composer>(null);
@@ -203,8 +210,11 @@ export default function HyperionApp() {
 
   const activeVault = vaults.find((vault) => vault.id === vaultId);
   const activeNote = notes.find((note) => note.id === activeId);
-  const activeNotes = useMemo(() => notes.filter((note) => !note.trashed), [notes]);
+  const composerFocusKey = composer?.type === "rename" ? `rename:${composer.noteId}` : composer?.type ?? null;
+  const activeNotes = useMemo(() => notes.filter((note) => !note.trashed && !note.archived), [notes]);
+  const archivedNotes = useMemo(() => notes.filter((note) => note.archived && !note.trashed), [notes]);
   const trashedNotes = useMemo(() => notes.filter((note) => note.trashed), [notes]);
+  const pageContextNote = pageContextMenu ? activeNotes.find((note) => note.id === pageContextMenu.noteId) : undefined;
   const favoriteNotes = useMemo(() => activeNotes.filter((note) => note.favorite).slice(0, 5), [activeNotes]);
   const allTags = useMemo(() => {
     const counts = new Map<string, number>();
@@ -231,7 +241,8 @@ export default function HyperionApp() {
     setDetailsOpen(storedPreferences.showDetails);
     if (nextVaults) setVaults(nextVaults);
     const remembered = localStorage.getItem(`hyperion:last-note:${nextVaultId}`);
-    const target = hydratedNotes.find((note) => note.id === remembered && !note.trashed) ?? hydratedNotes.find((note) => !note.trashed);
+    const target = hydratedNotes.find((note) => note.id === remembered && !note.trashed && !note.archived)
+      ?? hydratedNotes.find((note) => !note.trashed && !note.archived);
     setActiveId(target?.id ?? "");
     setActiveTag(null);
     setView(target ? "note" : "home");
@@ -309,6 +320,7 @@ export default function HyperionApp() {
     setAddingTag(false);
     setTagDraft("");
     setEditorStore(null);
+    setPageContextMenu(null);
     localStorage.setItem(`hyperion:last-note:${vaultId}`, id);
     if (window.innerWidth <= 720) setSidebarOpen(false);
   }, [vaultId]);
@@ -342,6 +354,8 @@ export default function HyperionApp() {
         closeSearch();
         setMoreOpen(false);
         setVaultMenuOpen(false);
+        setPageContextMenu(null);
+        setComposer(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -357,8 +371,10 @@ export default function HyperionApp() {
   }, [addingTag]);
 
   useEffect(() => {
-    if (composer) composerInputRef.current?.focus();
-  }, [composer]);
+    if (!composerFocusKey) return;
+    composerInputRef.current?.focus();
+    if (composerFocusKey.startsWith("rename:")) composerInputRef.current?.select();
+  }, [composerFocusKey]);
 
   const applySidebarWidth = useCallback((width: number, persist = false) => {
     const nextWidth = clampSidebarWidth(width);
@@ -424,6 +440,7 @@ export default function HyperionApp() {
   const navigateView = (nextView: Exclude<View, "note">) => {
     setView(nextView);
     setMoreOpen(false);
+    setPageContextMenu(null);
     if (window.innerWidth <= 720) setSidebarOpen(false);
   };
 
@@ -438,12 +455,42 @@ export default function HyperionApp() {
 
   const duplicateNote = async (note: NoteRecord) => {
     const now = new Date().toISOString();
-    const duplicate: NoteRecord = { ...note, id: crypto.randomUUID(), title: `${note.title} copy`, aliases: [], sortOrder: note.sortOrder + 0.5, favorite: false, createdAt: now, updatedAt: now };
+    const duplicate: NoteRecord = { ...note, id: crypto.randomUUID(), title: `${note.title} copy`, aliases: [], sortOrder: note.sortOrder + 0.5, favorite: false, archived: false, trashed: false, createdAt: now, updatedAt: now };
     await duplicateEditorDocument(vaultId, note.id, duplicate.id);
     await knowledgeRepository.saveNote(duplicate);
     stableTitles.current[duplicate.id] = duplicate.title;
     setNotes((current) => [duplicate, ...current]);
     selectNote(duplicate.id);
+  };
+
+  const archiveNote = (note: NoteRecord) => {
+    updateNoteById(note.id, { archived: true, favorite: false }, true);
+    setPageContextMenu(null);
+    if (activeId === note.id) navigateView("archive");
+  };
+
+  const trashNote = (note: NoteRecord) => {
+    updateNoteById(note.id, { trashed: true, archived: false, favorite: false }, true);
+    setPageContextMenu(null);
+    if (activeId === note.id) navigateView("home");
+  };
+
+  const openPageContextMenu = (event: React.MouseEvent<HTMLElement>, noteId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const menuWidth = 218;
+    const menuHeight = 260;
+    const gutter = 8;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const anchorX = event.clientX || bounds.left + Math.min(bounds.width, 44);
+    const anchorY = event.clientY || bounds.top + bounds.height;
+    setMoreOpen(false);
+    setVaultMenuOpen(false);
+    setPageContextMenu({
+      noteId,
+      x: Math.max(gutter, Math.min(anchorX, window.innerWidth - menuWidth - gutter)),
+      y: Math.max(gutter, Math.min(anchorY, window.innerHeight - menuHeight - gutter)),
+    });
   };
 
   const permanentlyDelete = async (note: NoteRecord) => {
@@ -463,7 +510,7 @@ export default function HyperionApp() {
 
   const moveNote = useCallback((noteId: string, targetId: string | null, placement: PageDropPlacement = "inside") => {
     setNotes((current) => {
-      const active = current.filter((note) => !note.trashed);
+      const active = current.filter((note) => !note.trashed && !note.archived);
       const source = active.find((note) => note.id === noteId);
       const target = targetId ? active.find((note) => note.id === targetId) : undefined;
       if (!source || (targetId && !target) || targetId === noteId) return current;
@@ -520,10 +567,14 @@ export default function HyperionApp() {
       const nextVaults = [...vaults, vault];
       setComposer(null);
       await loadVault(vault.id, nextVaults);
-    } else {
+    } else if (composer.type === "page") {
       const { parentId, value } = composer;
       setComposer(null);
       await createNote(parentId, value);
+    } else {
+      const title = composer.value.trim() || "Untitled";
+      updateNoteById(composer.noteId, { title }, true);
+      setComposer(null);
     }
   };
 
@@ -539,7 +590,7 @@ export default function HyperionApp() {
     const editorDocuments = await exportEditorDocuments(vaultId, notes.map((note) => note.id));
     const bundle: VaultBundle = {
       format: "hyperion-vault",
-      version: 5,
+      version: 6,
       exportedAt: new Date().toISOString(),
       vault: activeVault,
       notes,
@@ -553,7 +604,7 @@ export default function HyperionApp() {
   const importVault = async (file: File) => {
     try {
       const bundle = JSON.parse(await file.text()) as VaultBundle;
-      if (bundle.format !== "hyperion-vault" || ![1, 2, 3, 4, 5].includes(bundle.version)) throw new Error("Unsupported vault file");
+      if (bundle.format !== "hyperion-vault" || ![1, 2, 3, 4, 5, 6].includes(bundle.version)) throw new Error("Unsupported vault file");
       const vault = await knowledgeRepository.createVault(`${bundle.vault.name} import`);
       const collectionMap = new Map(bundle.collections.map((collection) => [collection.id, crypto.randomUUID()]));
       const noteMap = new Map(bundle.notes.map((note) => [note.id, crypto.randomUUID()]));
@@ -570,6 +621,7 @@ export default function HyperionApp() {
         }),
         parentId: note.parentId ? noteMap.get(note.parentId) ?? null : null,
         sortOrder: Number.isFinite(note.sortOrder) ? note.sortOrder : 0,
+        archived: note.archived ?? false,
         collectionIds: (note.collectionIds ?? []).map((id) => collectionMap.get(id)).filter(Boolean) as string[],
       })));
       await Promise.all([
@@ -590,7 +642,7 @@ export default function HyperionApp() {
     }
   };
 
-  const heading = view === "note" ? activeNote?.title : ({ home: "Home", all: "All pages", journal: "Journal", tags: "Tags", trash: "Trash" } as const)[view as Exclude<View, "note">];
+  const heading = view === "note" ? activeNote?.title : ({ home: "Home", all: "All pages", journal: "Journal", tags: "Tags", archive: "Archive", trash: "Trash" } as const)[view as Exclude<View, "note">];
   const activeAncestors = activeNote ? ancestorPath(activeNotes, activeNote) : [];
   const outgoingLinks = activeNote ? [...new Set(activeNote.links.map((link) => link.targetId))]
     .flatMap((targetId) => {
@@ -649,10 +701,10 @@ export default function HyperionApp() {
         </nav>
 
         <div className="sidebar-scroll">
-          <section className="sidebar-section">
-            <button className="section-heading" onClick={() => setFavoritesOpen((open) => !open)}>{favoritesOpen ? <CaretDown size={13} /> : <CaretRight size={13} />}<span>Favorites</span></button>
-            {favoritesOpen && <div className="section-items">{favoriteNotes.map((note) => <button key={note.id} className={view === "note" && activeId === note.id ? "active" : ""} onClick={() => selectNote(note.id)}><PageIcon note={note} size={15} /><span>{note.title}</span></button>)}</div>}
-          </section>
+          {favoriteNotes.length > 0 && <section className="sidebar-section">
+            <SidebarSectionHeading label="Favorites" expanded={favoritesOpen} onToggle={() => setFavoritesOpen((open) => !open)} />
+            {favoritesOpen && <div className="section-items">{favoriteNotes.map((note) => <button key={note.id} className={view === "note" && activeId === note.id ? "active" : ""} onClick={() => selectNote(note.id)} onContextMenu={(event) => openPageContextMenu(event, note.id)}><PageIcon note={note} size={15} /><span>{note.title}</span></button>)}</div>}
+          </section>}
           <SidebarOrganizer
             key={`organizer:${vaultId}`}
             notes={activeNotes}
@@ -661,6 +713,7 @@ export default function HyperionApp() {
             onCreatePage={(parentId) => setComposer({ type: "page", value: "", parentId })}
             onMoveNote={moveNote}
             onOpenNote={selectNote}
+            onContextMenu={openPageContextMenu}
           />
           <SidebarTags
             key={`tags:${vaultId}`}
@@ -673,6 +726,7 @@ export default function HyperionApp() {
         </div>
 
         <div className="sidebar-footer">
+          <button className={view === "archive" ? "active" : ""} onClick={() => navigateView("archive")}><Archive size={17} /><span>Archive</span>{archivedNotes.length > 0 && <em>{archivedNotes.length}</em>}</button>
           <button className={view === "trash" ? "active" : ""} onClick={() => navigateView("trash")}><Trash size={17} /><span>Trash</span>{trashedNotes.length > 0 && <em>{trashedNotes.length}</em>}</button>
           <button onClick={() => setSettingsOpen(true)}><GearSix size={17} /><span>Settings</span></button>
         </div>
@@ -706,7 +760,7 @@ export default function HyperionApp() {
             {view === "note" && <button className={`icon-button${detailsOpen ? " active" : ""}`} aria-label="Toggle note details" onClick={() => setDetailsOpen((open) => !open)}><ListBullets size={19} /></button>}
             {view === "note" && activeNote && <div className="more-wrap topbar-more">
               <button className="icon-button" aria-label="More page actions" title="More actions" onClick={() => setMoreOpen((open) => !open)}><DotsThree size={21} weight="bold" /></button>
-              {moreOpen && <div className="popover note-menu"><button onClick={() => void duplicateNote(activeNote)}><FilePlus size={17} /> Duplicate page</button><button className="danger" onClick={() => { updateNoteById(activeNote.id, { trashed: true, favorite: false }, true); navigateView("home"); }}><Trash size={17} /> Move to trash</button></div>}
+              {moreOpen && <div className="popover note-menu"><button onClick={() => { setMoreOpen(false); setComposer({ type: "rename", noteId: activeNote.id, value: activeNote.title }); }}><PencilSimple size={17} /> Rename page</button><button onClick={() => void duplicateNote(activeNote)}><FilePlus size={17} /> Duplicate page</button><button className="archive" onClick={() => archiveNote(activeNote)}><Archive size={17} /> Archive</button><button className="danger" onClick={() => trashNote(activeNote)}><Trash size={17} /> Trash</button></div>}
             </div>}
           </div>
         </header>
@@ -735,8 +789,10 @@ export default function HyperionApp() {
               <NotesView title="Journal" subtitle="Daily pages and observations" notes={activeNotes.filter((note) => note.tags.includes("journal"))} allNotes={activeNotes} mode={preferences.notesView} onMode={(mode) => void savePreferencePatch({ notesView: mode })} onSelect={selectNote} onCreate={async () => { const note = createBlankNote(vaultId); note.title = new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(new Date()); note.tags = ["journal"]; await knowledgeRepository.saveNote(note); setNotes((current) => [note, ...current]); selectNote(note.id); }} />
             ) : view === "tags" ? (
               <TagsView tags={allTags} notes={activeNotes} activeTag={activeTag} onTag={setActiveTag} onSelect={selectNote} />
+            ) : view === "archive" ? (
+              <ArchiveView notes={archivedNotes} onRestore={(note) => updateNoteById(note.id, { archived: false }, true)} onTrash={trashNote} />
             ) : (
-              <TrashView notes={trashedNotes} onRestore={(note) => updateNoteById(note.id, { trashed: false }, true)} onDelete={permanentlyDelete} />
+              <TrashView notes={trashedNotes} onRestore={(note) => updateNoteById(note.id, { trashed: false, archived: false }, true)} onDelete={permanentlyDelete} />
             )}
           </section>
 
@@ -764,9 +820,109 @@ export default function HyperionApp() {
       {settingsOpen && activeVault && <SettingsDialog vault={activeVault} vaultCount={vaults.length} preferences={preferences} storageInfo={storageInfo} onStorageLocation={async () => { try { const info = await platformRuntime.chooseStorageLocation(); if (info) { setStorageInfo(info); window.location.reload(); } } catch (error) { alert(`Hyperion could not change the storage folder. ${error instanceof Error ? error.message : String(error)}`); } }} onClose={() => setSettingsOpen(false)} onPreferences={savePreferencePatch} onVault={async (patch) => { const updated = { ...activeVault, ...patch }; await knowledgeRepository.updateVault(updated); setVaults((current) => current.map((vault) => vault.id === updated.id ? updated : vault)); }} onExport={() => void exportVault()} onImport={() => importRef.current?.click()} onDelete={async () => { if (vaults.length <= 1 || !confirm(`Delete the “${activeVault.name}” vault and all of its local notes?`)) return; await knowledgeRepository.deleteVault(activeVault.id); const nextVaults = vaults.filter((vault) => vault.id !== activeVault.id); setVaults(nextVaults); setSettingsOpen(false); await loadVault(nextVaults[0].id, nextVaults); }} />}
       <input ref={importRef} className="hidden-input" type="file" accept=".json,.hyperion.json,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importVault(file); }} />
 
-      {composer && <div className="dialog-layer"><form className="composer-dialog" onSubmit={submitComposer}><div className="dialog-icon">{composer.type === "vault" ? <Database size={22} /> : <FileText size={22} />}</div><h2>New {composer.type === "vault" ? "vault" : "page"}</h2><p>{composer.type === "vault" ? "A separate local knowledge space with its own notes and settings." : composer.parentId ? `Create a page inside “${activeNotes.find((note) => note.id === composer.parentId)?.title ?? "this page"}”.` : "Create a top-level page. It can hold content and child pages."}</p><input ref={composerInputRef} value={composer.value} onChange={(event) => setComposer({ ...composer, value: event.target.value })} placeholder={composer.type === "vault" ? "Vault name" : "Page title"} /><div className="dialog-actions"><button type="button" onClick={() => setComposer(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!composer.value.trim()}>Create</button></div></form></div>}
+      {pageContextMenu && pageContextNote && <PageContextMenu
+        state={pageContextMenu}
+        note={pageContextNote}
+        onClose={() => setPageContextMenu(null)}
+        onOpen={() => selectNote(pageContextNote.id)}
+        onCreatePage={() => setComposer({ type: "page", value: "", parentId: pageContextNote.id })}
+        onRename={() => setComposer({ type: "rename", noteId: pageContextNote.id, value: pageContextNote.title })}
+        onDuplicate={() => void duplicateNote(pageContextNote)}
+        onFavorite={() => updateNoteById(pageContextNote.id, { favorite: !pageContextNote.favorite }, true)}
+        onArchive={() => archiveNote(pageContextNote)}
+        onTrash={() => trashNote(pageContextNote)}
+      />}
+
+      {composer && <div className="dialog-layer"><form className="composer-dialog" onSubmit={submitComposer}><div className="dialog-icon">{composer.type === "vault" ? <Database size={22} /> : composer.type === "rename" ? <PencilSimple size={22} /> : <FileText size={22} />}</div><h2>{composer.type === "rename" ? "Rename page" : `New ${composer.type === "vault" ? "vault" : "page"}`}</h2><p>{composer.type === "vault" ? "A separate local knowledge space with its own notes and settings." : composer.type === "rename" ? "Give this page a clear name. Existing page links will continue to work." : composer.parentId ? `Create a page inside “${activeNotes.find((note) => note.id === composer.parentId)?.title ?? "this page"}”.` : "Create a top-level page. It can hold content and child pages."}</p><input ref={composerInputRef} value={composer.value} onChange={(event) => setComposer({ ...composer, value: event.target.value })} placeholder={composer.type === "vault" ? "Vault name" : "Page title"} /><div className="dialog-actions"><button type="button" onClick={() => setComposer(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!composer.value.trim()}>{composer.type === "rename" ? "Rename" : "Create"}</button></div></form></div>}
     </main>
   );
+}
+
+function PageContextMenu({ state, note, onClose, onOpen, onCreatePage, onRename, onDuplicate, onFavorite, onArchive, onTrash }: {
+  state: PageContextMenuState;
+  note: NoteRecord;
+  onClose: () => void;
+  onOpen: () => void;
+  onCreatePage: () => void;
+  onRename: () => void;
+  onDuplicate: () => void;
+  onFavorite: () => void;
+  onArchive: () => void;
+  onTrash: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const focusTimer = window.setTimeout(() => menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus(), 0);
+    const closeOutside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) onClose();
+    };
+    const closeMenu = () => onClose();
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("resize", closeMenu);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("resize", closeMenu);
+    };
+  }, [onClose]);
+
+  const run = (action: () => void) => () => {
+    onClose();
+    action();
+  };
+
+  const navigateMenu = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button")];
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number | null = null;
+    if (event.key === "ArrowDown") next = current < items.length - 1 ? current + 1 : 0;
+    if (event.key === "ArrowUp") next = current > 0 ? current - 1 : items.length - 1;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = items.length - 1;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+    if (next === null) return;
+    event.preventDefault();
+    items[next]?.focus();
+  };
+
+  return <div
+    ref={menuRef}
+    className="page-context-menu"
+    role="menu"
+    tabIndex={-1}
+    aria-label={`Actions for ${note.title}`}
+    style={{ left: state.x, top: state.y }}
+    onKeyDown={navigateMenu}
+  >
+    <button role="menuitem" onClick={run(onOpen)}><ArrowRight size={16} /><span>Open</span></button>
+    <button role="menuitem" onClick={run(onRename)}><PencilSimple size={16} /><span>Rename</span></button>
+    <button role="menuitem" onClick={run(onFavorite)}><Star size={16} weight={note.favorite ? "fill" : "regular"} /><span>{note.favorite ? "Remove from favorites" : "Add to favorites"}</span></button>
+    <div className="context-menu-divider" role="separator" />
+    <button role="menuitem" onClick={run(onCreatePage)}><Plus size={16} /><span>New page inside</span></button>
+    <button role="menuitem" onClick={run(onDuplicate)}><FilePlus size={16} /><span>Duplicate</span></button>
+    <div className="context-menu-divider" role="separator" />
+    <button className="archive" role="menuitem" onClick={run(onArchive)}><Archive size={16} /><span>Archive</span></button>
+    <button className="danger" role="menuitem" onClick={run(onTrash)}><Trash size={16} /><span>Trash</span></button>
+  </div>;
+}
+
+function SidebarSectionHeading({ label, expanded, onToggle, action }: {
+  label: string;
+  expanded: boolean;
+  onToggle: () => void;
+  action?: React.ReactNode;
+}) {
+  return <div className="section-heading-row">
+    <button className="section-heading" aria-expanded={expanded} onClick={onToggle}><span>{label}</span>{expanded ? <CaretDown size={13} /> : <CaretRight size={13} />}</button>
+    {action}
+  </div>;
 }
 
 function HomeView({ notes, onSelect, onCreate }: { notes: NoteRecord[]; onSelect: (id: string) => void; onCreate: () => void }) {
@@ -776,13 +932,14 @@ function HomeView({ notes, onSelect, onCreate }: { notes: NoteRecord[]; onSelect
   return <div className="library-view home-view"><div className="view-heading home-heading"><div><span className="eyebrow"><Sparkle size={14} weight="fill" /> Your local knowledge space</span><h1>Good to see your ideas again.</h1><p>Capture quickly, then shape pages into a hierarchy that grows with your thinking.</p></div><button className="primary-button" onClick={onCreate}><Plus size={17} weight="bold" /> New page</button></div><div className="stat-row"><div><FileText size={20} /><strong>{notes.length}</strong><span>pages</span></div><div><FolderSimple size={20} /><strong>{topLevelPages.length}</strong><span>top level</span></div><div><Hash size={20} /><strong>{new Set(notes.flatMap((note) => note.tags)).size}</strong><span>topics</span></div></div>{topLevelPages.length > 0 && <section className="library-section"><div className="library-section-title"><h2>Top-level pages</h2><span>Pages can contain pages</span></div><div className="collection-card-grid">{topLevelPages.slice(0, 4).map((page) => { const childCount = notes.filter((note) => note.parentId === page.id).length; return <button key={page.id} onClick={() => onSelect(page.id)}><span className="collection-card-icon"><PageIcon note={page} size={21} weight={childCount ? "fill" : "regular"} /></span><span><strong>{page.title}</strong><small>{childCount ? `${childCount} child ${childCount === 1 ? "page" : "pages"}` : notePreview(page)}</small></span><CaretRight size={14} /></button>; })}</div></section>}<section className="library-section"><div className="library-section-title"><h2>Continue writing</h2><span>Recently edited</span></div><div className="note-card-grid">{recent.map((note) => <button className="note-card" key={note.id} onClick={() => onSelect(note.id)}><span className="note-card-top"><PageIcon note={note} size={18} /><small>{relativeTime(note.updatedAt)}</small></span><strong>{note.title}</strong><p>{notePreview(note)}</p><span className="note-card-tags">{note.tags.slice(0, 2).map((tag) => <i key={tag}>#{tag}</i>)}</span></button>)}</div></section></div>;
 }
 
-function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote, onOpenNote }: {
+function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote, onOpenNote, onContextMenu }: {
   notes: NoteRecord[];
   view: View;
   activeNoteId: string;
   onCreatePage: (parentId: string | null) => void;
   onMoveNote: (noteId: string, targetId: string | null, placement?: PageDropPlacement) => void;
   onOpenNote: (noteId: string) => void;
+  onContextMenu: (event: React.MouseEvent<HTMLElement>, noteId: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(notes.filter((note) => notes.some((child) => child.parentId === note.id)).map((note) => note.id)));
@@ -865,6 +1022,7 @@ function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote,
           paddingLeft: `${depth * 14 + 2}px`,
           "--organizer-drop-inset": `${depth * 14 + 10}px`,
         } as React.CSSProperties}
+        onContextMenu={(event) => onContextMenu(event, note.id)}
         onDragOver={(event) => {
           event.stopPropagation();
           const sourceId = draggedIdRef.current ?? draggedId;
@@ -887,7 +1045,7 @@ function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote,
         }}
       >
         {children.length ? <button className="organizer-disclosure" aria-label={`${isExpanded ? "Collapse" : "Expand"} ${note.title}`} aria-expanded={isExpanded} onClick={() => togglePage(note.id)}><CaretRight className={isExpanded ? "expanded" : ""} size={12} weight="bold" /></button> : <span className="organizer-disclosure-spacer" />}
-        <button className="organizer-page-link" draggable onDragStart={(event) => beginDrag(event, note.id)} onDragEnd={clearDrag} onClick={() => onOpenNote(note.id)} title={`${note.title} · Drag above, below, or into another page`}><PageIcon note={note} size={16} weight={children.length ? "fill" : "regular"} /><span>{note.title}</span></button>
+        <button className="organizer-page-link" draggable aria-haspopup="menu" onDragStart={(event) => beginDrag(event, note.id)} onDragEnd={clearDrag} onClick={() => onOpenNote(note.id)} title={`${note.title} · Drag to move · Right-click for actions`}><PageIcon note={note} size={16} weight={children.length ? "fill" : "regular"} /><span>{note.title}</span></button>
         <button className="organizer-add-child" aria-label={`Add a page inside ${note.title}`} title="Add child page" onClick={() => { setExpanded((current) => new Set(current).add(note.id)); onCreatePage(note.id); }}><Plus size={12} weight="bold" /></button>
       </div>
       {isExpanded && children.length > 0 && <div className="organizer-children" role="group" aria-label={`${note.title} child pages`}>{children.map((child) => renderPage(child, depth + 1))}</div>}
@@ -895,10 +1053,12 @@ function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote,
   };
 
   return <section className="sidebar-section organizer-section">
-    <div className="section-heading-row">
-      <button className="section-heading" aria-expanded={open} onClick={() => setOpen((current) => !current)}>{open ? <CaretDown size={13} /> : <CaretRight size={13} />}<span>Organize</span></button>
-      <button className="mini-button" aria-label="New top-level page" title="New top-level page" onClick={() => onCreatePage(null)}><Plus size={13} /></button>
-    </div>
+    <SidebarSectionHeading
+      label="Organize"
+      expanded={open}
+      onToggle={() => setOpen((current) => !current)}
+      action={<button className="mini-button" aria-label="New top-level page" title="New top-level page" onClick={() => onCreatePage(null)}><Plus size={13} /></button>}
+    />
     {open && <div className="organizer-tree">
       {(byParent.get(null) ?? []).map((note) => renderPage(note, 0))}
       {draggedId && <div
@@ -914,7 +1074,7 @@ function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote,
 function SidebarTags({ tags, onOpenTag }: { tags: [string, number][]; onOpenTag: (tag: string) => void }) {
   const [open, setOpen] = useState(false);
   return <section className="sidebar-section sidebar-tags-section">
-    <button className="section-heading" aria-expanded={open} onClick={() => setOpen((current) => !current)}>{open ? <CaretDown size={13} /> : <CaretRight size={13} />}<span>Tags</span></button>
+    <SidebarSectionHeading label="Tags" expanded={open} onToggle={() => setOpen((current) => !current)} />
     {open && <div className="sidebar-tag-items">{tags.map(([tag, count]) => <button key={tag} onClick={() => onOpenTag(tag)}><Hash size={14} /><span>{tag}</span><em>{count}</em></button>)}{!tags.length && <p className="sidebar-empty">Tags added to pages appear here.</p>}</div>}
   </section>;
 }
@@ -930,6 +1090,10 @@ function TagsView({ tags, notes, activeTag, onTag, onSelect }: { tags: [string, 
   const selectedTag = activeTag && tags.some(([tag]) => tag === activeTag) ? activeTag : tags[0]?.[0] ?? null;
   const tagged = selectedTag ? notes.filter((note) => note.tags.includes(selectedTag)) : [];
   return <div className="library-view tags-view"><div className="view-heading"><div><span className="eyebrow">Themes across your vault</span><h1>Tags</h1><p>Lightweight labels can connect pages across the hierarchy.</p></div></div><div className="tags-layout"><aside><h2>All tags</h2>{tags.map(([tag, count]) => <button key={tag} className={tag === selectedTag ? "active" : ""} onClick={() => onTag(tag)}><Hash size={15} /><span>{tag}</span><em>{count}</em></button>)}</aside><section><h2>{selectedTag ? `#${selectedTag}` : "Choose a tag"}</h2><div className="simple-note-list">{tagged.map((note) => <button key={note.id} onClick={() => onSelect(note.id)}><PageIcon note={note} size={17} /><span><strong>{note.title}</strong><small>{notePreview(note)}</small></span><span>{relativeTime(note.updatedAt)}</span></button>)}</div></section></div></div>;
+}
+
+function ArchiveView({ notes, onRestore, onTrash }: { notes: NoteRecord[]; onRestore: (note: NoteRecord) => void; onTrash: (note: NoteRecord) => void }) {
+  return <div className="library-view"><div className="view-heading"><div><span className="eyebrow">Pages kept out of the way</span><h1>Archive</h1><p>Archived pages stay local and can be restored at any time.</p></div></div>{notes.length ? <div className="trash-list">{notes.map((note) => <div key={note.id}><PageIcon note={note} size={18} /><span><strong>{note.title}</strong><small>Archived {relativeTime(note.updatedAt)}</small></span><button onClick={() => onRestore(note)}>Restore</button><button className="danger-text" onClick={() => onTrash(note)}>Move to trash</button></div>)}</div> : <EmptyState icon={<Archive size={28} />} title="Archive is empty" description="Right-click a page in the sidebar to archive it." />}</div>;
 }
 
 function TrashView({ notes, onRestore, onDelete }: { notes: NoteRecord[]; onRestore: (note: NoteRecord) => void; onDelete: (note: NoteRecord) => void }) {

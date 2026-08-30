@@ -15,15 +15,17 @@ and an Electron desktop app with a consistent bundled Chromium runtime.
 - A desktop SQLite database containing notes, rich editor documents, and assets,
   stored in `~/.config/hyperion` by default with a user-selectable location
 - A resizable sidebar with a collapsible Organize tree where every page can
-  contain child pages, with drag-and-drop nesting and persistent sibling order
+  contain child pages, with drag-and-drop nesting, persistent sibling order,
+  and right-click actions for renaming, duplicating, favoriting, archiving,
+  and removing pages
 - AFFiNE-style page icons with the complete Unicode Emoji 17 catalog used by
   current macOS, searchable names and keywords, recent choices, categories,
   skin-tone variants, and a colored interface-icon picker; icons follow pages
   through the tree, links, search, and every other view without affecting identity
 - Permanent page identities with rename-safe `[[Page name]]` references,
   quick page links, ID-based backlinks, and searchable former names
-- Sortable/filterable table and card views, favorites, journal, search, and
-  trash
+- Sortable/filterable table and card views, favorites, journal, search,
+  recoverable archives, and trash
 - Working vault, editor, appearance, and data settings
 - Keyboard shortcuts for search (`Command/Ctrl + K`) and new notes
 - Responsive light and dark interfaces

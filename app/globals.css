@@ -433,10 +433,8 @@ kbd {
   padding: 0 6px;
   background: transparent;
   color: var(--text-faint);
-  font-size: 10.5px;
-  font-weight: 650;
-  letter-spacing: 0.015em;
-  text-transform: uppercase;
+  font-size: 11.5px;
+  font-weight: 520;
 }
 
 .section-heading:hover {
@@ -446,24 +444,6 @@ kbd {
 .section-heading-row .mini-button {
   width: 24px;
   height: 24px;
-}
-
-.organizer-section .section-heading,
-.sidebar-tags-section .section-heading {
-  font-size: 11.5px;
-  font-weight: 520;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.organizer-section .section-heading svg,
-.sidebar-tags-section .section-heading svg {
-  order: 2;
-}
-
-.organizer-section .section-heading span,
-.sidebar-tags-section .section-heading span {
-  order: 1;
 }
 
 .section-items {
@@ -900,6 +880,80 @@ kbd {
 
 .note-menu button.danger {
   color: var(--danger);
+}
+
+.note-menu button.archive {
+  color: var(--accent);
+}
+
+.page-context-menu {
+  position: fixed;
+  z-index: 100;
+  width: 210px;
+  padding: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+  animation: context-menu-in 90ms ease-out;
+}
+
+.page-context-menu button {
+  display: flex;
+  width: 100%;
+  height: 31px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 9px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 11.5px;
+  text-align: left;
+}
+
+.page-context-menu button:hover,
+.page-context-menu button:focus-visible {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.page-context-menu button:focus-visible {
+  outline: 0;
+}
+
+.page-context-menu button svg {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.page-context-menu button span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-context-menu button.danger,
+.page-context-menu button.danger svg {
+  color: var(--danger);
+}
+
+.page-context-menu button.archive,
+.page-context-menu button.archive svg {
+  color: var(--accent);
+}
+
+.context-menu-divider {
+  height: 1px;
+  margin: 4px 3px;
+  background: var(--line);
+}
+
+@keyframes context-menu-in {
+  from { opacity: 0; transform: translateY(-2px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .note-icon {
