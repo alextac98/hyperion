@@ -22,10 +22,8 @@ import {
   Moon,
   PencilSimple,
   Plus,
-  Rows,
   SidebarSimple,
   Sparkle,
-  SquaresFour,
   Star,
   Sun,
   Tag,
@@ -47,7 +45,9 @@ import {
   CollectionRecord,
   createBlankNote,
   DEFAULT_VAULT_ID,
+  journalDateKey,
   NoteRecord,
+  normalizeNoteRecord,
   normalizePageIcon,
   pageIconText,
   ThemePreference,
@@ -117,6 +117,15 @@ function relativeTime(isoDate: string) {
 
 function dateLabel(isoDate: string) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(isoDate));
+}
+
+function journalDate(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day, 12);
+}
+
+function journalTitle(date: Date) {
+  return new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(date);
 }
 
 function notePreview(note: NoteRecord) {
@@ -269,6 +278,8 @@ export default function HyperionApp() {
   const activeNote = notes.find((note) => note.id === activeId);
   const composerFocusKey = composer?.type === "rename" ? `rename:${composer.noteId}` : composer?.type ?? null;
   const activeNotes = useMemo(() => notes.filter((note) => !note.trashed && !note.archived), [notes]);
+  const organizedNotes = useMemo(() => activeNotes.filter((note) => note.kind === "note"), [activeNotes]);
+  const journalEntries = useMemo(() => activeNotes.filter((note) => note.kind === "journal"), [activeNotes]);
   const archivedNotes = useMemo(() => notes.filter((note) => note.archived && !note.trashed), [notes]);
   const trashedNotes = useMemo(() => notes.filter((note) => note.trashed), [notes]);
   const pageContextNote = pageContextMenu ? activeNotes.find((note) => note.id === pageContextMenu.noteId) : undefined;
@@ -286,7 +297,7 @@ export default function HyperionApp() {
       knowledgeRepository.listCollections(nextVaultId),
       knowledgeRepository.getPreferences(nextVaultId),
     ]);
-    const hydratedNotes = hydratePageIdentities(storedNotes);
+    const hydratedNotes = hydratePageIdentities(storedNotes.map(normalizeNoteRecord));
     await Promise.all(hydratedNotes.flatMap((note, index) =>
       pageIdentityChanged(storedNotes[index], note) ? [knowledgeRepository.saveNote(note)] : [],
     ));
@@ -299,6 +310,7 @@ export default function HyperionApp() {
     if (nextVaults) setVaults(nextVaults);
     const remembered = localStorage.getItem(`hyperion:last-note:${nextVaultId}`);
     const target = hydratedNotes.find((note) => note.id === remembered && !note.trashed && !note.archived)
+      ?? hydratedNotes.find((note) => note.kind === "note" && !note.trashed && !note.archived)
       ?? hydratedNotes.find((note) => !note.trashed && !note.archived);
     setActiveId(target?.id ?? "");
     setActiveTag(null);
@@ -392,6 +404,24 @@ export default function HyperionApp() {
     await knowledgeRepository.saveNote(note);
     selectNote(note.id);
   }, [selectNote, vaultId]);
+
+  const openTodayJournal = useCallback(async () => {
+    const today = journalDateKey();
+    const existing = notes.find((note) => note.kind === "journal" && note.journalDate === today && !note.trashed && !note.archived);
+    if (existing) {
+      selectNote(existing.id);
+      return;
+    }
+    const note = createBlankNote(vaultId);
+    note.kind = "journal";
+    note.journalDate = today;
+    note.title = journalTitle(new Date());
+    note.icon = { type: "emoji", unicode: "📅" };
+    stableTitles.current[note.id] = note.title;
+    await knowledgeRepository.saveNote(note);
+    setNotes((current) => [note, ...current]);
+    selectNote(note.id);
+  }, [notes, selectNote, vaultId]);
 
   const closeSearch = useCallback(() => {
     setSearchOpen(false);
@@ -614,7 +644,7 @@ export default function HyperionApp() {
 
   const moveNote = useCallback((noteId: string, targetId: string | null, placement: PageDropPlacement = "inside") => {
     setNotes((current) => {
-      const active = current.filter((note) => !note.trashed && !note.archived);
+      const active = current.filter((note) => note.kind === "note" && !note.trashed && !note.archived);
       const source = active.find((note) => note.id === noteId);
       const target = targetId ? active.find((note) => note.id === targetId) : undefined;
       if (!source || (targetId && !target) || targetId === noteId) return current;
@@ -694,7 +724,7 @@ export default function HyperionApp() {
     const editorDocuments = await exportEditorDocuments(vaultId, notes.map((note) => note.id));
     const bundle: VaultBundle = {
       format: "hyperion-vault",
-      version: 6,
+      version: 7,
       exportedAt: new Date().toISOString(),
       vault: activeVault,
       notes,
@@ -708,12 +738,12 @@ export default function HyperionApp() {
   const importVault = async (file: File) => {
     try {
       const bundle = JSON.parse(await file.text()) as VaultBundle;
-      if (bundle.format !== "hyperion-vault" || ![1, 2, 3, 4, 5, 6].includes(bundle.version)) throw new Error("Unsupported vault file");
+      if (bundle.format !== "hyperion-vault" || ![1, 2, 3, 4, 5, 6, 7].includes(bundle.version)) throw new Error("Unsupported vault file");
       const vault = await knowledgeRepository.createVault(`${bundle.vault.name} import`);
       const collectionMap = new Map(bundle.collections.map((collection) => [collection.id, crypto.randomUUID()]));
       const noteMap = new Map(bundle.notes.map((note) => [note.id, crypto.randomUUID()]));
       const importedCollections = bundle.collections.map((collection) => ({ ...collection, id: collectionMap.get(collection.id)!, vaultId: vault.id }));
-      const importedNotes = hydratePageIdentities(bundle.notes.map((note) => ({
+      const importedNotes = hydratePageIdentities(bundle.notes.map((note) => normalizeNoteRecord({
         ...note,
         id: noteMap.get(note.id)!,
         vaultId: vault.id,
@@ -747,7 +777,7 @@ export default function HyperionApp() {
   };
 
   const heading = view === "note" ? activeNote?.title : ({ home: "Home", journal: "Journal", tags: "Tags", archive: "Archive", trash: "Trash" } as const)[view as Exclude<View, "note">];
-  const activeAncestors = activeNote ? ancestorPath(activeNotes, activeNote) : [];
+  const activeAncestors = activeNote?.kind === "note" ? ancestorPath(organizedNotes, activeNote) : [];
   const outgoingLinks = activeNote ? [...new Set(activeNote.links.map((link) => link.targetId))]
     .flatMap((targetId) => {
       const target = activeNotes.find((note) => note.id === targetId);
@@ -773,7 +803,7 @@ export default function HyperionApp() {
           <div className="vault-switcher-wrap">
             <button className="workspace-button" onClick={() => setVaultMenuOpen((open) => !open)} aria-expanded={vaultMenuOpen}>
               <HyperionMark small />
-              <span className="workspace-copy"><strong>{activeVault?.name ?? "Hyperion"}</strong><span>{activeNotes.length} pages · Local only</span></span>
+              <span className="workspace-copy"><strong>{activeVault?.name ?? "Hyperion"}</strong><span>{organizedNotes.length} pages · Local only</span></span>
               <CaretDown size={14} weight="bold" />
             </button>
             {vaultMenuOpen && (
@@ -799,7 +829,7 @@ export default function HyperionApp() {
         <nav className="primary-nav" aria-label="Knowledge base">
           <button onClick={() => { closePageSearch(); setSearchOpen(true); }}><MagnifyingGlass size={18} /><span>Search</span><kbd>⌘ ⇧ F</kbd></button>
           <button className={view === "home" ? "active" : ""} onClick={() => navigateView("home")}><House size={18} /><span>Home</span></button>
-          <button className={view === "journal" ? "active" : ""} onClick={() => navigateView("journal")}><CalendarBlank size={18} /><span>Journal</span></button>
+          <button className={view === "journal" || (view === "note" && activeNote?.kind === "journal") ? "active" : ""} onClick={() => navigateView("journal")}><CalendarBlank size={18} /><span>Journal</span>{journalEntries.length > 0 && <em>{journalEntries.length}</em>}</button>
           <button className={view === "tags" ? "active" : ""} onClick={() => navigateView("tags")}><Tag size={18} /><span>Tags</span></button>
         </nav>
 
@@ -810,7 +840,7 @@ export default function HyperionApp() {
           </section>}
           <SidebarOrganizer
             key={`organizer:${vaultId}`}
-            notes={activeNotes}
+            notes={organizedNotes}
             view={view}
             activeNoteId={activeId}
             onCreatePage={(parentId) => setComposer({ type: "page", value: "", parentId })}
@@ -844,7 +874,7 @@ export default function HyperionApp() {
           <div className="topbar-left">
             {!sidebarOpen && <button className="icon-button" aria-label="Open sidebar" onClick={() => setSidebarOpen(true)}><SidebarSimple size={19} /></button>}
             {view === "note" && activeNote && <button className={`icon-button topbar-favorite${activeNote.favorite ? " active" : ""}`} aria-label={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} title={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} onClick={() => updateNoteById(activeNote.id, { favorite: !activeNote.favorite }, true)}><Star size={17} weight={activeNote.favorite ? "fill" : "regular"} /></button>}
-            <div className="breadcrumbs">{activeAncestors.map((ancestor) => <span className="breadcrumb-parent" key={ancestor.id}><button onClick={() => selectNote(ancestor.id)}><PageIcon note={ancestor} size={12} />{ancestor.title}</button><CaretRight size={12} /></span>)}{view === "note" && activeNote && <PageIcon note={activeNote} size={13} />}<strong>{heading ?? "Untitled"}</strong></div>
+            <div className="breadcrumbs">{view === "note" && activeNote?.kind === "journal" && <span className="breadcrumb-parent"><button onClick={() => navigateView("journal")}><CalendarBlank size={12} />Journal</button><CaretRight size={12} /></span>}{activeAncestors.map((ancestor) => <span className="breadcrumb-parent" key={ancestor.id}><button onClick={() => selectNote(ancestor.id)}><PageIcon note={ancestor} size={12} />{ancestor.title}</button><CaretRight size={12} /></span>)}{view === "note" && activeNote && <PageIcon note={activeNote} size={13} />}<strong>{heading ?? "Untitled"}</strong></div>
           </div>
           <div className="topbar-actions">
             {view === "note" && activeNote && <div className="topbar-history" aria-label="Editing history">
@@ -855,7 +885,7 @@ export default function HyperionApp() {
             {view === "note" && <button className={`icon-button${detailsOpen ? " active" : ""}`} aria-label="Toggle note details" onClick={() => setDetailsOpen((open) => !open)}><ListBullets size={19} /></button>}
             {view === "note" && activeNote && <div className="more-wrap topbar-more">
               <button className="icon-button" aria-label="More page actions" title="More actions" onClick={() => setMoreOpen((open) => !open)}><DotsThree size={21} weight="bold" /></button>
-              {moreOpen && <div className="popover note-menu"><button onClick={() => { setMoreOpen(false); setComposer({ type: "rename", noteId: activeNote.id, value: activeNote.title }); }}><PencilSimple size={17} /> Rename page</button><button onClick={() => void duplicateNote(activeNote)}><FilePlus size={17} /> Duplicate page</button><button className="archive" onClick={() => archiveNote(activeNote)}><Archive size={17} /> Archive</button><button className="danger" onClick={() => trashNote(activeNote)}><Trash size={17} /> Trash</button></div>}
+              {moreOpen && <div className="popover note-menu"><button onClick={() => { setMoreOpen(false); setComposer({ type: "rename", noteId: activeNote.id, value: activeNote.title }); }}><PencilSimple size={17} /> Rename {activeNote.kind === "journal" ? "entry" : "page"}</button><button onClick={() => void duplicateNote(activeNote)}><FilePlus size={17} /> Duplicate {activeNote.kind === "journal" ? "entry" : "page"}</button><button className="archive" onClick={() => archiveNote(activeNote)}><Archive size={17} /> Archive</button><button className="danger" onClick={() => trashNote(activeNote)}><Trash size={17} /> Trash</button></div>}
             </div>}
           </div>
         </header>
@@ -864,6 +894,7 @@ export default function HyperionApp() {
           <section className="main-content">
             {view === "note" && activeNote ? (
               <article className={`note-workspace${activeNote.icon ? " has-page-icon" : ""}`}>
+                {activeNote.kind === "journal" && activeNote.journalDate && <div className={`journal-entry-label width-${preferences.editorWidth}`}><CalendarBlank size={14} /><span>{new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(journalDate(activeNote.journalDate))}</span></div>}
                 <div className={`page-icon-row width-${preferences.editorWidth}`}>
                   <PageIconPicker key={activeNote.id} note={activeNote} onChange={(icon) => updateNoteById(activeNote.id, { icon }, true)} />
                 </div>
@@ -877,9 +908,9 @@ export default function HyperionApp() {
                 />
               </article>
             ) : view === "home" ? (
-              <HomeView notes={activeNotes} onSelect={selectNote} onCreate={() => void createNote()} />
+              <HomeView notes={organizedNotes} onSelect={selectNote} onCreate={() => void createNote()} />
             ) : view === "journal" ? (
-              <NotesView title="Journal" subtitle="Daily pages and observations" notes={activeNotes.filter((note) => note.tags.includes("journal"))} allNotes={activeNotes} mode={preferences.notesView} onMode={(mode) => void savePreferencePatch({ notesView: mode })} onSelect={selectNote} onCreate={async () => { const note = createBlankNote(vaultId); note.title = new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(new Date()); note.tags = ["journal"]; await knowledgeRepository.saveNote(note); setNotes((current) => [note, ...current]); selectNote(note.id); }} />
+              <JournalView entries={journalEntries} onSelect={selectNote} onWriteToday={() => void openTodayJournal()} />
             ) : view === "tags" ? (
               <TagsView tags={allTags} notes={activeNotes} activeTag={activeTag} onTag={setActiveTag} onSelect={selectNote} />
             ) : view === "archive" ? (
@@ -903,14 +934,14 @@ export default function HyperionApp() {
               <select className="details-link-select" aria-label="Link another page" value="" onChange={(event) => event.target.value && addPageLink(activeNote, event.target.value)}><option value="">+ Link a page</option>{activeNotes.filter((note) => note.id !== activeNote.id && !outgoingLinkIds.has(note.id)).sort((a, b) => a.title.localeCompare(b.title)).map((note) => <option value={note.id} key={note.id}>{pageIconText(note.icon) ? `${pageIconText(note.icon)} ` : ""}{note.title}</option>)}</select>
             </section>
             <section><div className="details-title"><span>Backlinks</span><em>{backlinks.length}</em></div>{backlinks.length ? <div className="backlinks-list">{backlinks.map((note) => <button key={note.id} onClick={() => selectNote(note.id)}><PageIcon note={note} size={15} /><span>{note.title}</span><ArrowRight size={13} /></button>)}</div> : <div className="details-empty"><span className="linked-rings"><i /><i /></span><p>No pages link here yet.</p><small>Mention with [[{activeNote.title}]]</small></div>}</section>
-            <section className="details-properties"><div className="details-title"><span>Properties</span></div><dl><div><dt>Created</dt><dd>{dateLabel(activeNote.createdAt)}</dd></div><div><dt>Edited</dt><dd>{relativeTime(activeNote.updatedAt)}</dd></div><div><dt>Words</dt><dd>{activeNote.body.trim().split(/\s+/).filter(Boolean).length}</dd></div><div><dt>Identity</dt><dd title={activeNote.id}>Stable through moves</dd></div>{activeNote.aliases.length > 0 && <div><dt>Former names</dt><dd title={activeNote.aliases.join(", ")}>{activeNote.aliases.length}</dd></div>}<div><dt>Storage</dt><dd>Local vault</dd></div></dl></section>
+            <section className="details-properties"><div className="details-title"><span>Properties</span></div><dl>{activeNote.kind === "journal" && activeNote.journalDate && <div><dt>Journal date</dt><dd>{dateLabel(journalDate(activeNote.journalDate).toISOString())}</dd></div>}<div><dt>Created</dt><dd>{dateLabel(activeNote.createdAt)}</dd></div><div><dt>Edited</dt><dd>{relativeTime(activeNote.updatedAt)}</dd></div><div><dt>Words</dt><dd>{activeNote.body.trim().split(/\s+/).filter(Boolean).length}</dd></div><div><dt>Identity</dt><dd title={activeNote.id}>Stable through moves</dd></div>{activeNote.aliases.length > 0 && <div><dt>Former names</dt><dd title={activeNote.aliases.join(", ")}>{activeNote.aliases.length}</dd></div>}<div><dt>Storage</dt><dd>Local vault</dd></div></dl></section>
           </aside>}
         </div>
       </section>
 
       {pageSearchOpen && <div className="page-search-bar" role="search" aria-label="Search this page"><MagnifyingGlass size={17} /><input ref={pageSearchRef} value={pageSearchQuery} onChange={(event) => setPageSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); movePageSearch(event.shiftKey ? -1 : 1); } }} placeholder="Find on this page…" aria-label="Find on this page" /><span className="page-search-count" aria-live="polite">{pageSearchQuery ? pageSearchCount ? `${pageSearchIndex + 1} of ${pageSearchCount}` : "No results" : ""}</span><button type="button" aria-label="Previous result" onClick={() => movePageSearch(-1)} disabled={!pageSearchCount}>↑</button><button type="button" aria-label="Next result" onClick={() => movePageSearch(1)} disabled={!pageSearchCount}>↓</button><button type="button" aria-label="Close page search" onClick={closePageSearch}><X size={15} /></button></div>}
 
-      {searchOpen && <div className="dialog-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeSearch()}><section className="search-dialog" role="dialog" aria-modal="true" aria-label="Search Hyperion"><div className="search-field"><MagnifyingGlass size={21} /><input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchResults[0]) { selectNote(searchResults[0].id); closeSearch(); } }} placeholder="Search titles, text, tags, and page paths…" /><kbd>ESC</kbd></div><div className="search-caption"><span>{searchQuery ? `${searchResults.length} results` : "Recently edited"}</span><small>{activeVault?.name} · local</small></div><div className="search-results">{searchResults.map((note, index) => <button key={note.id} className={index === 0 ? "selected" : ""} onClick={() => { selectNote(note.id); closeSearch(); }}><span className="result-icon"><PageIcon note={note} size={18} /></span><span className="result-copy"><strong>{note.title}</strong><span>{notePreview(note)}</span></span><span className="result-meta">{relativeTime(note.updatedAt)}</span></button>)}{!searchResults.length && <div className="no-results"><MagnifyingGlass size={24} /><span>No matching pages</span></div>}</div><footer className="dialog-footer"><span><kbd>↵</kbd> Open</span><span className="dialog-brand"><HyperionMark small /> Hyperion</span></footer></section></div>}
+      {searchOpen && <div className="dialog-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeSearch()}><section className="search-dialog" role="dialog" aria-modal="true" aria-label="Search Hyperion"><div className="search-field"><MagnifyingGlass size={21} /><input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchResults[0]) { selectNote(searchResults[0].id); closeSearch(); } }} placeholder="Search pages, journal entries, text, and tags…" /><kbd>ESC</kbd></div><div className="search-caption"><span>{searchQuery ? `${searchResults.length} results` : "Recently edited"}</span><small>{activeVault?.name} · local</small></div><div className="search-results">{searchResults.map((note, index) => <button key={note.id} className={index === 0 ? "selected" : ""} onClick={() => { selectNote(note.id); closeSearch(); }}><span className="result-icon"><PageIcon note={note} size={18} /></span><span className="result-copy"><strong>{note.title}</strong><span>{notePreview(note)}</span></span><span className="result-meta">{note.kind === "journal" && <i>Journal</i>}{relativeTime(note.updatedAt)}</span></button>)}{!searchResults.length && <div className="no-results"><MagnifyingGlass size={24} /><span>No matching pages or entries</span></div>}</div><footer className="dialog-footer"><span><kbd>↵</kbd> Open</span><span className="dialog-brand"><HyperionMark small /> Hyperion</span></footer></section></div>}
 
       {settingsOpen && activeVault && <SettingsDialog vault={activeVault} vaultCount={vaults.length} preferences={preferences} storageInfo={storageInfo} onStorageLocation={async () => { try { const info = await platformRuntime.chooseStorageLocation(); if (info) { setStorageInfo(info); window.location.reload(); } } catch (error) { alert(`Hyperion could not change the storage folder. ${error instanceof Error ? error.message : String(error)}`); } }} onClose={() => setSettingsOpen(false)} onPreferences={savePreferencePatch} onVault={async (patch) => { const updated = { ...activeVault, ...patch }; await knowledgeRepository.updateVault(updated); setVaults((current) => current.map((vault) => vault.id === updated.id ? updated : vault)); }} onExport={() => void exportVault()} onImport={() => importRef.current?.click()} onDelete={async () => { if (vaults.length <= 1 || !confirm(`Delete the “${activeVault.name}” vault and all of its local notes?`)) return; await knowledgeRepository.deleteVault(activeVault.id); const nextVaults = vaults.filter((vault) => vault.id !== activeVault.id); setVaults(nextVaults); setSettingsOpen(false); await loadVault(nextVaults[0].id, nextVaults); }} />}
       <input ref={importRef} className="hidden-input" type="file" accept=".json,.hyperion.json,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importVault(file); }} />
@@ -1000,7 +1031,7 @@ function PageContextMenu({ state, note, onClose, onOpen, onCreatePage, onRename,
     <button role="menuitem" onClick={run(onRename)}><PencilSimple size={16} /><span>Rename</span></button>
     <button role="menuitem" onClick={run(onFavorite)}><Star size={16} weight={note.favorite ? "fill" : "regular"} /><span>{note.favorite ? "Remove from favorites" : "Add to favorites"}</span></button>
     <div className="context-menu-divider" role="separator" />
-    <button role="menuitem" onClick={run(onCreatePage)}><Plus size={16} /><span>New page inside</span></button>
+    {note.kind === "note" && <button role="menuitem" onClick={run(onCreatePage)}><Plus size={16} /><span>New page inside</span></button>}
     <button role="menuitem" onClick={run(onDuplicate)}><FilePlus size={16} /><span>Duplicate</span></button>
     <div className="context-menu-divider" role="separator" />
     <button className="archive" role="menuitem" onClick={run(onArchive)}><Archive size={16} /><span>Archive</span></button>
@@ -1166,11 +1197,21 @@ function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote,
   </section>;
 }
 
-function NotesView({ title, subtitle, notes, allNotes, mode, onMode, onSelect, onCreate }: { title: string; subtitle: string; notes: NoteRecord[]; allNotes: NoteRecord[]; mode: "list" | "table"; onMode: (mode: "list" | "table") => void; onSelect: (id: string) => void; onCreate: () => void }) {
+function JournalView({ entries, onSelect, onWriteToday }: { entries: NoteRecord[]; onSelect: (id: string) => void; onWriteToday: () => void }) {
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<"updated" | "title">("updated");
-  const filtered = notes.filter((note) => `${note.title} ${note.body} ${note.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => sort === "updated" ? b.updatedAt.localeCompare(a.updatedAt) : a.title.localeCompare(b.title));
-  return <div className="library-view notes-view"><div className="view-heading"><div><span className="eyebrow">{subtitle}</span><h1>{title}</h1><p>{notes.length} {notes.length === 1 ? "page" : "pages"}</p></div><div className="heading-actions"><button className="primary-button" onClick={onCreate}><Plus size={17} weight="bold" /> New page</button></div></div><div className="data-toolbar"><label><MagnifyingGlass size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter pages…" /></label><select value={sort} onChange={(event) => setSort(event.target.value as "updated" | "title")}><option value="updated">Last edited</option><option value="title">Title A–Z</option></select><div className="view-toggle"><button className={mode === "table" ? "active" : ""} onClick={() => onMode("table")} title="Table view"><Rows size={17} /></button><button className={mode === "list" ? "active" : ""} onClick={() => onMode("list")} title="Card view"><SquaresFour size={17} /></button></div></div>{filtered.length ? mode === "table" ? <div className="notes-table"><div className="notes-table-head"><span>Name</span><span>Location</span><span>Tags</span><span>Edited</span></div>{filtered.map((note) => { const path = ancestorPath(allNotes, note); return <button className="notes-table-row" key={note.id} onClick={() => onSelect(note.id)}><span className="table-title"><PageIcon note={note} size={17} /><span><strong>{note.title}</strong><small>{notePreview(note)}</small></span>{note.favorite && <Star size={13} weight="fill" />}</span><span className="table-location">{path.length ? path.map((parent) => parent.title).join(" / ") : "Top level"}</span><span className="table-tags">{note.tags.slice(0, 2).map((tag) => <i key={tag}>#{tag}</i>)}</span><span className="table-date">{relativeTime(note.updatedAt)}</span></button>; })}</div> : <div className="note-card-grid wide">{filtered.map((note) => <button className="note-card" key={note.id} onClick={() => onSelect(note.id)}><span className="note-card-top"><PageIcon note={note} size={18} />{note.favorite && <Star size={14} weight="fill" />}</span><strong>{note.title}</strong><p>{notePreview(note)}</p><small>Edited {relativeTime(note.updatedAt)}</small></button>)}</div> : <EmptyState icon={<FileText size={28} />} title="Nothing here yet" description={query ? "No pages match this filter." : "Create the first page in this view."} action={!query && <button className="primary-button" onClick={onCreate}><Plus size={16} /> New page</button>} />}</div>;
+  const today = journalDateKey();
+  const todayEntry = entries.find((entry) => entry.journalDate === today);
+  const filtered = entries
+    .filter((entry) => `${entry.title} ${entry.body} ${entry.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => (b.journalDate ?? b.createdAt).localeCompare(a.journalDate ?? a.createdAt) || b.updatedAt.localeCompare(a.updatedAt));
+  const groups = new Map<string, NoteRecord[]>();
+  filtered.forEach((entry) => {
+    const date = journalDate(entry.journalDate ?? journalDateKey(new Date(entry.createdAt)));
+    const month = new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(date);
+    groups.set(month, [...(groups.get(month) ?? []), entry]);
+  });
+
+  return <div className="library-view journal-view"><div className="view-heading"><div><span className="eyebrow"><CalendarBlank size={14} /> A private record over time</span><h1>Journal</h1><p>{entries.length ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}, kept separate from your organized pages.` : "Daily writing with the full power of a Hyperion page."}</p></div><button className="primary-button" onClick={onWriteToday}><PencilSimple size={17} /> {todayEntry ? "Open today" : "Write today"}</button></div><div className="data-toolbar journal-toolbar"><label><MagnifyingGlass size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search journal…" /></label><span>{journalTitle(new Date())}</span></div>{filtered.length ? <div className="journal-months">{[...groups.entries()].map(([month, monthEntries]) => <section className="journal-month" key={month}><div className="journal-month-heading"><h2>{month}</h2><span>{monthEntries.length} {monthEntries.length === 1 ? "entry" : "entries"}</span></div><div className="journal-list">{monthEntries.map((entry) => { const date = journalDate(entry.journalDate ?? journalDateKey(new Date(entry.createdAt))); return <button key={entry.id} onClick={() => onSelect(entry.id)}><span className="journal-date"><strong>{date.getDate()}</strong><small>{new Intl.DateTimeFormat("en", { weekday: "short" }).format(date)}</small></span><span className="journal-copy"><span className="journal-entry-title"><strong>{entry.title}</strong>{entry.favorite && <Star size={13} weight="fill" />}</span><p>{notePreview(entry)}</p><small>Edited {relativeTime(entry.updatedAt)}{entry.tags.length ? ` · ${entry.tags.slice(0, 2).map((tag) => `#${tag}`).join(" ")}` : ""}</small></span><CaretRight size={15} /></button>; })}</div></section>)}</div> : <EmptyState icon={<CalendarBlank size={28} />} title={query ? "No matching entries" : "Your journal starts here"} description={query ? "Try a different word or clear the search." : "Write today's entry. It stays out of Organize while remaining searchable and linkable."} action={!query && <button className="primary-button" onClick={onWriteToday}><PencilSimple size={16} /> Write today</button>} />}</div>;
 }
 
 function TagsView({ tags, notes, activeTag, onTag, onSelect }: { tags: [string, number][]; notes: NoteRecord[]; activeTag: string | null; onTag: (tag: string) => void; onSelect: (id: string) => void }) {

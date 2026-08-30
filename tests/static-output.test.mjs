@@ -107,8 +107,10 @@ test("includes rich local editing and organization", async () => {
   assert.match(databaseSource, /targetId: string/);
   assert.match(databaseSource, /sortOrder: number/);
   assert.match(databaseSource, /archived: boolean/);
+  assert.match(databaseSource, /kind: NoteKind/);
+  assert.match(databaseSource, /journalDate: string \| null/);
   assert.match(databaseSource, /icon: PageIconRecord \| null/);
-  assert.match(databaseSource, /DATABASE_VERSION = 9/);
+  assert.match(databaseSource, /DATABASE_VERSION = 10/);
   assert.match(linksSource, /reconcilePageLinks/);
   assert.match(linksSource, /WIKI_LINK_PATTERN/);
   assert.match(appSource, /sidebarResizeRef/);
