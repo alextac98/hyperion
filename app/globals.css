@@ -463,15 +463,13 @@ kbd {
 
 .organizer-tree,
 .organizer-page,
-.organizer-children,
-.sidebar-tag-items {
+.organizer-children {
   display: flex;
   flex-direction: column;
 }
 
 .organizer-tree,
-.organizer-children,
-.sidebar-tag-items {
+.organizer-children {
   gap: 1px;
 }
 
@@ -574,8 +572,7 @@ kbd {
   cursor: grabbing;
 }
 
-.organizer-page-link > span:not(.page-icon-glyph),
-.sidebar-tag-items button > span {
+.organizer-page-link > span:not(.page-icon-glyph) {
   min-width: 0;
   flex: 1;
   overflow: hidden;
@@ -583,41 +580,13 @@ kbd {
   white-space: nowrap;
 }
 
-.sidebar-tag-items em {
-  color: var(--text-faint);
-  font-size: 10.5px;
-  font-style: normal;
-  font-weight: 500;
-}
-
-.sidebar-tag-items button {
-  display: flex;
-  width: 100%;
-  height: 31px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 9px 0 25px;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-soft);
-  font-size: 12.5px;
-  text-align: left;
-}
-
-.organizer-page-link svg,
-.sidebar-tag-items button svg {
+.organizer-page-link svg {
   flex: 0 0 auto;
   color: var(--text-faint);
 }
 
-.sidebar-tag-items button:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-
 .organizer-page-row.active .organizer-page-link svg,
-.organizer-page-row:hover .organizer-page-link svg,
-.sidebar-tag-items button:hover svg {
+.organizer-page-row:hover .organizer-page-link svg {
   color: var(--text-soft);
 }
 
