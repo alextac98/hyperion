@@ -27,7 +27,8 @@ and an Electron desktop app with a consistent bundled Chromium runtime.
 - Sortable/filterable table and card views, favorites, journal, search,
   recoverable archives, and trash
 - Working vault, editor, appearance, and data settings
-- Keyboard shortcuts for search (`Command/Ctrl + K`) and new notes
+- Keyboard shortcuts for global search (`Command/Ctrl + Shift + F`), current-page
+  search (`Command/Ctrl + F`), and new notes
 - Responsive light and dark interfaces
 - Platform repository and capability boundaries designed for future mobile and
   native local-AI voice integrations
