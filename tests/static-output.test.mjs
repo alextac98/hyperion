@@ -59,6 +59,8 @@ test("includes rich local editing and organization", async () => {
   assert.match(appSource, /function SidebarSectionHeading/);
   assert.match(appSource, /label="Organize"/);
   assert.match(appSource, /favoriteNotes\.length > 0 && <section/);
+  assert.doesNotMatch(appSource, /All pages/);
+  assert.doesNotMatch(appSource, /SidebarTags/);
   assert.match(appSource, /organizer-children/);
   assert.doesNotMatch(appSource, /Parent page/);
   assert.match(appSource, /className="details-tags"/);

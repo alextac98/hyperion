@@ -62,7 +62,7 @@ import {
   reconcilePageLinks,
 } from "./lib/page-links";
 
-type View = "note" | "home" | "all" | "journal" | "tags" | "archive" | "trash";
+type View = "note" | "home" | "journal" | "tags" | "archive" | "trash";
 type Composer =
   | { type: "vault"; value: string }
   | { type: "page"; value: string; parentId: string | null }
@@ -642,7 +642,7 @@ export default function HyperionApp() {
     }
   };
 
-  const heading = view === "note" ? activeNote?.title : ({ home: "Home", all: "All pages", journal: "Journal", tags: "Tags", archive: "Archive", trash: "Trash" } as const)[view as Exclude<View, "note">];
+  const heading = view === "note" ? activeNote?.title : ({ home: "Home", journal: "Journal", tags: "Tags", archive: "Archive", trash: "Trash" } as const)[view as Exclude<View, "note">];
   const activeAncestors = activeNote ? ancestorPath(activeNotes, activeNote) : [];
   const outgoingLinks = activeNote ? [...new Set(activeNote.links.map((link) => link.targetId))]
     .flatMap((targetId) => {
@@ -695,7 +695,6 @@ export default function HyperionApp() {
         <nav className="primary-nav" aria-label="Knowledge base">
           <button onClick={() => setSearchOpen(true)}><MagnifyingGlass size={18} /><span>Search</span><kbd>⌘ K</kbd></button>
           <button className={view === "home" ? "active" : ""} onClick={() => navigateView("home")}><House size={18} /><span>Home</span></button>
-          <button className={view === "all" ? "active" : ""} onClick={() => navigateView("all")}><FileText size={18} /><span>All pages</span><em>{activeNotes.length}</em></button>
           <button className={view === "journal" ? "active" : ""} onClick={() => navigateView("journal")}><CalendarBlank size={18} /><span>Journal</span></button>
           <button className={view === "tags" ? "active" : ""} onClick={() => navigateView("tags")}><Tag size={18} /><span>Tags</span></button>
         </nav>
@@ -714,14 +713,6 @@ export default function HyperionApp() {
             onMoveNote={moveNote}
             onOpenNote={selectNote}
             onContextMenu={openPageContextMenu}
-          />
-          <SidebarTags
-            key={`tags:${vaultId}`}
-            tags={allTags}
-            onOpenTag={(tag) => {
-              setActiveTag(tag);
-              navigateView("tags");
-            }}
           />
         </div>
 
@@ -749,7 +740,7 @@ export default function HyperionApp() {
           <div className="topbar-left">
             {!sidebarOpen && <button className="icon-button" aria-label="Open sidebar" onClick={() => setSidebarOpen(true)}><SidebarSimple size={19} /></button>}
             {view === "note" && activeNote && <button className={`icon-button topbar-favorite${activeNote.favorite ? " active" : ""}`} aria-label={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} title={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} onClick={() => updateNoteById(activeNote.id, { favorite: !activeNote.favorite }, true)}><Star size={17} weight={activeNote.favorite ? "fill" : "regular"} /></button>}
-            <div className="breadcrumbs"><span>{activeVault?.name ?? "Hyperion"}</span>{activeAncestors.map((ancestor) => <span className="breadcrumb-parent" key={ancestor.id}><CaretRight size={12} /><button onClick={() => selectNote(ancestor.id)}><PageIcon note={ancestor} size={12} />{ancestor.title}</button></span>)}<CaretRight size={12} />{view === "note" && activeNote && <PageIcon note={activeNote} size={13} />}<strong>{heading ?? "Untitled"}</strong></div>
+            <div className="breadcrumbs">{activeAncestors.map((ancestor) => <span className="breadcrumb-parent" key={ancestor.id}><button onClick={() => selectNote(ancestor.id)}><PageIcon note={ancestor} size={12} />{ancestor.title}</button><CaretRight size={12} /></span>)}{view === "note" && activeNote && <PageIcon note={activeNote} size={13} />}<strong>{heading ?? "Untitled"}</strong></div>
           </div>
           <div className="topbar-actions">
             {view === "note" && activeNote && <div className="topbar-history" aria-label="Editing history">
@@ -783,8 +774,6 @@ export default function HyperionApp() {
               </article>
             ) : view === "home" ? (
               <HomeView notes={activeNotes} onSelect={selectNote} onCreate={() => void createNote()} />
-            ) : view === "all" ? (
-              <NotesView title="All pages" subtitle="Every active page in this vault" notes={activeNotes} allNotes={activeNotes} mode={preferences.notesView} onMode={(mode) => void savePreferencePatch({ notesView: mode })} onSelect={selectNote} onCreate={() => void createNote()} />
             ) : view === "journal" ? (
               <NotesView title="Journal" subtitle="Daily pages and observations" notes={activeNotes.filter((note) => note.tags.includes("journal"))} allNotes={activeNotes} mode={preferences.notesView} onMode={(mode) => void savePreferencePatch({ notesView: mode })} onSelect={selectNote} onCreate={async () => { const note = createBlankNote(vaultId); note.title = new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(new Date()); note.tags = ["journal"]; await knowledgeRepository.saveNote(note); setNotes((current) => [note, ...current]); selectNote(note.id); }} />
             ) : view === "tags" ? (
@@ -1068,14 +1057,6 @@ function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote,
       >Drop here for top level</div>}
       {!notes.length && <p className="sidebar-empty">Create a page, then nest more pages inside it.</p>}
     </div>}
-  </section>;
-}
-
-function SidebarTags({ tags, onOpenTag }: { tags: [string, number][]; onOpenTag: (tag: string) => void }) {
-  const [open, setOpen] = useState(false);
-  return <section className="sidebar-section sidebar-tags-section">
-    <SidebarSectionHeading label="Tags" expanded={open} onToggle={() => setOpen((current) => !current)} />
-    {open && <div className="sidebar-tag-items">{tags.map(([tag, count]) => <button key={tag} onClick={() => onOpenTag(tag)}><Hash size={14} /><span>{tag}</span><em>{count}</em></button>)}{!tags.length && <p className="sidebar-empty">Tags added to pages appear here.</p>}</div>}
   </section>;
 }
 
