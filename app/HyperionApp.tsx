@@ -80,6 +80,7 @@ const DEFAULT_SIDEBAR_WIDTH = 272;
 const MIN_SIDEBAR_WIDTH = 224;
 const MAX_SIDEBAR_WIDTH = 420;
 const SIDEBAR_WIDTH_STORAGE_KEY = "hyperion:sidebar-width";
+const JOURNAL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 function clampSidebarWidth(width: number) {
   return Math.round(Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width)));
@@ -1200,10 +1201,16 @@ function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote,
 function JournalView({ entries, onSelect, onOpenDate }: { entries: NoteRecord[]; onSelect: (id: string) => void; onOpenDate: (dateKey: string) => void }) {
   const [query, setQuery] = useState("");
   const journalSearchRef = useRef<HTMLInputElement>(null);
+  const monthPickerRef = useRef<HTMLDivElement>(null);
+  const monthPickerId = useId();
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1, 12);
   });
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [monthPickerMode, setMonthPickerMode] = useState<"month" | "year">("month");
+  const [pickerYear, setPickerYear] = useState(() => new Date().getFullYear());
+  const [pickerYearPageStart, setPickerYearPageStart] = useState(() => Math.floor(new Date().getFullYear() / 10) * 10);
   const today = journalDateKey();
   const todayEntry = entries.find((entry) => entry.journalDate === today);
   const entriesByDate = new Map<string, NoteRecord[]>();
@@ -1221,6 +1228,7 @@ function JournalView({ entries, onSelect, onOpenDate }: { entries: NoteRecord[];
     return day > 0 && day <= daysInMonth ? new Date(calendarYear, calendarMonth, day, 12) : null;
   });
   const calendarLabel = new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(visibleMonth);
+  const pickerYears = Array.from({ length: 12 }, (_, index) => pickerYearPageStart + index).filter((year) => year <= 9999);
   const filtered = entries
     .filter((entry) => `${entry.title} ${entry.body} ${entry.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => (b.journalDate ?? b.createdAt).localeCompare(a.journalDate ?? a.createdAt) || b.updatedAt.localeCompare(a.updatedAt));
@@ -1242,6 +1250,41 @@ function JournalView({ entries, onSelect, onOpenDate }: { entries: NoteRecord[];
     return () => window.removeEventListener("keydown", focusJournalSearch);
   }, []);
 
+  useEffect(() => {
+    if (!monthPickerOpen) return;
+    const closeMonthPicker = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMonthPickerOpen(false);
+    };
+    const closeMonthPickerOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !monthPickerRef.current?.contains(event.target)) setMonthPickerOpen(false);
+    };
+    window.addEventListener("keydown", closeMonthPicker);
+    window.addEventListener("pointerdown", closeMonthPickerOutside);
+    return () => {
+      window.removeEventListener("keydown", closeMonthPicker);
+      window.removeEventListener("pointerdown", closeMonthPickerOutside);
+    };
+  }, [monthPickerOpen]);
+
+  const toggleMonthPicker = () => {
+    if (monthPickerOpen) {
+      setMonthPickerOpen(false);
+      return;
+    }
+    setMonthPickerMode("month");
+    setPickerYear(calendarYear);
+    setPickerYearPageStart(Math.min(9988, Math.max(1, Math.floor(calendarYear / 10) * 10)));
+    setMonthPickerOpen(true);
+  };
+
+  const choosePickerMonth = (month: number) => {
+    const nextMonth = new Date(0);
+    nextMonth.setHours(12, 0, 0, 0);
+    nextMonth.setFullYear(pickerYear, month, 1);
+    setVisibleMonth(nextMonth);
+    setMonthPickerOpen(false);
+  };
+
   return <div className="library-view journal-view">
     <div className="view-heading journal-heading">
       <div><span className="eyebrow"><CalendarBlank size={14} /> A private record over time</span><h1>Journal</h1><p>Daily writing, kept separate from your organized pages.</p></div>
@@ -1253,11 +1296,32 @@ function JournalView({ entries, onSelect, onOpenDate }: { entries: NoteRecord[];
 
     <section className="journal-calendar" aria-label={`${calendarLabel} journal calendar`}>
       <header>
-        <div><strong>{calendarLabel}</strong><small>Select a day to open or create an entry.</small></div>
+        <div ref={monthPickerRef}>
+          <button
+            className="journal-calendar-period"
+            aria-controls={monthPickerId}
+            aria-expanded={monthPickerOpen}
+            aria-haspopup="dialog"
+            onClick={toggleMonthPicker}
+          ><strong>{calendarLabel}</strong><CaretDown size={13} weight="bold" /></button>
+          <small>Select a day to open or create an entry.</small>
+          {monthPickerOpen && <div className="journal-calendar-picker" id={monthPickerId} role="dialog" aria-label="Choose a month and year">
+            <div className="journal-calendar-picker-nav">
+              <button aria-label={monthPickerMode === "month" ? "Previous year" : "Previous decade"} onClick={() => monthPickerMode === "month" ? setPickerYear((year) => Math.max(1, year - 1)) : setPickerYearPageStart((year) => Math.max(1, year - 10))}><CaretLeft size={14} /></button>
+              {monthPickerMode === "month"
+                ? <button className="journal-calendar-picker-title" aria-label={`Choose a year, currently ${pickerYear}`} onClick={() => { setPickerYearPageStart(Math.min(9988, Math.max(1, Math.floor(pickerYear / 10) * 10))); setMonthPickerMode("year"); }}>{pickerYear}<CaretDown size={11} weight="bold" /></button>
+                : <strong>{pickerYearPageStart}–{pickerYears.at(-1)}</strong>}
+              <button aria-label={monthPickerMode === "month" ? "Next year" : "Next decade"} onClick={() => monthPickerMode === "month" ? setPickerYear((year) => Math.min(9999, year + 1)) : setPickerYearPageStart((year) => Math.min(9988, year + 10))}><CaretRight size={14} /></button>
+            </div>
+            {monthPickerMode === "month"
+              ? <div className="journal-calendar-picker-grid months">{JOURNAL_MONTHS.map((month, index) => <button className={pickerYear === calendarYear && index === calendarMonth ? "active" : ""} aria-pressed={pickerYear === calendarYear && index === calendarMonth} key={month} onClick={() => choosePickerMonth(index)}>{month.slice(0, 3)}</button>)}</div>
+              : <div className="journal-calendar-picker-grid years">{pickerYears.map((year) => <button className={year === pickerYear ? "active" : ""} aria-pressed={year === pickerYear} key={year} onClick={() => { setPickerYear(year); setMonthPickerMode("month"); }}>{year}</button>)}</div>}
+          </div>}
+        </div>
         <div className="journal-calendar-controls">
-          <button aria-label="Previous month" title="Previous month" onClick={() => setVisibleMonth(new Date(calendarYear, calendarMonth - 1, 1, 12))}><CaretLeft size={15} /></button>
-          <button className="journal-calendar-today" onClick={() => { const now = new Date(); setVisibleMonth(new Date(now.getFullYear(), now.getMonth(), 1, 12)); }}>Today</button>
-          <button aria-label="Next month" title="Next month" onClick={() => setVisibleMonth(new Date(calendarYear, calendarMonth + 1, 1, 12))}><CaretRight size={15} /></button>
+          <button aria-label="Previous month" title="Previous month" onClick={() => { setMonthPickerOpen(false); setVisibleMonth(new Date(calendarYear, calendarMonth - 1, 1, 12)); }}><CaretLeft size={15} /></button>
+          <button className="journal-calendar-today" onClick={() => { const now = new Date(); setMonthPickerOpen(false); setVisibleMonth(new Date(now.getFullYear(), now.getMonth(), 1, 12)); }}>Today</button>
+          <button aria-label="Next month" title="Next month" onClick={() => { setMonthPickerOpen(false); setVisibleMonth(new Date(calendarYear, calendarMonth + 1, 1, 12)); }}><CaretRight size={15} /></button>
         </div>
       </header>
       <div className="journal-calendar-weekdays" aria-hidden="true">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}</div>
