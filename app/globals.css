@@ -1729,12 +1729,36 @@ kbd {
   gap: 8px;
 }
 
-.journal-toolbar { margin-top: -18px; }
-.journal-toolbar > span { flex: 0 0 auto; color: var(--text-faint); font-size: 10px; }
+.journal-calendar { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.journal-calendar > header { display: flex; min-height: 62px; align-items: center; justify-content: space-between; gap: 18px; padding: 11px 13px 11px 16px; }
+.journal-calendar > header > div:first-child { display: flex; min-width: 0; flex-direction: column; }
+.journal-calendar > header strong { font-size: 13px; font-weight: 680; }
+.journal-calendar > header small { margin-top: 4px; color: var(--text-faint); font-size: 9.5px; }
+.journal-calendar-controls { display: flex; flex: 0 0 auto; align-items: center; gap: 3px; }
+.journal-calendar-controls button { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 6px; background: transparent; color: var(--text-soft); }
+.journal-calendar-controls button:hover { background: var(--hover); color: var(--text); }
+.journal-calendar-controls .journal-calendar-today { width: auto; padding: 0 8px; font-size: 9.5px; font-weight: 620; }
+.journal-calendar-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding: 8px 0; border-top: 1px solid var(--line); background: var(--panel); }
+.journal-calendar-weekdays span { color: var(--text-faint); font-size: 8.5px; font-weight: 650; letter-spacing: .03em; text-align: center; text-transform: uppercase; }
+.journal-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
+.journal-calendar-grid > button,
+.journal-calendar-blank { min-width: 0; min-height: 72px; background: var(--surface); }
+.journal-calendar-grid > button { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; padding: 9px 10px; color: var(--text-soft); text-align: left; }
+.journal-calendar-grid > button:hover { position: relative; z-index: 1; background: var(--panel); box-shadow: 0 0 0 1px var(--line-strong); }
+.journal-calendar-grid > button.has-entry { background: color-mix(in srgb, var(--accent-soft) 52%, var(--surface)); color: var(--text); }
+.journal-calendar-grid > button strong { display: grid; width: 23px; height: 23px; place-items: center; border-radius: 50%; font-size: 10.5px; font-weight: 620; }
+.journal-calendar-grid > button.is-today strong { background: var(--accent); color: white; font-weight: 720; }
+.journal-calendar-entry { display: flex; max-width: 100%; align-items: center; gap: 5px; overflow: hidden; color: var(--accent-text); font-size: 8.5px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.journal-calendar-entry i { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--accent); }
+
+.journal-heading-actions { display: flex; min-width: 0; flex: 0 1 430px; align-items: center; justify-content: flex-end; gap: 8px; }
+.journal-search { display: flex; height: 36px; min-width: 0; flex: 1; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text-faint); }
+.journal-search input { min-width: 0; flex: 1; border: 0; background: transparent; outline: 0; font-size: 11px; }
+.journal-heading-actions .primary-button { flex: 0 0 auto; }
+.journal-months { margin-top: 28px; }
 .journal-month + .journal-month { margin-top: 34px; }
-.journal-month-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 11px; }
+.journal-month-heading { margin-bottom: 11px; }
 .journal-month-heading h2 { margin: 0; font-size: 13px; font-weight: 670; }
-.journal-month-heading span { color: var(--text-faint); font-size: 9.5px; }
 
 .journal-list > button {
   display: flex;
@@ -1971,6 +1995,8 @@ kbd {
 @media (max-width: 480px) {
   .view-heading { flex-direction: column; }
   .view-heading .primary-button { width: 100%; }
+  .journal-heading-actions { width: 100%; flex: 0 0 auto; }
+  .journal-heading .primary-button { width: auto; }
   .format-toolbar { margin-top: 28px; }
   .trash-list > div { align-items: flex-start; flex-direction: column; }
   .trash-actions { width: 100%; }
@@ -2537,6 +2563,15 @@ kbd {
 }
 
 @media (max-width: 720px) {
+  .journal-calendar > header { gap: 8px; padding-inline: 11px 9px; }
+  .journal-calendar > header small { max-width: 165px; }
+  .journal-calendar-weekdays span { font-size: 7.5px; }
+  .journal-calendar-grid > button,
+  .journal-calendar-blank { min-height: 52px; }
+  .journal-calendar-grid > button { gap: 5px; padding: 5px; }
+  .journal-calendar-grid > button strong { width: 21px; height: 21px; font-size: 9.5px; }
+  .journal-calendar-entry { gap: 0; font-size: 0; }
+  .journal-calendar-entry i { width: 6px; height: 6px; }
   .journal-entry-label { width: calc(100% - 30px); margin-top: 24px; }
   .page-icon-row { width: calc(100% - 30px); margin-top: 22px; }
   .note-workspace.has-page-icon .page-icon-picker-wrap { transform: translate(9px, 34px); }

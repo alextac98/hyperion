@@ -14,7 +14,7 @@ and an Electron desktop app with a consistent bundled Chromium runtime.
 - Browser-local IndexedDB storage for the web target
 - A desktop SQLite database containing notes, rich editor documents, and assets,
   stored in `~/.config/hyperion` by default with a user-selectable location
-- A resizable sidebar with a collapsible Organize tree where every page can
+- A resizable sidebar with a collapsible Notes tree where every page can
   contain child pages, with drag-and-drop nesting, persistent sibling order,
   and right-click actions for renaming, duplicating, favoriting, archiving,
   and removing pages

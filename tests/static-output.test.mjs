@@ -57,7 +57,7 @@ test("includes rich local editing and organization", async () => {
   assert.match(editorSource, /extension !== PageDraggingAreaViewExtension/);
   assert.match(appSource, /New vault/);
   assert.match(appSource, /function SidebarSectionHeading/);
-  assert.match(appSource, /label="Organize"/);
+  assert.match(appSource, /label="Notes"/);
   assert.match(appSource, /favoriteNotes\.length > 0 && <section/);
   assert.doesNotMatch(appSource, /All pages/);
   assert.doesNotMatch(appSource, /SidebarTags/);

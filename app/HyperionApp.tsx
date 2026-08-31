@@ -6,6 +6,7 @@ import {
   BookOpenText,
   CalendarBlank,
   CaretDown,
+  CaretLeft,
   CaretRight,
   Check,
   Database,
@@ -405,17 +406,16 @@ export default function HyperionApp() {
     selectNote(note.id);
   }, [selectNote, vaultId]);
 
-  const openTodayJournal = useCallback(async () => {
-    const today = journalDateKey();
-    const existing = notes.find((note) => note.kind === "journal" && note.journalDate === today && !note.trashed && !note.archived);
+  const openJournalDate = useCallback(async (dateKey: string) => {
+    const existing = notes.find((note) => note.kind === "journal" && note.journalDate === dateKey && !note.trashed && !note.archived);
     if (existing) {
       selectNote(existing.id);
       return;
     }
     const note = createBlankNote(vaultId);
     note.kind = "journal";
-    note.journalDate = today;
-    note.title = journalTitle(new Date());
+    note.journalDate = dateKey;
+    note.title = journalTitle(journalDate(dateKey));
     note.icon = { type: "emoji", unicode: "📅" };
     stableTitles.current[note.id] = note.title;
     await knowledgeRepository.saveNote(note);
@@ -910,7 +910,7 @@ export default function HyperionApp() {
             ) : view === "home" ? (
               <HomeView notes={organizedNotes} onSelect={selectNote} onCreate={() => void createNote()} />
             ) : view === "journal" ? (
-              <JournalView entries={journalEntries} onSelect={selectNote} onWriteToday={() => void openTodayJournal()} />
+              <JournalView entries={journalEntries} onSelect={selectNote} onOpenDate={(dateKey) => void openJournalDate(dateKey)} />
             ) : view === "tags" ? (
               <TagsView tags={allTags} notes={activeNotes} activeTag={activeTag} onTag={setActiveTag} onSelect={selectNote} />
             ) : view === "archive" ? (
@@ -1180,7 +1180,7 @@ function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote,
 
   return <section className="sidebar-section organizer-section">
     <SidebarSectionHeading
-      label="Organize"
+      label="Notes"
       expanded={open}
       onToggle={() => setOpen((current) => !current)}
       action={<button className="mini-button" aria-label="New top-level page" title="New top-level page" onClick={() => onCreatePage(null)}><Plus size={13} /></button>}
@@ -1197,10 +1197,30 @@ function SidebarOrganizer({ notes, view, activeNoteId, onCreatePage, onMoveNote,
   </section>;
 }
 
-function JournalView({ entries, onSelect, onWriteToday }: { entries: NoteRecord[]; onSelect: (id: string) => void; onWriteToday: () => void }) {
+function JournalView({ entries, onSelect, onOpenDate }: { entries: NoteRecord[]; onSelect: (id: string) => void; onOpenDate: (dateKey: string) => void }) {
   const [query, setQuery] = useState("");
+  const journalSearchRef = useRef<HTMLInputElement>(null);
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1, 12);
+  });
   const today = journalDateKey();
   const todayEntry = entries.find((entry) => entry.journalDate === today);
+  const entriesByDate = new Map<string, NoteRecord[]>();
+  entries.forEach((entry) => {
+    if (!entry.journalDate) return;
+    entriesByDate.set(entry.journalDate, [...(entriesByDate.get(entry.journalDate) ?? []), entry]);
+  });
+  const calendarYear = visibleMonth.getFullYear();
+  const calendarMonth = visibleMonth.getMonth();
+  const firstWeekday = new Date(calendarYear, calendarMonth, 1, 12).getDay();
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0, 12).getDate();
+  const calendarCellCount = Math.ceil((firstWeekday + daysInMonth) / 7) * 7;
+  const calendarDays = Array.from({ length: calendarCellCount }, (_, index) => {
+    const day = index - firstWeekday + 1;
+    return day > 0 && day <= daysInMonth ? new Date(calendarYear, calendarMonth, day, 12) : null;
+  });
+  const calendarLabel = new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(visibleMonth);
   const filtered = entries
     .filter((entry) => `${entry.title} ${entry.body} ${entry.tags.join(" ")}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => (b.journalDate ?? b.createdAt).localeCompare(a.journalDate ?? a.createdAt) || b.updatedAt.localeCompare(a.updatedAt));
@@ -1211,7 +1231,54 @@ function JournalView({ entries, onSelect, onWriteToday }: { entries: NoteRecord[
     groups.set(month, [...(groups.get(month) ?? []), entry]);
   });
 
-  return <div className="library-view journal-view"><div className="view-heading"><div><span className="eyebrow"><CalendarBlank size={14} /> A private record over time</span><h1>Journal</h1><p>{entries.length ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"}, kept separate from your organized pages.` : "Daily writing with the full power of a Hyperion page."}</p></div><button className="primary-button" onClick={onWriteToday}><PencilSimple size={17} /> {todayEntry ? "Open today" : "Write today"}</button></div><div className="data-toolbar journal-toolbar"><label><MagnifyingGlass size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search journal…" /></label><span>{journalTitle(new Date())}</span></div>{filtered.length ? <div className="journal-months">{[...groups.entries()].map(([month, monthEntries]) => <section className="journal-month" key={month}><div className="journal-month-heading"><h2>{month}</h2><span>{monthEntries.length} {monthEntries.length === 1 ? "entry" : "entries"}</span></div><div className="journal-list">{monthEntries.map((entry) => { const date = journalDate(entry.journalDate ?? journalDateKey(new Date(entry.createdAt))); return <button key={entry.id} onClick={() => onSelect(entry.id)}><span className="journal-date"><strong>{date.getDate()}</strong><small>{new Intl.DateTimeFormat("en", { weekday: "short" }).format(date)}</small></span><span className="journal-copy"><span className="journal-entry-title"><strong>{entry.title}</strong>{entry.favorite && <Star size={13} weight="fill" />}</span><p>{notePreview(entry)}</p><small>Edited {relativeTime(entry.updatedAt)}{entry.tags.length ? ` · ${entry.tags.slice(0, 2).map((tag) => `#${tag}`).join(" ")}` : ""}</small></span><CaretRight size={15} /></button>; })}</div></section>)}</div> : <EmptyState icon={<CalendarBlank size={28} />} title={query ? "No matching entries" : "Your journal starts here"} description={query ? "Try a different word or clear the search." : "Write today's entry. It stays out of Organize while remaining searchable and linkable."} action={!query && <button className="primary-button" onClick={onWriteToday}><PencilSimple size={16} /> Write today</button>} />}</div>;
+  useEffect(() => {
+    const focusJournalSearch = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.key.toLowerCase() !== "f") return;
+      event.preventDefault();
+      journalSearchRef.current?.focus();
+      journalSearchRef.current?.select();
+    };
+    window.addEventListener("keydown", focusJournalSearch);
+    return () => window.removeEventListener("keydown", focusJournalSearch);
+  }, []);
+
+  return <div className="library-view journal-view">
+    <div className="view-heading journal-heading">
+      <div><span className="eyebrow"><CalendarBlank size={14} /> A private record over time</span><h1>Journal</h1><p>Daily writing, kept separate from your organized pages.</p></div>
+      <div className="journal-heading-actions">
+        <label className="journal-search"><MagnifyingGlass size={16} /><input ref={journalSearchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search journal…" aria-label="Search journal" /></label>
+        <button className="primary-button" onClick={() => onOpenDate(today)}><PencilSimple size={17} /> {todayEntry ? "Open today" : "Write today"}</button>
+      </div>
+    </div>
+
+    <section className="journal-calendar" aria-label={`${calendarLabel} journal calendar`}>
+      <header>
+        <div><strong>{calendarLabel}</strong><small>Select a day to open or create an entry.</small></div>
+        <div className="journal-calendar-controls">
+          <button aria-label="Previous month" title="Previous month" onClick={() => setVisibleMonth(new Date(calendarYear, calendarMonth - 1, 1, 12))}><CaretLeft size={15} /></button>
+          <button className="journal-calendar-today" onClick={() => { const now = new Date(); setVisibleMonth(new Date(now.getFullYear(), now.getMonth(), 1, 12)); }}>Today</button>
+          <button aria-label="Next month" title="Next month" onClick={() => setVisibleMonth(new Date(calendarYear, calendarMonth + 1, 1, 12))}><CaretRight size={15} /></button>
+        </div>
+      </header>
+      <div className="journal-calendar-weekdays" aria-hidden="true">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}</div>
+      <div className="journal-calendar-grid">{calendarDays.map((date, index) => {
+        if (!date) return <span className="journal-calendar-blank" aria-hidden="true" key={`blank-${index}`} />;
+        const dateKey = journalDateKey(date);
+        const dateEntries = entriesByDate.get(dateKey) ?? [];
+        const description = new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(date);
+        return <button
+          className={`${dateEntries.length ? "has-entry" : ""}${dateKey === today ? " is-today" : ""}`}
+          aria-current={dateKey === today ? "date" : undefined}
+          aria-label={`${dateEntries.length ? "Open" : "Write for"} ${description}${dateEntries.length > 1 ? `, ${dateEntries.length} entries` : ""}`}
+          title={dateEntries.length ? `Open ${dateEntries[0].title}` : `Write for ${description}`}
+          key={dateKey}
+          onClick={() => onOpenDate(dateKey)}
+        ><strong>{date.getDate()}</strong>{dateEntries.length > 0 && <span className="journal-calendar-entry"><i />{dateEntries.length > 1 ? `${dateEntries.length} entries` : "Entry"}</span>}</button>;
+      })}</div>
+    </section>
+
+    {filtered.length ? <div className="journal-months">{[...groups.entries()].map(([month, monthEntries]) => <section className="journal-month" key={month}><div className="journal-month-heading"><h2>{month}</h2></div><div className="journal-list">{monthEntries.map((entry) => { const date = journalDate(entry.journalDate ?? journalDateKey(new Date(entry.createdAt))); return <button key={entry.id} onClick={() => onSelect(entry.id)}><span className="journal-date"><strong>{date.getDate()}</strong><small>{new Intl.DateTimeFormat("en", { weekday: "short" }).format(date)}</small></span><span className="journal-copy"><span className="journal-entry-title"><strong>{entry.title}</strong>{entry.favorite && <Star size={13} weight="fill" />}</span><p>{notePreview(entry)}</p><small>Edited {relativeTime(entry.updatedAt)}{entry.tags.length ? ` · ${entry.tags.slice(0, 2).map((tag) => `#${tag}`).join(" ")}` : ""}</small></span><CaretRight size={15} /></button>; })}</div></section>)}</div> : <EmptyState icon={<CalendarBlank size={28} />} title={query ? "No matching entries" : "Your journal starts here"} description={query ? "Try a different word or clear the search." : "Choose a date above to start writing. It stays out of Notes while remaining searchable and linkable."} action={!query && <button className="primary-button" onClick={() => onOpenDate(today)}><PencilSimple size={16} /> Write today</button>} />}
+  </div>;
 }
 
 function TagsView({ tags, notes, activeTag, onTag, onSelect }: { tags: [string, number][]; notes: NoteRecord[]; activeTag: string | null; onTag: (tag: string) => void; onSelect: (id: string) => void }) {
