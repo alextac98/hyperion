@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { autoUpdater } from "electron-updater";
 import { DesktopDatabase, type RepositoryRequest } from "./database.js";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,54 @@ const channels = {
 
 let mainWindow: BrowserWindow | null = null;
 let database: DesktopDatabase | null = null;
+let updateCheckStarted = false;
+
+function showAppMessageBox(options: Electron.MessageBoxOptions) {
+  return mainWindow
+    ? dialog.showMessageBox(mainWindow, options)
+    : dialog.showMessageBox(options);
+}
+
+function registerAutoUpdater() {
+  if (!app.isPackaged || updateCheckStarted) return;
+  updateCheckStarted = true;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("update-available", async (info) => {
+    const choice = await showAppMessageBox({
+      type: "info",
+      title: "Hyperion update available",
+      message: `Hyperion ${info.version} is available.`,
+      detail: "Download the update now? You can continue working while it downloads.",
+      buttons: ["Download", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (choice.response === 0) void autoUpdater.downloadUpdate();
+  });
+
+  autoUpdater.on("update-downloaded", async (info) => {
+    const choice = await showAppMessageBox({
+      type: "info",
+      title: "Hyperion update ready",
+      message: `Hyperion ${info.version} is ready to install.`,
+      detail: "Restart Hyperion to finish installing the update.",
+      buttons: ["Restart and install", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (choice.response === 0) autoUpdater.quitAndInstall();
+  });
+
+  autoUpdater.on("error", (error) => {
+    console.error("Automatic update failed", error);
+  });
+
+  void autoUpdater.checkForUpdates().catch((error: unknown) => {
+    console.error("Unable to check for updates", error);
+  });
+}
 
 function databaseInstance() {
   if (!database) throw new Error("The desktop database is not initialized");
@@ -150,6 +199,7 @@ app.whenReady().then(async () => {
     : undefined);
   registerDesktopHandlers();
   await createWindow();
+  registerAutoUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
