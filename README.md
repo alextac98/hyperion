@@ -41,7 +41,8 @@ and an Electron desktop app with a consistent bundled Chromium runtime.
 - `pnpm build:desktop` creates native desktop packages.
 
 See [development](docs/development.md), [building](docs/building.md), and
-[architecture](docs/architecture.md) for requirements and details.
+[architecture](docs/architecture.md) for requirements and details. Maintainers
+can also review the [release process](docs/developer/release.md).
 
 ## Attributions
 

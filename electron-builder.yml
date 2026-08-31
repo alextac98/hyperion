@@ -2,6 +2,11 @@ appId: app.hyperion.desktop
 productName: Hyperion
 asar: true
 
+publish:
+  provider: github
+  owner: alextac98
+  repo: hyperion
+
 directories:
   output: release
   buildResources: build
@@ -15,19 +20,23 @@ files:
 mac:
   category: public.app-category.productivity
   icon: build/icon.icns
+  notarize: true
   target:
     - dmg
     - zip
+  artifactName: "${productName}-${version}-mac-${arch}.${ext}"
 
 win:
   icon: build/icon.ico
   target:
     - nsis
+  artifactName: "${productName}-${version}-windows-${arch}.${ext}"
 
 linux:
   category: Office
   icon: build/icon.png
   target:
     - AppImage
+  artifactName: "${productName}-${version}-linux-${arch}.${ext}"
 
 npmRebuild: false

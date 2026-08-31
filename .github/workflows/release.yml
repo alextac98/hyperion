@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: Prepare release
+    runs-on: ubuntu-24.04
+    outputs:
+      release-created: ${{ steps.release.outputs.release_created }}
+      tag-name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  quality:
+    name: Release quality checks
+    if: ${{ needs.release-please.outputs.release-created == 'true' }}
+    needs: release-please
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag-name }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm check:desktop
+
+  build:
+    name: Build ${{ matrix.name }}
+    if: ${{ needs.release-please.outputs.release-created == 'true' }}
+    needs: [release-please, quality]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-14
+            artifact: desktop-macos
+          - name: Windows
+            os: windows-2022
+            artifact: desktop-windows
+          - name: Linux
+            os: ubuntu-24.04
+            artifact: desktop-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag-name }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify signing configuration
+        if: ${{ runner.os == 'macOS' || runner.os == 'Windows' }}
+        shell: bash
+        env:
+          SIGNING_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.MACOS_CERTIFICATE || secrets.WINDOWS_CERTIFICATE }}
+          SIGNING_PASSWORD: ${{ runner.os == 'macOS' && secrets.MACOS_CERTIFICATE_PASSWORD || secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$SIGNING_CERTIFICATE"
+          test -n "$SIGNING_PASSWORD"
+          if [ "$RUNNER_OS" = macOS ]; then
+            test -n "$APPLE_ID"
+            test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+            test -n "$APPLE_TEAM_ID"
+          fi
+      - name: Build packages
+        run: pnpm build:web && pnpm build:electron && pnpm exec electron-builder --publish never
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MACOS_CERTIFICATE || runner.os == 'Windows' && secrets.WINDOWS_CERTIFICATE || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MACOS_CERTIFICATE_PASSWORD || runner.os == 'Windows' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Collect release files
+        shell: bash
+        run: |
+          mkdir release-publish
+          find release -maxdepth 1 -type f \( \
+            -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o \
+            -name '*.AppImage' -o -name '*.yml' -o -name '*.blockmap' \
+          \) -exec cp {} release-publish/ \;
+          test -n "$(find release-publish -type f -print -quit)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release-publish/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [release-please, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: release-publish
+          merge-multiple: true
+      - name: Upload assets and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag-name }}
+        run: |
+          gh release upload "$TAG_NAME" release-publish/* --clobber
+          gh release edit "$TAG_NAME" --draft=false --latest
