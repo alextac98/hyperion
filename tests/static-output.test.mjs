@@ -57,7 +57,7 @@ test("includes rich local editing and organization", async () => {
   assert.match(editorSource, /extension !== PageDraggingAreaViewExtension/);
   assert.match(appSource, /New vault/);
   assert.match(appSource, /function SidebarSectionHeading/);
-  assert.match(appSource, /label="Organize"/);
+  assert.match(appSource, /label="Notes"/);
   assert.match(appSource, /favoriteNotes\.length > 0 && <section/);
   assert.doesNotMatch(appSource, /All pages/);
   assert.doesNotMatch(appSource, /SidebarTags/);
@@ -107,8 +107,10 @@ test("includes rich local editing and organization", async () => {
   assert.match(databaseSource, /targetId: string/);
   assert.match(databaseSource, /sortOrder: number/);
   assert.match(databaseSource, /archived: boolean/);
+  assert.match(databaseSource, /kind: NoteKind/);
+  assert.match(databaseSource, /journalDate: string \| null/);
   assert.match(databaseSource, /icon: PageIconRecord \| null/);
-  assert.match(databaseSource, /DATABASE_VERSION = 9/);
+  assert.match(databaseSource, /DATABASE_VERSION = 10/);
   assert.match(linksSource, /reconcilePageLinks/);
   assert.match(linksSource, /WIKI_LINK_PATTERN/);
   assert.match(appSource, /sidebarResizeRef/);

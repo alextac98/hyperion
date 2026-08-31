@@ -1,5 +1,6 @@
 export type ThemePreference = "light" | "dark" | "system";
 export type NotesViewPreference = "list" | "table";
+export type NoteKind = "note" | "journal";
 
 export type VaultRecord = {
   id: string;
@@ -55,6 +56,8 @@ export function pageIconText(icon: PageIconRecord | null) {
 export type NoteRecord = {
   id: string;
   vaultId: string;
+  kind: NoteKind;
+  journalDate: string | null;
   title: string;
   icon: PageIconRecord | null;
   aliases: string[];
@@ -83,7 +86,7 @@ export type VaultPreferences = {
 
 export type VaultBundle = {
   format: "hyperion-vault";
-  version: 1 | 2 | 3 | 4 | 5 | 6;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7;
   exportedAt: string;
   vault: VaultRecord;
   notes: NoteRecord[];
@@ -111,7 +114,7 @@ export interface KnowledgeRepository {
 export const DEFAULT_VAULT_ID = "hyperion";
 
 const DATABASE_NAME = "hyperion-local";
-const DATABASE_VERSION = 9;
+const DATABASE_VERSION = 10;
 const NOTES_STORE = "notes";
 const VAULTS_STORE = "vaults";
 const COLLECTIONS_STORE = "collections";
@@ -128,6 +131,34 @@ export const DEFAULT_PREFERENCES: Omit<VaultPreferences, "vaultId"> = {
 
 function timestamp() {
   return new Date().toISOString();
+}
+
+export function journalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function inferredJournalDate(note: Pick<NoteRecord, "title" | "createdAt">) {
+  const titleDate = new Date(note.title);
+  const fallbackDate = new Date(note.createdAt);
+  return journalDateKey(Number.isNaN(titleDate.getTime()) ? fallbackDate : titleDate);
+}
+
+export function normalizeNoteRecord(note: NoteRecord): NoteRecord {
+  const legacyJournal = !note.kind && (note.tags ?? []).includes("journal");
+  const kind: NoteKind = note.kind === "journal" || legacyJournal ? "journal" : "note";
+  const storedJournalDate = typeof note.journalDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(note.journalDate)
+    ? note.journalDate
+    : null;
+  return {
+    ...note,
+    kind,
+    journalDate: kind === "journal" ? storedJournalDate ?? inferredJournalDate(note) : null,
+    tags: legacyJournal ? (note.tags ?? []).filter((tag) => tag !== "journal") : note.tags ?? [],
+    parentId: note.parentId ?? null,
+  };
 }
 
 export function makeDefaultVault(): VaultRecord {
@@ -158,6 +189,8 @@ export function makeSeedNotes(): NoteRecord[] {
     {
       id: "welcome-to-hyperion",
       vaultId: DEFAULT_VAULT_ID,
+      kind: "note",
+      journalDate: null,
       title: "Welcome to Hyperion",
       icon: { type: "emoji", unicode: "👋" },
       aliases: [],
@@ -176,6 +209,8 @@ export function makeSeedNotes(): NoteRecord[] {
     {
       id: "garden-and-stream",
       vaultId: DEFAULT_VAULT_ID,
+      kind: "note",
+      journalDate: null,
       title: "The garden and the stream",
       icon: { type: "emoji", unicode: "🌱" },
       aliases: [],
@@ -194,6 +229,8 @@ export function makeSeedNotes(): NoteRecord[] {
     {
       id: "reading-workflow",
       vaultId: DEFAULT_VAULT_ID,
+      kind: "note",
+      journalDate: null,
       title: "Reading workflow",
       icon: { type: "emoji", unicode: "📚" },
       aliases: [],
@@ -212,6 +249,8 @@ export function makeSeedNotes(): NoteRecord[] {
     {
       id: "project-atlas",
       vaultId: DEFAULT_VAULT_ID,
+      kind: "note",
+      journalDate: null,
       title: "Project Atlas",
       icon: { type: "emoji", unicode: "🗺️" },
       aliases: [],
@@ -230,6 +269,8 @@ export function makeSeedNotes(): NoteRecord[] {
     {
       id: "commonplace-book",
       vaultId: DEFAULT_VAULT_ID,
+      kind: "note",
+      journalDate: null,
       title: "A commonplace book",
       icon: { type: "emoji", unicode: "📖" },
       aliases: [],
@@ -248,11 +289,13 @@ export function makeSeedNotes(): NoteRecord[] {
     {
       id: "today-inbox",
       vaultId: DEFAULT_VAULT_ID,
+      kind: "journal",
+      journalDate: journalDateKey(),
       title: new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(new Date()),
       icon: { type: "emoji", unicode: "📅" },
       aliases: [],
       body: `Morning notes\n\n• Review the open questions in Project Atlas.\n• Capture the essay idea about tools that become places.\n• Revisit [[Reading workflow]].`,
-      tags: ["journal"],
+      tags: [],
       links: [{ targetId: "reading-workflow", label: "Reading workflow", kind: "inline" }],
       parentId: null,
       sortOrder: 3_000,
@@ -317,9 +360,10 @@ function openDatabase(): Promise<IDBDatabase> {
           const cursor = noteCursor.result;
           if (!cursor) return;
           const legacy = cursor.value as Partial<NoteRecord>;
+          const normalized = normalizeNoteRecord(legacy as NoteRecord);
           const firstCollectionId = legacy.collectionIds?.[0];
           cursor.update({
-            ...legacy,
+            ...normalized,
             vaultId: legacy.vaultId ?? DEFAULT_VAULT_ID,
             icon: normalizePageIcon(legacy.icon),
             aliases: legacy.aliases ?? [],
@@ -340,6 +384,8 @@ function openDatabase(): Promise<IDBDatabase> {
             notes.put({
               id: `collection-page:${collection.id}`,
               vaultId: collection.vaultId,
+              kind: "note",
+              journalDate: null,
               title: collection.name,
               icon: { type: "emoji", unicode: "📁" },
               aliases: [],
@@ -446,9 +492,9 @@ export class IndexedDbKnowledgeRepository implements KnowledgeRepository {
   async listNotes(vaultId: string) {
     const database = await openDatabase();
     const notes = await getAll<NoteRecord>(database, NOTES_STORE);
-    return notes
+    const stored = notes
       .filter((note) => note.vaultId === vaultId)
-      .map((note) => ({
+      .map((note) => normalizeNoteRecord({
         ...note,
         icon: normalizePageIcon(note.icon),
         aliases: note.aliases ?? [],
@@ -458,6 +504,14 @@ export class IndexedDbKnowledgeRepository implements KnowledgeRepository {
         archived: note.archived ?? false,
       }))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const originalById = new Map(notes.map((note) => [note.id, note]));
+    const changed = stored.filter((note) => JSON.stringify(originalById.get(note.id)) !== JSON.stringify(note));
+    if (changed.length) {
+      const transaction = database.transaction(NOTES_STORE, "readwrite");
+      changed.forEach((note) => transaction.objectStore(NOTES_STORE).put(note));
+      await transactionComplete(transaction);
+    }
+    return stored;
   }
 
   async saveNote(note: NoteRecord) {
@@ -522,6 +576,8 @@ export function createBlankNote(vaultId: string, parentId: string | null = null)
   return {
     id: crypto.randomUUID(),
     vaultId,
+    kind: "note",
+    journalDate: null,
     title: "Untitled",
     icon: null,
     aliases: [],

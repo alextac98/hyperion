@@ -5,6 +5,7 @@ import {
   makeDefaultVault,
   makeSeedCollections,
   makeSeedNotes,
+  normalizeNoteRecord,
   normalizePageIcon,
   type NoteRecord,
   type VaultPreferences,
@@ -66,7 +67,7 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
 
   async listNotes(vaultId: string) {
     const notes = await this.execute<NoteRecord[]>({ operation: "listNotes", vaultId });
-    return notes.map((note) => ({
+    const normalized = notes.map((note) => normalizeNoteRecord({
       ...note,
       icon: normalizePageIcon(note.icon),
       aliases: note.aliases ?? [],
@@ -75,6 +76,10 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
       sortOrder: Number.isFinite(note.sortOrder) ? note.sortOrder : 0,
       archived: note.archived ?? false,
     }));
+    await Promise.all(normalized.flatMap((note, index) => JSON.stringify(notes[index]) === JSON.stringify(note)
+      ? []
+      : [this.saveNote(note)]));
+    return normalized;
   }
 
   saveNote(note: NoteRecord) {
