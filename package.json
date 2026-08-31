@@ -7,7 +7,7 @@
   "packageManager": "pnpm@11.1.0",
   "main": "dist-electron/main.js",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=22.16.0"
   },
   "scripts": {
     "dev": "pnpm dev:web",
