@@ -105,6 +105,21 @@ function saveNote(database: DatabaseSync, note: JsonRecord): StatementResultingC
   );
 }
 
+function saveTemplate(database: DatabaseSync, template: JsonRecord): StatementResultingChanges {
+  return database.prepare(`
+    INSERT INTO templates(id, vault_id, updated_at, record) VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      vault_id = excluded.vault_id,
+      updated_at = excluded.updated_at,
+      record = excluded.record
+  `).run(
+    recordString(template, "id"),
+    recordString(template, "vaultId"),
+    recordString(template, "updatedAt"),
+    JSON.stringify(template),
+  );
+}
+
 function saveCollection(database: DatabaseSync, collection: JsonRecord): StatementResultingChanges {
   return database.prepare(`
     INSERT INTO collections(id, vault_id, name, record) VALUES (?, ?, ?, ?)
@@ -147,6 +162,13 @@ function openDatabase(directory: string) {
       record TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS notes_vault_updated ON notes(vault_id, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS templates (
+      id TEXT PRIMARY KEY,
+      vault_id TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      record TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS templates_vault_updated ON templates(vault_id, updated_at DESC);
     CREATE TABLE IF NOT EXISTS collections (
       id TEXT PRIMARY KEY,
       vault_id TEXT NOT NULL,
@@ -279,6 +301,7 @@ export class DesktopDatabase {
           for (const [table, column] of [
             ["vaults", "id"],
             ["notes", "vault_id"],
+            ["templates", "vault_id"],
             ["collections", "vault_id"],
             ["preferences", "vault_id"],
             ["editor_updates", "vault_id"],
@@ -298,6 +321,16 @@ export class DesktopDatabase {
         return null;
       case "deleteNote":
         this.database.prepare("DELETE FROM notes WHERE id = ?").run(requiredString(request, "id"));
+        return null;
+      case "listTemplates":
+        return decodeRecords(this.database.prepare(
+          "SELECT record FROM templates WHERE vault_id = ? ORDER BY updated_at DESC",
+        ).all(requiredString(request, "vaultId")) as RecordRow[]);
+      case "saveTemplate":
+        saveTemplate(this.database, requiredRecord(request, "template"));
+        return null;
+      case "deleteTemplate":
+        this.database.prepare("DELETE FROM templates WHERE id = ?").run(requiredString(request, "id"));
         return null;
       case "listCollections":
         return decodeRecords(this.database.prepare(

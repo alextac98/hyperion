@@ -110,7 +110,11 @@ test("includes rich local editing and organization", async () => {
   assert.match(databaseSource, /kind: NoteKind/);
   assert.match(databaseSource, /journalDate: string \| null/);
   assert.match(databaseSource, /icon: PageIconRecord \| null/);
-  assert.match(databaseSource, /DATABASE_VERSION = 10/);
+  assert.match(databaseSource, /export type TemplateRecord/);
+  assert.match(databaseSource, /defaultTemplateIds/);
+  assert.match(databaseSource, /DATABASE_VERSION = 11/);
+  assert.match(appSource, /New template/);
+  assert.match(appSource, /activeAncestors = view === "note"/);
   assert.match(linksSource, /reconcilePageLinks/);
   assert.match(linksSource, /WIKI_LINK_PATTERN/);
   assert.match(appSource, /sidebarResizeRef/);
