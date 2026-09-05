@@ -8,16 +8,16 @@ import {
 } from "./blocksuite-runtime";
 
 type Props = {
-  note: NoteRecord;
+  document: Pick<NoteRecord, "id" | "vaultId" | "title" | "body">;
   preferences: VaultPreferences;
   onChange: (patch: Pick<NoteRecord, "title" | "body">) => void;
   onReady?: () => void;
   onStoreReady?: (store: EditorStore) => void;
 };
 
-export function AffineEditor({ note, preferences, onChange, onReady, onStoreReady }: Props) {
+export function AffineEditor({ document: editorDocument, preferences, onChange, onReady, onStoreReady }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const initialNoteRef = useRef(note);
+  const initialDocumentRef = useRef(editorDocument);
   const callbacksRef = useRef({ onChange, onReady, onStoreReady });
   const [loading, setLoading] = useState(true);
 
@@ -30,10 +30,15 @@ export function AffineEditor({ note, preferences, onChange, onReady, onStoreRead
     let timer: ReturnType<typeof setTimeout> | undefined;
     let unsubscribe: (() => void) | undefined;
     const mount = mountRef.current;
-    const initialNote = initialNoteRef.current;
+    const initialDocument = initialDocumentRef.current;
     if (!mount) return;
 
-    void getOrCreateEditorStore(initialNote.vaultId, initialNote.id, initialNote.title, initialNote.body)
+    void getOrCreateEditorStore(
+      initialDocument.vaultId,
+      initialDocument.id,
+      initialDocument.title,
+      initialDocument.body,
+    )
       .then((store) => {
         if (cancelled) return;
         const { viewport } = renderPageEditor(store);
@@ -44,7 +49,7 @@ export function AffineEditor({ note, preferences, onChange, onReady, onStoreRead
         });
         unsubscribe = () => subscription.unsubscribe();
         const metadata = readEditorMetadata(store);
-        if (metadata.title !== initialNote.title || metadata.body !== initialNote.body) {
+        if (metadata.title !== initialDocument.title || metadata.body !== initialDocument.body) {
           callbacksRef.current.onChange(metadata);
         }
         setLoading(false);

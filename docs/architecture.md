@@ -63,6 +63,12 @@ All knowledge data uses the `KnowledgeRepository` interface in
 Permanent note IDs keep page links stable through moves and renames. Previous
 titles live in `aliases`, and inline and manual links both target IDs.
 
+Templates are vault-scoped `TemplateRecord` values rather than hidden notes.
+Their rich content uses the same Yjs storage under namespaced document IDs,
+while vault preferences hold stable template IDs for the default page and
+journal creation paths. Instantiating a template clones its document and
+creates an independent note; later template edits never mutate existing pages.
+
 The desktop tables keep an indexed ID, vault ID, and sorting fields alongside
 the complete JSON record. This preserves backup compatibility while allowing
 schema-independent record evolution. Editor documents remain Yjs updates, so

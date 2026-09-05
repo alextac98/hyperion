@@ -2561,6 +2561,135 @@ kbd {
 .dialog-actions button:disabled { cursor: default; opacity: .45; }
 .hidden-input { display: none; }
 
+.new-note-actions {
+  display: flex;
+  flex: 0 0 auto;
+  margin: 4px 12px 9px;
+}
+
+.new-note-actions .new-note-button {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  border-radius: 8px 0 0 8px;
+}
+
+.new-note-template-button {
+  display: grid;
+  width: 32px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--surface-raised);
+  color: var(--text-faint);
+  box-shadow: var(--shadow-sm);
+}
+
+.new-note-template-button:hover { background: var(--hover); color: var(--text); }
+
+.template-defaults-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.template-defaults-panel > div { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 18px; }
+.template-defaults-panel strong { font-size: 11px; }
+.template-defaults-panel small { color: var(--text-faint); font-size: 9.5px; }
+.template-defaults-panel select,
+.setting-field select {
+  width: 100%;
+  height: 36px;
+  padding: 0 30px 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 10.5px;
+}
+.template-defaults-panel select { grid-column: 2; grid-row: 1 / span 2; min-width: 150px; }
+
+.template-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.template-card {
+  display: flex;
+  min-height: 250px;
+  flex-direction: column;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.template-card-heading { display: flex; align-items: flex-start; justify-content: space-between; min-height: 34px; }
+.template-card-heading > span:last-child { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.template-card-heading i,
+.template-picker-card strong i { padding: 3px 5px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-text); font-size: 8px; font-style: normal; font-weight: 700; }
+.template-card-icon,
+.template-picker-card-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: var(--panel); color: var(--text-soft); }
+.template-card h2 { margin: 16px 0 5px; font-size: 15px; }
+.template-default-title { overflow: hidden; color: var(--text-soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.template-card > p { display: -webkit-box; overflow: hidden; margin: 11px 0; color: var(--text-faint); font-size: 10.5px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.template-card-tags { display: flex; min-height: 20px; flex-wrap: wrap; gap: 4px; margin-top: auto; }
+.template-card-tags span { color: var(--accent-text); font-size: 9px; }
+.template-card footer { display: flex; align-items: center; gap: 6px; margin-top: 14px; }
+.template-card footer .primary-button,
+.template-card footer .secondary-button { height: 31px; }
+.template-delete-button { display: grid; width: 31px; height: 31px; margin-left: auto; place-items: center; border-radius: 7px; background: transparent; color: var(--text-faint); }
+.template-delete-button:hover { background: var(--danger-soft); color: var(--danger); }
+
+.template-editor-banner,
+.template-name-field {
+  width: calc(100% - 48px);
+  margin-right: auto;
+  margin-left: auto;
+}
+.template-editor-banner.width-compact,
+.template-name-field.width-compact { max-width: 680px; }
+.template-editor-banner.width-comfortable,
+.template-name-field.width-comfortable { max-width: 800px; }
+.template-editor-banner.width-wide,
+.template-name-field.width-wide { max-width: 1040px; }
+.template-editor-banner { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 24px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); border-radius: 9px; background: var(--accent-soft); color: var(--accent-text); }
+.template-editor-banner > span { display: grid; grid-template-columns: auto auto; align-items: center; gap: 2px 7px; }
+.template-editor-banner > span svg { grid-row: 1 / span 2; }
+.template-editor-banner strong { font-size: 10.5px; }
+.template-editor-banner small { font-size: 9px; opacity: .78; }
+.template-editor-banner > div { display: flex; gap: 5px; }
+.template-editor-banner button { height: 29px; padding: 0 9px; border-radius: 6px; background: var(--surface); color: var(--text-soft); font-size: 9.5px; }
+.template-name-field { display: block; margin-top: 17px; }
+.template-name-field > span { display: block; margin-bottom: 5px; color: var(--text-faint); font-size: 9px; font-weight: 650; text-transform: uppercase; }
+.template-name-field input { width: min(360px, 100%); height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); outline: 0; font-size: 11px; }
+.template-name-field input:focus { border-color: var(--accent); }
+.template-workspace .page-icon-row { margin-top: 8px; }
+
+.template-picker-dialog { width: min(660px, 100%); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface-raised); box-shadow: var(--shadow-lg); }
+.template-picker-dialog > header { display: flex; min-height: 62px; align-items: center; justify-content: space-between; padding: 0 17px; border-bottom: 1px solid var(--line); }
+.template-picker-dialog > header > span { display: flex; align-items: center; gap: 10px; }
+.template-picker-dialog > header > span > span { display: flex; flex-direction: column; }
+.template-picker-dialog > header strong { font-size: 12px; }
+.template-picker-dialog > header small { margin-top: 3px; color: var(--text-faint); font-size: 9px; }
+.template-picker-dialog > header > button { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 7px; background: transparent; color: var(--text-faint); }
+.template-picker-dialog > header > button:hover { background: var(--hover); color: var(--text); }
+.template-picker-search { display: flex; height: 42px; align-items: center; gap: 8px; margin: 14px 16px 4px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--text-faint); }
+.template-picker-search input { min-width: 0; flex: 1; border: 0; background: transparent; outline: 0; font-size: 11px; }
+.template-picker-grid { display: grid; max-height: min(430px, 60vh); grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; overflow-y: auto; padding: 12px 16px 18px; }
+.template-picker-card { display: flex; min-width: 0; min-height: 73px; align-items: center; gap: 11px; padding: 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); text-align: left; }
+.template-picker-card:hover { border-color: var(--accent); background: var(--accent-soft); }
+.template-picker-card > span:last-child { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.template-picker-card strong { display: flex; align-items: center; gap: 6px; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.template-picker-card small { overflow: hidden; margin-top: 5px; color: var(--text-faint); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.template-picker-empty { grid-column: 1 / -1; padding: 50px 10px; color: var(--text-faint); font-size: 10.5px; text-align: center; }
+
 @media (max-width: 1050px) {
   .details-panel { width: 230px; }
   .notes-table-head,
@@ -2575,6 +2704,7 @@ kbd {
   .settings-dialog { max-height: calc(100vh - 30px); overflow-y: auto; }
   .settings-body { grid-template-columns: 135px 1fr; }
   .settings-content { padding-inline: 22px; }
+  .template-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
@@ -2607,4 +2737,11 @@ kbd {
   .settings-body > nav button { width: auto; flex: 0 0 auto; }
   .settings-content { padding: 22px 18px 28px; }
   .theme-options { grid-template-columns: 1fr; }
+  .template-defaults-panel,
+  .template-card-grid,
+  .template-picker-grid { grid-template-columns: 1fr; }
+  .template-defaults-panel > div { grid-template-columns: 1fr; }
+  .template-defaults-panel select { grid-column: 1; grid-row: auto; margin-top: 7px; }
+  .template-editor-banner,
+  .template-name-field { width: calc(100% - 30px); }
 }

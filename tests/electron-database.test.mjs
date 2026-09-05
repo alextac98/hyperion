@@ -49,6 +49,18 @@ test("SQLite persists knowledge records, editor updates, and assets", async (con
   });
 
   database.repositoryExecute(seedRequest());
+  database.repositoryExecute({
+    operation: "saveTemplate",
+    template: {
+      id: "template",
+      vaultId: "vault",
+      target: "page",
+      name: "Meeting notes",
+      defaultTitle: "Meeting notes",
+      body: "Agenda",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    },
+  });
   database.editorPush("vault", "note", Buffer.from([1, 2, 3]).toString("base64"));
   database.assetSet("vault", "image", "image/png", Buffer.from([4, 5, 6]).toString("base64"));
   database.close();
@@ -56,6 +68,8 @@ test("SQLite persists knowledge records, editor updates, and assets", async (con
   database = new DesktopDatabase({ defaultDirectory });
   const notes = database.repositoryExecute({ operation: "listNotes", vaultId: "vault" });
   assert.equal(notes[0].title, "Persisted note");
+  const templates = database.repositoryExecute({ operation: "listTemplates", vaultId: "vault" });
+  assert.equal(templates[0].name, "Meeting notes");
   assert.deepEqual(
     database.editorPull("vault", "note").map((value) => [...Buffer.from(value, "base64")]),
     [[1, 2, 3]],
@@ -64,6 +78,34 @@ test("SQLite persists knowledge records, editor updates, and assets", async (con
     mimeType: "image/png",
     data: Buffer.from([4, 5, 6]).toString("base64"),
   });
+});
+
+test("SQLite deletes template records independently", async (context) => {
+  const root = await mkdtemp(join(tmpdir(), "hyperion-electron-templates-"));
+  let database = new DesktopDatabase({ defaultDirectory: root });
+  context.after(async () => {
+    database.close();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  database.repositoryExecute(seedRequest());
+  database.repositoryExecute({
+    operation: "saveTemplate",
+    template: {
+      id: "template",
+      vaultId: "vault",
+      target: "page",
+      name: "Daily note",
+      defaultTitle: "Daily note",
+      body: "",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    },
+  });
+  database.repositoryExecute({ operation: "deleteTemplate", id: "template" });
+
+  assert.deepEqual(database.repositoryExecute({ operation: "listTemplates", vaultId: "vault" }), []);
+  const notes = database.repositoryExecute({ operation: "listNotes", vaultId: "vault" });
+  assert.equal(notes.length, 1);
 });
 
 test("changing storage folders migrates and remembers the database", async (context) => {

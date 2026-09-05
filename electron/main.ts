@@ -1,12 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { autoUpdater } from "electron-updater";
+import updater from "electron-updater";
 import { DesktopDatabase, type RepositoryRequest } from "./database.js";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const developmentUrl = "http://127.0.0.1:3000";
 const packagedRendererDirectory = resolve(currentDirectory, "../dist");
+const { autoUpdater } = updater;
 
 const channels = {
   repositoryExecute: "hyperion:repository-execute",

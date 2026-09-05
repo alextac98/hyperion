@@ -1,6 +1,7 @@
 export type ThemePreference = "light" | "dark" | "system";
 export type NotesViewPreference = "list" | "table";
 export type NoteKind = "note" | "journal";
+export type TemplatePurpose = NoteKind;
 
 export type VaultRecord = {
   id: string;
@@ -74,6 +75,20 @@ export type NoteRecord = {
   updatedAt: string;
 };
 
+export type TemplateRecord = {
+  id: string;
+  vaultId: string;
+  target: "page";
+  name: string;
+  description: string;
+  defaultTitle: string;
+  icon: PageIconRecord | null;
+  tags: string[];
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type VaultPreferences = {
   vaultId: string;
   theme: ThemePreference;
@@ -82,17 +97,20 @@ export type VaultPreferences = {
   spellcheck: boolean;
   showDetails: boolean;
   notesView: NotesViewPreference;
+  defaultTemplateIds: Record<TemplatePurpose, string | null>;
 };
 
 export type VaultBundle = {
   format: "hyperion-vault";
-  version: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   exportedAt: string;
   vault: VaultRecord;
   notes: NoteRecord[];
   collections: CollectionRecord[];
   preferences: VaultPreferences;
+  templates?: TemplateRecord[];
   editorDocuments?: Record<string, string>;
+  templateDocuments?: Record<string, string>;
 };
 
 export interface KnowledgeRepository {
@@ -104,6 +122,9 @@ export interface KnowledgeRepository {
   listNotes(vaultId: string): Promise<NoteRecord[]>;
   saveNote(note: NoteRecord): Promise<void>;
   deleteNote(id: string): Promise<void>;
+  listTemplates(vaultId: string): Promise<TemplateRecord[]>;
+  saveTemplate(template: TemplateRecord): Promise<void>;
+  deleteTemplate(id: string): Promise<void>;
   listCollections(vaultId: string): Promise<CollectionRecord[]>;
   saveCollection(collection: CollectionRecord): Promise<void>;
   deleteCollection(id: string): Promise<void>;
@@ -114,8 +135,9 @@ export interface KnowledgeRepository {
 export const DEFAULT_VAULT_ID = "hyperion";
 
 const DATABASE_NAME = "hyperion-local";
-const DATABASE_VERSION = 10;
+const DATABASE_VERSION = 11;
 const NOTES_STORE = "notes";
+const TEMPLATES_STORE = "templates";
 const VAULTS_STORE = "vaults";
 const COLLECTIONS_STORE = "collections";
 const PREFERENCES_STORE = "preferences";
@@ -127,7 +149,28 @@ export const DEFAULT_PREFERENCES: Omit<VaultPreferences, "vaultId"> = {
   spellcheck: true,
   showDetails: true,
   notesView: "table",
+  defaultTemplateIds: { note: null, journal: null },
 };
+
+export function normalizeVaultPreferences(
+  vaultId: string,
+  preferences?: Partial<VaultPreferences> | null,
+): VaultPreferences {
+  const defaults = preferences?.defaultTemplateIds;
+  return {
+    vaultId,
+    theme: preferences?.theme ?? DEFAULT_PREFERENCES.theme,
+    editorFontSize: preferences?.editorFontSize ?? DEFAULT_PREFERENCES.editorFontSize,
+    editorWidth: preferences?.editorWidth ?? DEFAULT_PREFERENCES.editorWidth,
+    spellcheck: preferences?.spellcheck ?? DEFAULT_PREFERENCES.spellcheck,
+    showDetails: preferences?.showDetails ?? DEFAULT_PREFERENCES.showDetails,
+    notesView: preferences?.notesView ?? DEFAULT_PREFERENCES.notesView,
+    defaultTemplateIds: {
+      note: typeof defaults?.note === "string" ? defaults.note : null,
+      journal: typeof defaults?.journal === "string" ? defaults.journal : null,
+    },
+  };
+}
 
 function timestamp() {
   return new Date().toISOString();
@@ -344,6 +387,10 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!database.objectStoreNames.contains(VAULTS_STORE)) {
         database.createObjectStore(VAULTS_STORE, { keyPath: "id" });
       }
+      if (!database.objectStoreNames.contains(TEMPLATES_STORE)) {
+        const templates = database.createObjectStore(TEMPLATES_STORE, { keyPath: "id" });
+        templates.createIndex("vaultId", "vaultId");
+      }
       if (!database.objectStoreNames.contains(COLLECTIONS_STORE)) {
         const collections = database.createObjectStore(COLLECTIONS_STORE, { keyPath: "id" });
         collections.createIndex("vaultId", "vaultId");
@@ -421,7 +468,7 @@ export class IndexedDbKnowledgeRepository implements KnowledgeRepository {
   async initialize(): Promise<void> {
     const database = await openDatabase();
     const transaction = database.transaction(
-      [VAULTS_STORE, NOTES_STORE, COLLECTIONS_STORE, PREFERENCES_STORE],
+      [VAULTS_STORE, NOTES_STORE, TEMPLATES_STORE, COLLECTIONS_STORE, PREFERENCES_STORE],
       "readwrite",
     );
     const vaults = transaction.objectStore(VAULTS_STORE);
@@ -469,7 +516,7 @@ export class IndexedDbKnowledgeRepository implements KnowledgeRepository {
 
   async deleteVault(id: string) {
     const database = await openDatabase();
-    const transaction = database.transaction([VAULTS_STORE, NOTES_STORE, COLLECTIONS_STORE, PREFERENCES_STORE], "readwrite");
+    const transaction = database.transaction([VAULTS_STORE, NOTES_STORE, TEMPLATES_STORE, COLLECTIONS_STORE, PREFERENCES_STORE], "readwrite");
     transaction.objectStore(VAULTS_STORE).delete(id);
     transaction.objectStore(PREFERENCES_STORE).delete(id);
     const notes = transaction.objectStore(NOTES_STORE).openCursor();
@@ -477,6 +524,13 @@ export class IndexedDbKnowledgeRepository implements KnowledgeRepository {
       const cursor = notes.result;
       if (!cursor) return;
       if ((cursor.value as NoteRecord).vaultId === id) cursor.delete();
+      cursor.continue();
+    };
+    const templates = transaction.objectStore(TEMPLATES_STORE).openCursor();
+    templates.onsuccess = () => {
+      const cursor = templates.result;
+      if (!cursor) return;
+      if ((cursor.value as TemplateRecord).vaultId === id) cursor.delete();
       cursor.continue();
     };
     const collections = transaction.objectStore(COLLECTIONS_STORE).openCursor();
@@ -528,6 +582,28 @@ export class IndexedDbKnowledgeRepository implements KnowledgeRepository {
     await transactionComplete(transaction);
   }
 
+  async listTemplates(vaultId: string) {
+    const database = await openDatabase();
+    const templates = await getAll<TemplateRecord>(database, TEMPLATES_STORE);
+    return templates
+      .filter((template) => template.vaultId === vaultId)
+      .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt));
+  }
+
+  async saveTemplate(template: TemplateRecord) {
+    const database = await openDatabase();
+    const transaction = database.transaction(TEMPLATES_STORE, "readwrite");
+    transaction.objectStore(TEMPLATES_STORE).put(template);
+    await transactionComplete(transaction);
+  }
+
+  async deleteTemplate(id: string) {
+    const database = await openDatabase();
+    const transaction = database.transaction(TEMPLATES_STORE, "readwrite");
+    transaction.objectStore(TEMPLATES_STORE).delete(id);
+    await transactionComplete(transaction);
+  }
+
   async listCollections(vaultId: string) {
     const database = await openDatabase();
     const collections = await getAll<CollectionRecord>(database, COLLECTIONS_STORE);
@@ -560,7 +636,7 @@ export class IndexedDbKnowledgeRepository implements KnowledgeRepository {
     const database = await openDatabase();
     const transaction = database.transaction(PREFERENCES_STORE, "readonly");
     const stored = await requestResult(transaction.objectStore(PREFERENCES_STORE).get(vaultId) as IDBRequest<VaultPreferences | undefined>);
-    return stored ?? { vaultId, ...DEFAULT_PREFERENCES };
+    return normalizeVaultPreferences(vaultId, stored);
   }
 
   async savePreferences(preferences: VaultPreferences) {
@@ -590,6 +666,40 @@ export function createBlankNote(vaultId: string, parentId: string | null = null)
     favorite: false,
     archived: false,
     trashed: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function createTemplateFromNote(note: NoteRecord, name = note.title): TemplateRecord {
+  const now = timestamp();
+  return {
+    id: crypto.randomUUID(),
+    vaultId: note.vaultId,
+    target: "page",
+    name: name.trim() || "Untitled template",
+    description: "",
+    defaultTitle: note.kind === "journal" ? "Untitled" : note.title,
+    icon: note.icon,
+    tags: [...note.tags],
+    body: note.body,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function createBlankTemplate(vaultId: string, name = "Untitled template"): TemplateRecord {
+  const now = timestamp();
+  return {
+    id: crypto.randomUUID(),
+    vaultId,
+    target: "page",
+    name: name.trim() || "Untitled template",
+    description: "",
+    defaultTitle: "Untitled",
+    icon: null,
+    tags: [],
+    body: "",
     createdAt: now,
     updatedAt: now,
   };

@@ -7,7 +7,9 @@ import {
   makeSeedNotes,
   normalizeNoteRecord,
   normalizePageIcon,
+  normalizeVaultPreferences,
   type NoteRecord,
+  type TemplateRecord,
   type VaultPreferences,
   type VaultRecord,
 } from "../../lib/local-database";
@@ -90,6 +92,18 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
     return this.execute<void>({ operation: "deleteNote", id });
   }
 
+  listTemplates(vaultId: string) {
+    return this.execute<TemplateRecord[]>({ operation: "listTemplates", vaultId });
+  }
+
+  saveTemplate(template: TemplateRecord) {
+    return this.execute<void>({ operation: "saveTemplate", template });
+  }
+
+  deleteTemplate(id: string) {
+    return this.execute<void>({ operation: "deleteTemplate", id });
+  }
+
   listCollections(vaultId: string) {
     return this.execute<CollectionRecord[]>({ operation: "listCollections", vaultId });
   }
@@ -103,8 +117,10 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
   }
 
   async getPreferences(vaultId: string) {
-    return (await this.execute<VaultPreferences | null>({ operation: "getPreferences", vaultId }))
-      ?? { vaultId, ...DEFAULT_PREFERENCES };
+    return normalizeVaultPreferences(
+      vaultId,
+      await this.execute<VaultPreferences | null>({ operation: "getPreferences", vaultId }),
+    );
   }
 
   savePreferences(preferences: VaultPreferences) {

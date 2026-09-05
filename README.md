@@ -26,6 +26,8 @@ and an Electron desktop app with a consistent bundled Chromium runtime.
   quick page links, ID-based backlinks, and searchable former names
 - Sortable/filterable table and card views, favorites, journal, search,
   recoverable archives, and trash
+- Vault-scoped page templates with a searchable picker, direct template editing,
+  and independently configurable defaults for new pages and journal entries
 - Working vault, editor, appearance, and data settings
 - Keyboard shortcuts for global search (`Command/Ctrl + Shift + F`), current-page
   search (`Command/Ctrl + F`), and new notes

@@ -25,6 +25,7 @@ import {
   Plus,
   SidebarSimple,
   Sparkle,
+  Stack,
   Star,
   Sun,
   Tag,
@@ -39,18 +40,23 @@ import {
   type EditorStore,
   duplicateEditorDocument,
   exportEditorDocuments,
+  getOrCreateEditorStore,
   importEditorDocuments,
   removeEditorDocument,
+  templateDocumentId,
 } from "./editor/blocksuite-runtime";
 import {
   CollectionRecord,
   createBlankNote,
+  createBlankTemplate,
+  createTemplateFromNote,
   DEFAULT_VAULT_ID,
   journalDateKey,
   NoteRecord,
   normalizeNoteRecord,
   normalizePageIcon,
   pageIconText,
+  TemplateRecord,
   ThemePreference,
   VaultBundle,
   VaultPreferences,
@@ -63,12 +69,15 @@ import {
   reconcilePageLinks,
 } from "./lib/page-links";
 
-type View = "note" | "home" | "journal" | "tags" | "archive" | "trash";
+type View = "note" | "template" | "templates" | "home" | "journal" | "tags" | "archive" | "trash";
 type Composer =
   | { type: "vault"; value: string }
   | { type: "page"; value: string; parentId: string | null }
+  | { type: "template"; value: string; noteId: string | null }
   | { type: "rename"; value: string; noteId: string }
   | null;
+type TemplateSelection = "default" | "blank" | { templateId: string };
+type TemplatePickerState = { parentId: string | null } | null;
 type PageDropPlacement = "before" | "inside" | "after";
 type PageDropTarget = { noteId: string | null; placement: PageDropPlacement };
 type PageContextMenuState = { noteId: string; x: number; y: number };
@@ -103,6 +112,7 @@ const FALLBACK_PREFERENCES: VaultPreferences = {
   spellcheck: true,
   showDetails: true,
   notesView: "table",
+  defaultTemplateIds: { note: null, journal: null },
 };
 
 function relativeTime(isoDate: string) {
@@ -132,6 +142,29 @@ function journalTitle(date: Date) {
 
 function notePreview(note: NoteRecord) {
   return note.body.replace(/\s+/g, " ").trim() || "Empty page";
+}
+
+function templatePageRecord(template: TemplateRecord): NoteRecord {
+  return {
+    id: templateDocumentId(template.id),
+    vaultId: template.vaultId,
+    kind: "note",
+    journalDate: null,
+    title: template.defaultTitle,
+    icon: template.icon,
+    aliases: [],
+    body: template.body,
+    tags: template.tags,
+    links: [],
+    parentId: null,
+    sortOrder: 0,
+    collectionIds: [],
+    favorite: false,
+    archived: false,
+    trashed: false,
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt,
+  };
 }
 
 function findTextMatches(root: HTMLElement, query: string): PageSearchMatch[] {
@@ -237,9 +270,11 @@ export default function HyperionApp() {
   const [vaults, setVaults] = useState<VaultRecord[]>([]);
   const [vaultId, setVaultId] = useState(DEFAULT_VAULT_ID);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
+  const [templates, setTemplates] = useState<TemplateRecord[]>([]);
   const [collections, setCollections] = useState<CollectionRecord[]>([]);
   const [preferences, setPreferences] = useState(FALLBACK_PREFERENCES);
   const [activeId, setActiveId] = useState("");
+  const [activeTemplateId, setActiveTemplateId] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [view, setView] = useState<View>("home");
   const [loading, setLoading] = useState(true);
@@ -261,6 +296,7 @@ export default function HyperionApp() {
   const [tagDraft, setTagDraft] = useState("");
   const [addingTag, setAddingTag] = useState(false);
   const [composer, setComposer] = useState<Composer>(null);
+  const [templatePicker, setTemplatePicker] = useState<TemplatePickerState>(null);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
   const [editorStore, setEditorStore] = useState<EditorStore | null>(null);
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
@@ -271,6 +307,7 @@ export default function HyperionApp() {
   const tagInputRef = useRef<HTMLInputElement>(null);
   const composerInputRef = useRef<HTMLInputElement>(null);
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const templateSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const sidebarWidthRef = useRef(sidebarWidth);
   const sidebarResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const stableTitles = useRef<Record<string, string>>({});
@@ -278,6 +315,7 @@ export default function HyperionApp() {
 
   const activeVault = vaults.find((vault) => vault.id === vaultId);
   const activeNote = notes.find((note) => note.id === activeId);
+  const activeTemplate = templates.find((template) => template.id === activeTemplateId);
   const composerFocusKey = composer?.type === "rename" ? `rename:${composer.noteId}` : composer?.type ?? null;
   const activeNotes = useMemo(() => notes.filter((note) => !note.trashed && !note.archived), [notes]);
   const organizedNotes = useMemo(() => activeNotes.filter((note) => note.kind === "note"), [activeNotes]);
@@ -294,8 +332,9 @@ export default function HyperionApp() {
 
   const loadVault = useCallback(async (nextVaultId: string, nextVaults?: VaultRecord[]) => {
     setLoading(true);
-    const [storedNotes, storedCollections, storedPreferences] = await Promise.all([
+    const [storedNotes, storedTemplates, storedCollections, storedPreferences] = await Promise.all([
       knowledgeRepository.listNotes(nextVaultId),
+      knowledgeRepository.listTemplates(nextVaultId),
       knowledgeRepository.listCollections(nextVaultId),
       knowledgeRepository.getPreferences(nextVaultId),
     ]);
@@ -305,9 +344,21 @@ export default function HyperionApp() {
     ));
     setVaultId(nextVaultId);
     setNotes(hydratedNotes);
+    setTemplates(storedTemplates);
     stableTitles.current = Object.fromEntries(hydratedNotes.map((note) => [note.id, note.title]));
     setCollections(storedCollections);
-    setPreferences(storedPreferences);
+    const templateIds = new Set(storedTemplates.map((template) => template.id));
+    const validPreferences = {
+      ...storedPreferences,
+      defaultTemplateIds: {
+        note: templateIds.has(storedPreferences.defaultTemplateIds.note ?? "") ? storedPreferences.defaultTemplateIds.note : null,
+        journal: templateIds.has(storedPreferences.defaultTemplateIds.journal ?? "") ? storedPreferences.defaultTemplateIds.journal : null,
+      },
+    };
+    setPreferences(validPreferences);
+    if (JSON.stringify(validPreferences) !== JSON.stringify(storedPreferences)) {
+      await knowledgeRepository.savePreferences(validPreferences);
+    }
     setDetailsOpen(storedPreferences.showDetails);
     if (nextVaults) setVaults(nextVaults);
     const remembered = localStorage.getItem(`hyperion:last-note:${nextVaultId}`);
@@ -315,6 +366,7 @@ export default function HyperionApp() {
       ?? hydratedNotes.find((note) => note.kind === "note" && !note.trashed && !note.archived)
       ?? hydratedNotes.find((note) => !note.trashed && !note.archived);
     setActiveId(target?.id ?? "");
+    setActiveTemplateId("");
     setActiveTag(null);
     setView(target ? "note" : "home");
     localStorage.setItem("hyperion:current-vault", nextVaultId);
@@ -384,6 +436,19 @@ export default function HyperionApp() {
     });
   }, [scheduleSave]);
 
+  const updateTemplateById = useCallback((id: string, patch: Partial<TemplateRecord>, immediate = false) => {
+    setTemplates((current) => current.map((template) => {
+      if (template.id !== id) return template;
+      const updated = { ...template, ...patch, updatedAt: new Date().toISOString() };
+      setSaveStatus("saving");
+      if (templateSaveTimers.current[id]) clearTimeout(templateSaveTimers.current[id]);
+      templateSaveTimers.current[id] = setTimeout(() => {
+        void knowledgeRepository.saveTemplate(updated).then(() => setSaveStatus("saved"));
+      }, immediate ? 0 : 300);
+      return updated;
+    }));
+  }, []);
+
   const selectNote = useCallback((id: string) => {
     setActiveId(id);
     setView("note");
@@ -398,14 +463,78 @@ export default function HyperionApp() {
     if (window.innerWidth <= 720) setSidebarOpen(false);
   }, [vaultId]);
 
-  const createNote = useCallback(async (parentId: string | null = null, title = "Untitled") => {
+  const selectTemplate = useCallback((id: string) => {
+    setActiveTemplateId(id);
+    setView("template");
+    setMoreOpen(false);
+    setEditorStore(null);
+    setPageContextMenu(null);
+    setPageSearchOpen(false);
+    if (window.innerWidth <= 720) setSidebarOpen(false);
+  }, []);
+
+  const instantiatePage = useCallback(async ({
+    kind,
+    parentId = null,
+    title,
+    dateKey,
+    templateSelection = "default",
+  }: {
+    kind: NoteRecord["kind"];
+    parentId?: string | null;
+    title?: string;
+    dateKey?: string;
+    templateSelection?: TemplateSelection;
+  }) => {
+    const defaultId = preferences.defaultTemplateIds[kind];
+    const templateId = templateSelection === "default"
+      ? defaultId
+      : typeof templateSelection === "object" ? templateSelection.templateId : null;
+    const template = templateId ? templates.find((item) => item.id === templateId) : undefined;
+    if (templateId && !template && typeof templateSelection === "object") {
+      window.alert("That template is no longer available.");
+      return;
+    }
+
     const note = createBlankNote(vaultId, parentId);
-    note.title = title.trim() || "Untitled";
-    stableTitles.current[note.id] = note.title;
-    setNotes((current) => [note, ...current]);
-    await knowledgeRepository.saveNote(note);
-    selectNote(note.id);
-  }, [selectNote, vaultId]);
+    note.kind = kind;
+    note.journalDate = kind === "journal" ? dateKey ?? journalDateKey() : null;
+    note.title = kind === "journal" && note.journalDate
+      ? journalTitle(journalDate(note.journalDate))
+      : title?.trim() || template?.defaultTitle.trim() || "Untitled";
+    note.icon = template?.icon ?? (kind === "journal" ? { type: "emoji", unicode: "📅" } : null);
+    note.tags = template ? [...template.tags] : [];
+    note.body = template?.body ?? "";
+    const reconciled = reconcilePageLinks(note, [...notes, note]);
+
+    try {
+      if (template) {
+        const cloned = await duplicateEditorDocument(
+          vaultId,
+          templateDocumentId(template.id),
+          reconciled.id,
+          { title: reconciled.title },
+        );
+        if (!cloned && typeof templateSelection === "object") {
+          throw new Error(`The “${template.name}” template content could not be opened.`);
+        }
+        if (!cloned) console.warn(`Default template ${template.id} had no editor document; creating a blank page`);
+      }
+      await knowledgeRepository.saveNote(reconciled);
+      stableTitles.current[reconciled.id] = reconciled.title;
+      setNotes((current) => [reconciled, ...current]);
+      selectNote(reconciled.id);
+    } catch (error) {
+      await removeEditorDocument(vaultId, reconciled.id);
+      window.alert(error instanceof Error ? error.message : "Could not create this page");
+    }
+  }, [notes, preferences.defaultTemplateIds, selectNote, templates, vaultId]);
+
+  const createNote = useCallback((
+    parentId: string | null = null,
+    title?: string,
+    templateSelection: TemplateSelection = "default",
+  ) => instantiatePage({ kind: "note", parentId, title, templateSelection }), [instantiatePage]);
 
   const openJournalDate = useCallback(async (dateKey: string) => {
     const existing = notes.find((note) => note.kind === "journal" && note.journalDate === dateKey && !note.trashed && !note.archived);
@@ -413,16 +542,8 @@ export default function HyperionApp() {
       selectNote(existing.id);
       return;
     }
-    const note = createBlankNote(vaultId);
-    note.kind = "journal";
-    note.journalDate = dateKey;
-    note.title = journalTitle(journalDate(dateKey));
-    note.icon = { type: "emoji", unicode: "📅" };
-    stableTitles.current[note.id] = note.title;
-    await knowledgeRepository.saveNote(note);
-    setNotes((current) => [note, ...current]);
-    selectNote(note.id);
-  }, [notes, selectNote, vaultId]);
+    await instantiatePage({ kind: "journal", dateKey });
+  }, [instantiatePage, notes, selectNote]);
 
   const closeSearch = useCallback(() => {
     setSearchOpen(false);
@@ -463,6 +584,7 @@ export default function HyperionApp() {
         setMoreOpen(false);
         setVaultMenuOpen(false);
         setPageContextMenu(null);
+        setTemplatePicker(null);
         setComposer(null);
       }
     };
@@ -591,11 +713,60 @@ export default function HyperionApp() {
   const duplicateNote = async (note: NoteRecord) => {
     const now = new Date().toISOString();
     const duplicate: NoteRecord = { ...note, id: crypto.randomUUID(), title: `${note.title} copy`, aliases: [], sortOrder: note.sortOrder + 0.5, favorite: false, archived: false, trashed: false, createdAt: now, updatedAt: now };
-    await duplicateEditorDocument(vaultId, note.id, duplicate.id);
+    await duplicateEditorDocument(vaultId, note.id, duplicate.id, { title: duplicate.title });
     await knowledgeRepository.saveNote(duplicate);
     stableTitles.current[duplicate.id] = duplicate.title;
     setNotes((current) => [duplicate, ...current]);
     selectNote(duplicate.id);
+  };
+
+  const saveNoteAsTemplate = async (note: NoteRecord, name: string) => {
+    const template = createTemplateFromNote(note, name);
+    try {
+      await getOrCreateEditorStore(note.vaultId, note.id, note.title, note.body);
+      const cloned = await duplicateEditorDocument(
+        note.vaultId,
+        note.id,
+        templateDocumentId(template.id),
+        { title: template.defaultTitle },
+      );
+      if (!cloned) throw new Error("The page content could not be copied.");
+      await knowledgeRepository.saveTemplate(template);
+      setTemplates((current) => [template, ...current]);
+      setActiveTemplateId(template.id);
+      setView("templates");
+    } catch (error) {
+      await removeEditorDocument(note.vaultId, templateDocumentId(template.id));
+      window.alert(error instanceof Error ? error.message : "Could not create this template");
+    }
+  };
+
+  const deleteTemplate = async (template: TemplateRecord) => {
+    const assignedPurposes = (["note", "journal"] as const)
+      .filter((purpose) => preferences.defaultTemplateIds[purpose] === template.id);
+    const assignment = assignedPurposes.length
+      ? ` It is currently the default for ${assignedPurposes.map((purpose) => purpose === "note" ? "new pages" : "journal entries").join(" and ")}; those will return to blank pages.`
+      : "";
+    if (!window.confirm(`Delete the “${template.name}” template?${assignment}`)) return;
+    await Promise.all([
+      knowledgeRepository.deleteTemplate(template.id),
+      removeEditorDocument(vaultId, templateDocumentId(template.id)),
+    ]);
+    const nextDefaults = {
+      note: preferences.defaultTemplateIds.note === template.id ? null : preferences.defaultTemplateIds.note,
+      journal: preferences.defaultTemplateIds.journal === template.id ? null : preferences.defaultTemplateIds.journal,
+    };
+    if (JSON.stringify(nextDefaults) !== JSON.stringify(preferences.defaultTemplateIds)) {
+      const nextPreferences = { ...preferences, defaultTemplateIds: nextDefaults };
+      setPreferences(nextPreferences);
+      await knowledgeRepository.savePreferences(nextPreferences);
+    }
+    setTemplates((current) => current.filter((item) => item.id !== template.id));
+    if (activeTemplateId === template.id) {
+      setActiveTemplateId("");
+      setView("templates");
+      setEditorStore(null);
+    }
   };
 
   const archiveNote = (note: NoteRecord) => {
@@ -706,6 +877,18 @@ export default function HyperionApp() {
       const { parentId, value } = composer;
       setComposer(null);
       await createNote(parentId, value);
+    } else if (composer.type === "template") {
+      const note = composer.noteId ? notes.find((item) => item.id === composer.noteId) : undefined;
+      const name = composer.value;
+      setComposer(null);
+      if (note) {
+        await saveNoteAsTemplate(note, name);
+      } else {
+        const template = createBlankTemplate(vaultId, name);
+        await knowledgeRepository.saveTemplate(template);
+        setTemplates((current) => [template, ...current]);
+        selectTemplate(template.id);
+      }
     } else {
       const title = composer.value.trim() || "Untitled";
       updateNoteById(composer.noteId, { title }, true);
@@ -722,16 +905,25 @@ export default function HyperionApp() {
 
   const exportVault = async () => {
     if (!activeVault) return;
-    const editorDocuments = await exportEditorDocuments(vaultId, notes.map((note) => note.id));
+    const [editorDocuments, storedTemplateDocuments] = await Promise.all([
+      exportEditorDocuments(vaultId, notes.map((note) => note.id)),
+      exportEditorDocuments(vaultId, templates.map((template) => templateDocumentId(template.id))),
+    ]);
+    const templateDocuments = Object.fromEntries(templates.flatMap((template) => {
+      const document = storedTemplateDocuments[templateDocumentId(template.id)];
+      return document ? [[template.id, document]] : [];
+    }));
     const bundle: VaultBundle = {
       format: "hyperion-vault",
-      version: 7,
+      version: 8,
       exportedAt: new Date().toISOString(),
       vault: activeVault,
       notes,
+      templates,
       collections,
       preferences,
       editorDocuments,
+      templateDocuments,
     };
     downloadJson(`${activeVault.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "hyperion"}.hyperion.json`, bundle);
   };
@@ -739,10 +931,11 @@ export default function HyperionApp() {
   const importVault = async (file: File) => {
     try {
       const bundle = JSON.parse(await file.text()) as VaultBundle;
-      if (bundle.format !== "hyperion-vault" || ![1, 2, 3, 4, 5, 6, 7].includes(bundle.version)) throw new Error("Unsupported vault file");
+      if (bundle.format !== "hyperion-vault" || ![1, 2, 3, 4, 5, 6, 7, 8].includes(bundle.version)) throw new Error("Unsupported vault file");
       const vault = await knowledgeRepository.createVault(`${bundle.vault.name} import`);
       const collectionMap = new Map(bundle.collections.map((collection) => [collection.id, crypto.randomUUID()]));
       const noteMap = new Map(bundle.notes.map((note) => [note.id, crypto.randomUUID()]));
+      const templateMap = new Map((bundle.templates ?? []).map((template) => [template.id, crypto.randomUUID()]));
       const importedCollections = bundle.collections.map((collection) => ({ ...collection, id: collectionMap.get(collection.id)!, vaultId: vault.id }));
       const importedNotes = hydratePageIdentities(bundle.notes.map((note) => normalizeNoteRecord({
         ...note,
@@ -759,13 +952,41 @@ export default function HyperionApp() {
         archived: note.archived ?? false,
         collectionIds: (note.collectionIds ?? []).map((id) => collectionMap.get(id)).filter(Boolean) as string[],
       })));
+      const importedTemplates = (bundle.templates ?? []).map((template) => ({
+        ...template,
+        id: templateMap.get(template.id)!,
+        vaultId: vault.id,
+        icon: normalizePageIcon(template.icon),
+        tags: template.tags ?? [],
+        body: template.body ?? "",
+      }));
+      const importedPreferences = {
+        ...bundle.preferences,
+        vaultId: vault.id,
+        defaultTemplateIds: {
+          note: bundle.preferences.defaultTemplateIds?.note
+            ? templateMap.get(bundle.preferences.defaultTemplateIds.note) ?? null
+            : null,
+          journal: bundle.preferences.defaultTemplateIds?.journal
+            ? templateMap.get(bundle.preferences.defaultTemplateIds.journal) ?? null
+            : null,
+        },
+      };
       await Promise.all([
         ...importedCollections.map((collection) => knowledgeRepository.saveCollection(collection)),
         ...importedNotes.map((note) => knowledgeRepository.saveNote(note)),
-        knowledgeRepository.savePreferences({ ...bundle.preferences, vaultId: vault.id }),
+        ...importedTemplates.map((template) => knowledgeRepository.saveTemplate(template)),
+        knowledgeRepository.savePreferences(importedPreferences),
       ]);
       if (bundle.editorDocuments) {
         const documents = Object.fromEntries(Object.entries(bundle.editorDocuments).flatMap(([id, value]) => noteMap.has(id) ? [[noteMap.get(id)!, value]] : []));
+        await importEditorDocuments(vault.id, documents);
+      }
+      if (bundle.templateDocuments) {
+        const documents = Object.fromEntries(Object.entries(bundle.templateDocuments).flatMap(([id, value]) => {
+          const importedId = templateMap.get(id);
+          return importedId ? [[templateDocumentId(importedId), value]] : [];
+        }));
         await importEditorDocuments(vault.id, documents);
       }
       await loadVault(vault.id, [...vaults, vault]);
@@ -777,8 +998,15 @@ export default function HyperionApp() {
     }
   };
 
-  const heading = view === "note" ? activeNote?.title : ({ home: "Home", journal: "Journal", tags: "Tags", archive: "Archive", trash: "Trash" } as const)[view as Exclude<View, "note">];
-  const activeAncestors = activeNote?.kind === "note" ? ancestorPath(organizedNotes, activeNote) : [];
+  const heading = view === "note"
+    ? activeNote?.title
+    : view === "template"
+      ? activeTemplate?.name
+      : ({ home: "Home", journal: "Journal", tags: "Tags", templates: "Templates", archive: "Archive", trash: "Trash" } as const)[view as Exclude<View, "note" | "template">];
+  const activeTemplatePage = activeTemplate ? templatePageRecord(activeTemplate) : undefined;
+  const activeAncestors = view === "note" && activeNote?.kind === "note"
+    ? ancestorPath(organizedNotes, activeNote)
+    : [];
   const outgoingLinks = activeNote ? [...new Set(activeNote.links.map((link) => link.targetId))]
     .flatMap((targetId) => {
       const target = activeNotes.find((note) => note.id === targetId);
@@ -825,13 +1053,17 @@ export default function HyperionApp() {
           <button className="icon-button subtle" aria-label="Collapse sidebar" onClick={() => setSidebarOpen(false)}><SidebarSimple size={18} /></button>
         </div>
 
-        <button className="new-note-button" onClick={() => void createNote()}><Plus size={17} weight="bold" /><span>New page</span><kbd>⌘ N</kbd></button>
+        <div className="new-note-actions">
+          <button className="new-note-button" onClick={() => void createNote()}><Plus size={17} weight="bold" /><span>New page</span><kbd>⌘ N</kbd></button>
+          <button className="new-note-template-button" aria-label="Choose a page template" title="New from template" onClick={() => setTemplatePicker({ parentId: null })}><CaretDown size={14} weight="bold" /></button>
+        </div>
 
         <nav className="primary-nav" aria-label="Knowledge base">
           <button onClick={() => { closePageSearch(); setSearchOpen(true); }}><MagnifyingGlass size={18} /><span>Search</span><kbd>⌘ ⇧ F</kbd></button>
           <button className={view === "home" ? "active" : ""} onClick={() => navigateView("home")}><House size={18} /><span>Home</span></button>
           <button className={view === "journal" || (view === "note" && activeNote?.kind === "journal") ? "active" : ""} onClick={() => navigateView("journal")}><CalendarBlank size={18} /><span>Journal</span>{journalEntries.length > 0 && <em>{journalEntries.length}</em>}</button>
           <button className={view === "tags" ? "active" : ""} onClick={() => navigateView("tags")}><Tag size={18} /><span>Tags</span></button>
+          <button className={view === "templates" || view === "template" ? "active" : ""} onClick={() => navigateView("templates")}><Stack size={18} /><span>Templates</span>{templates.length > 0 && <em>{templates.length}</em>}</button>
         </nav>
 
         <div className="sidebar-scroll">
@@ -875,10 +1107,10 @@ export default function HyperionApp() {
           <div className="topbar-left">
             {!sidebarOpen && <button className="icon-button" aria-label="Open sidebar" onClick={() => setSidebarOpen(true)}><SidebarSimple size={19} /></button>}
             {view === "note" && activeNote && <button className={`icon-button topbar-favorite${activeNote.favorite ? " active" : ""}`} aria-label={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} title={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} onClick={() => updateNoteById(activeNote.id, { favorite: !activeNote.favorite }, true)}><Star size={17} weight={activeNote.favorite ? "fill" : "regular"} /></button>}
-            <div className="breadcrumbs">{view === "note" && activeNote?.kind === "journal" && <span className="breadcrumb-parent"><button onClick={() => navigateView("journal")}><CalendarBlank size={12} />Journal</button><CaretRight size={12} /></span>}{activeAncestors.map((ancestor) => <span className="breadcrumb-parent" key={ancestor.id}><button onClick={() => selectNote(ancestor.id)}><PageIcon note={ancestor} size={12} />{ancestor.title}</button><CaretRight size={12} /></span>)}{view === "note" && activeNote && <PageIcon note={activeNote} size={13} />}<strong>{heading ?? "Untitled"}</strong></div>
+            <div className="breadcrumbs">{view === "note" && activeNote?.kind === "journal" && <span className="breadcrumb-parent"><button onClick={() => navigateView("journal")}><CalendarBlank size={12} />Journal</button><CaretRight size={12} /></span>}{view === "template" && <span className="breadcrumb-parent"><button onClick={() => navigateView("templates")}><Stack size={12} />Templates</button><CaretRight size={12} /></span>}{activeAncestors.map((ancestor) => <span className="breadcrumb-parent" key={ancestor.id}><button onClick={() => selectNote(ancestor.id)}><PageIcon note={ancestor} size={12} />{ancestor.title}</button><CaretRight size={12} /></span>)}{view === "note" && activeNote && <PageIcon note={activeNote} size={13} />}{view === "template" && activeTemplatePage && <PageIcon note={activeTemplatePage} size={13} />}<strong>{heading ?? "Untitled"}</strong></div>
           </div>
           <div className="topbar-actions">
-            {view === "note" && activeNote && <div className="topbar-history" aria-label="Editing history">
+            {(view === "note" && activeNote || view === "template" && activeTemplate) && <div className="topbar-history" aria-label="Editing history">
               <button className="icon-button" aria-label="Undo" title="Undo" onClick={() => editorStore?.undo()} disabled={!editorStore}><ArrowCounterClockwise size={16} /></button>
               <button className="icon-button" aria-label="Redo" title="Redo" onClick={() => editorStore?.redo()} disabled={!editorStore}><ArrowClockwise size={16} /></button>
             </div>}
@@ -886,7 +1118,7 @@ export default function HyperionApp() {
             {view === "note" && <button className={`icon-button${detailsOpen ? " active" : ""}`} aria-label="Toggle note details" onClick={() => setDetailsOpen((open) => !open)}><ListBullets size={19} /></button>}
             {view === "note" && activeNote && <div className="more-wrap topbar-more">
               <button className="icon-button" aria-label="More page actions" title="More actions" onClick={() => setMoreOpen((open) => !open)}><DotsThree size={21} weight="bold" /></button>
-              {moreOpen && <div className="popover note-menu"><button onClick={() => { setMoreOpen(false); setComposer({ type: "rename", noteId: activeNote.id, value: activeNote.title }); }}><PencilSimple size={17} /> Rename {activeNote.kind === "journal" ? "entry" : "page"}</button><button onClick={() => void duplicateNote(activeNote)}><FilePlus size={17} /> Duplicate {activeNote.kind === "journal" ? "entry" : "page"}</button><button className="archive" onClick={() => archiveNote(activeNote)}><Archive size={17} /> Archive</button><button className="danger" onClick={() => trashNote(activeNote)}><Trash size={17} /> Trash</button></div>}
+              {moreOpen && <div className="popover note-menu"><button onClick={() => { setMoreOpen(false); setComposer({ type: "rename", noteId: activeNote.id, value: activeNote.title }); }}><PencilSimple size={17} /> Rename {activeNote.kind === "journal" ? "entry" : "page"}</button><button onClick={() => void duplicateNote(activeNote)}><FilePlus size={17} /> Duplicate {activeNote.kind === "journal" ? "entry" : "page"}</button><button onClick={() => { setMoreOpen(false); setComposer({ type: "template", noteId: activeNote.id, value: activeNote.title }); }}><Stack size={17} /> Save as template</button><button className="archive" onClick={() => archiveNote(activeNote)}><Archive size={17} /> Archive</button><button className="danger" onClick={() => trashNote(activeNote)}><Trash size={17} /> Trash</button></div>}
             </div>}
           </div>
         </header>
@@ -902,12 +1134,46 @@ export default function HyperionApp() {
 
                 <AffineEditor
                   key={`${vaultId}:${activeNote.id}`}
-                  note={activeNote}
+                  document={activeNote}
                   preferences={preferences}
                   onChange={(patch) => updateNoteById(activeNote.id, patch)}
                   onStoreReady={setEditorStore}
                 />
               </article>
+            ) : view === "template" && activeTemplate && activeTemplatePage ? (
+              <article className={`note-workspace template-workspace${activeTemplate.icon ? " has-page-icon" : ""}`}>
+                <div className={`template-editor-banner width-${preferences.editorWidth}`}>
+                  <span><Stack size={16} /><strong>Editing template</strong><small>Changes affect new pages only.</small></span>
+                  <div>
+                    <button onClick={() => void createNote(null, undefined, { templateId: activeTemplate.id })}>Use template</button>
+                    <button className="danger-text" onClick={() => void deleteTemplate(activeTemplate)}>Delete</button>
+                  </div>
+                </div>
+                <label className={`template-name-field width-${preferences.editorWidth}`}>
+                  <span>Template name</span>
+                  <input value={activeTemplate.name} onChange={(event) => updateTemplateById(activeTemplate.id, { name: event.target.value })} onBlur={() => !activeTemplate.name.trim() && updateTemplateById(activeTemplate.id, { name: "Untitled template" }, true)} />
+                </label>
+                <div className={`page-icon-row width-${preferences.editorWidth}`}>
+                  <PageIconPicker key={activeTemplate.id} note={activeTemplatePage} onChange={(icon) => updateTemplateById(activeTemplate.id, { icon }, true)} />
+                </div>
+                <AffineEditor
+                  key={`${vaultId}:${templateDocumentId(activeTemplate.id)}`}
+                  document={{ ...activeTemplatePage, id: templateDocumentId(activeTemplate.id) }}
+                  preferences={preferences}
+                  onChange={(patch) => updateTemplateById(activeTemplate.id, { defaultTitle: patch.title, body: patch.body })}
+                  onStoreReady={setEditorStore}
+                />
+              </article>
+            ) : view === "templates" ? (
+              <TemplatesView
+                templates={templates}
+                preferences={preferences}
+                onCreate={() => setComposer({ type: "template", noteId: null, value: "" })}
+                onUse={(template) => void createNote(null, undefined, { templateId: template.id })}
+                onEdit={(template) => selectTemplate(template.id)}
+                onDelete={(template) => void deleteTemplate(template)}
+                onDefaults={(defaultTemplateIds) => void savePreferencePatch({ defaultTemplateIds })}
+              />
             ) : view === "home" ? (
               <HomeView notes={organizedNotes} onSelect={selectNote} onCreate={() => void createNote()} />
             ) : view === "journal" ? (
@@ -944,8 +1210,17 @@ export default function HyperionApp() {
 
       {searchOpen && <div className="dialog-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeSearch()}><section className="search-dialog" role="dialog" aria-modal="true" aria-label="Search Hyperion"><div className="search-field"><MagnifyingGlass size={21} /><input ref={searchRef} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchResults[0]) { selectNote(searchResults[0].id); closeSearch(); } }} placeholder="Search pages, journal entries, text, and tags…" /><kbd>ESC</kbd></div><div className="search-caption"><span>{searchQuery ? `${searchResults.length} results` : "Recently edited"}</span><small>{activeVault?.name} · local</small></div><div className="search-results">{searchResults.map((note, index) => <button key={note.id} className={index === 0 ? "selected" : ""} onClick={() => { selectNote(note.id); closeSearch(); }}><span className="result-icon"><PageIcon note={note} size={18} /></span><span className="result-copy"><strong>{note.title}</strong><span>{notePreview(note)}</span></span><span className="result-meta">{note.kind === "journal" && <i>Journal</i>}{relativeTime(note.updatedAt)}</span></button>)}{!searchResults.length && <div className="no-results"><MagnifyingGlass size={24} /><span>No matching pages or entries</span></div>}</div><footer className="dialog-footer"><span><kbd>↵</kbd> Open</span><span className="dialog-brand"><HyperionMark small /> Hyperion</span></footer></section></div>}
 
-      {settingsOpen && activeVault && <SettingsDialog vault={activeVault} vaultCount={vaults.length} preferences={preferences} storageInfo={storageInfo} onStorageLocation={async () => { try { const info = await platformRuntime.chooseStorageLocation(); if (info) { setStorageInfo(info); window.location.reload(); } } catch (error) { alert(`Hyperion could not change the storage folder. ${error instanceof Error ? error.message : String(error)}`); } }} onClose={() => setSettingsOpen(false)} onPreferences={savePreferencePatch} onVault={async (patch) => { const updated = { ...activeVault, ...patch }; await knowledgeRepository.updateVault(updated); setVaults((current) => current.map((vault) => vault.id === updated.id ? updated : vault)); }} onExport={() => void exportVault()} onImport={() => importRef.current?.click()} onDelete={async () => { if (vaults.length <= 1 || !confirm(`Delete the “${activeVault.name}” vault and all of its local notes?`)) return; await knowledgeRepository.deleteVault(activeVault.id); const nextVaults = vaults.filter((vault) => vault.id !== activeVault.id); setVaults(nextVaults); setSettingsOpen(false); await loadVault(nextVaults[0].id, nextVaults); }} />}
+      {settingsOpen && activeVault && <SettingsDialog vault={activeVault} vaultCount={vaults.length} templates={templates} preferences={preferences} storageInfo={storageInfo} onStorageLocation={async () => { try { const info = await platformRuntime.chooseStorageLocation(); if (info) { setStorageInfo(info); window.location.reload(); } } catch (error) { alert(`Hyperion could not change the storage folder. ${error instanceof Error ? error.message : String(error)}`); } }} onClose={() => setSettingsOpen(false)} onPreferences={savePreferencePatch} onVault={async (patch) => { const updated = { ...activeVault, ...patch }; await knowledgeRepository.updateVault(updated); setVaults((current) => current.map((vault) => vault.id === updated.id ? updated : vault)); }} onExport={() => void exportVault()} onImport={() => importRef.current?.click()} onDelete={async () => { if (vaults.length <= 1 || !confirm(`Delete the “${activeVault.name}” vault and all of its local notes?`)) return; await knowledgeRepository.deleteVault(activeVault.id); const nextVaults = vaults.filter((vault) => vault.id !== activeVault.id); setVaults(nextVaults); setSettingsOpen(false); await loadVault(nextVaults[0].id, nextVaults); }} />}
       <input ref={importRef} className="hidden-input" type="file" accept=".json,.hyperion.json,application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importVault(file); }} />
+
+      {templatePicker && <TemplatePickerDialog
+        templates={templates}
+        defaultTemplateId={preferences.defaultTemplateIds.note}
+        parentTitle={templatePicker.parentId ? activeNotes.find((note) => note.id === templatePicker.parentId)?.title : undefined}
+        onClose={() => setTemplatePicker(null)}
+        onBlank={() => { const parentId = templatePicker.parentId; setTemplatePicker(null); void createNote(parentId, undefined, "blank"); }}
+        onTemplate={(template) => { const parentId = templatePicker.parentId; setTemplatePicker(null); void createNote(parentId, undefined, { templateId: template.id }); }}
+      />}
 
       {pageContextMenu && pageContextNote && <PageContextMenu
         state={pageContextMenu}
@@ -955,17 +1230,18 @@ export default function HyperionApp() {
         onCreatePage={() => setComposer({ type: "page", value: "", parentId: pageContextNote.id })}
         onRename={() => setComposer({ type: "rename", noteId: pageContextNote.id, value: pageContextNote.title })}
         onDuplicate={() => void duplicateNote(pageContextNote)}
+        onSaveTemplate={() => setComposer({ type: "template", noteId: pageContextNote.id, value: pageContextNote.title })}
         onFavorite={() => updateNoteById(pageContextNote.id, { favorite: !pageContextNote.favorite }, true)}
         onArchive={() => archiveNote(pageContextNote)}
         onTrash={() => trashNote(pageContextNote)}
       />}
 
-      {composer && <div className="dialog-layer"><form className="composer-dialog" onSubmit={submitComposer}><div className="dialog-icon">{composer.type === "vault" ? <Database size={22} /> : composer.type === "rename" ? <PencilSimple size={22} /> : <FileText size={22} />}</div><h2>{composer.type === "rename" ? "Rename page" : `New ${composer.type === "vault" ? "vault" : "page"}`}</h2><p>{composer.type === "vault" ? "A separate local knowledge space with its own notes and settings." : composer.type === "rename" ? "Give this page a clear name. Existing page links will continue to work." : composer.parentId ? `Create a page inside “${activeNotes.find((note) => note.id === composer.parentId)?.title ?? "this page"}”.` : "Create a top-level page. It can hold content and child pages."}</p><input ref={composerInputRef} value={composer.value} onChange={(event) => setComposer({ ...composer, value: event.target.value })} placeholder={composer.type === "vault" ? "Vault name" : "Page title"} /><div className="dialog-actions"><button type="button" onClick={() => setComposer(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!composer.value.trim()}>{composer.type === "rename" ? "Rename" : "Create"}</button></div></form></div>}
+      {composer && <div className="dialog-layer"><form className="composer-dialog" onSubmit={submitComposer}><div className="dialog-icon">{composer.type === "vault" ? <Database size={22} /> : composer.type === "rename" ? <PencilSimple size={22} /> : composer.type === "template" ? <Stack size={22} /> : <FileText size={22} />}</div><h2>{composer.type === "rename" ? "Rename page" : composer.type === "template" ? composer.noteId ? "Save as template" : "New template" : `New ${composer.type === "vault" ? "vault" : "page"}`}</h2><p>{composer.type === "vault" ? "A separate local knowledge space with its own notes and settings." : composer.type === "rename" ? "Give this page a clear name. Existing page links will continue to work." : composer.type === "template" ? composer.noteId ? "Save this page’s content, icon, and tags for future pages and journal entries." : "Create a blank reusable page, then shape its title, icon, and content in the template editor." : composer.parentId ? `Create a page inside “${activeNotes.find((note) => note.id === composer.parentId)?.title ?? "this page"}”.` : "Create a top-level page. It can hold content and child pages."}</p><input ref={composerInputRef} value={composer.value} onChange={(event) => setComposer({ ...composer, value: event.target.value })} placeholder={composer.type === "vault" ? "Vault name" : composer.type === "template" ? "Template name" : "Page title"} /><div className="dialog-actions"><button type="button" onClick={() => setComposer(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!composer.value.trim()}>{composer.type === "rename" ? "Rename" : composer.type === "template" ? composer.noteId ? "Save template" : "Create template" : "Create"}</button></div></form></div>}
     </main>
   );
 }
 
-function PageContextMenu({ state, note, onClose, onOpen, onCreatePage, onRename, onDuplicate, onFavorite, onArchive, onTrash }: {
+function PageContextMenu({ state, note, onClose, onOpen, onCreatePage, onRename, onDuplicate, onSaveTemplate, onFavorite, onArchive, onTrash }: {
   state: PageContextMenuState;
   note: NoteRecord;
   onClose: () => void;
@@ -973,6 +1249,7 @@ function PageContextMenu({ state, note, onClose, onOpen, onCreatePage, onRename,
   onCreatePage: () => void;
   onRename: () => void;
   onDuplicate: () => void;
+  onSaveTemplate: () => void;
   onFavorite: () => void;
   onArchive: () => void;
   onTrash: () => void;
@@ -1034,6 +1311,7 @@ function PageContextMenu({ state, note, onClose, onOpen, onCreatePage, onRename,
     <div className="context-menu-divider" role="separator" />
     {note.kind === "note" && <button role="menuitem" onClick={run(onCreatePage)}><Plus size={16} /><span>New page inside</span></button>}
     <button role="menuitem" onClick={run(onDuplicate)}><FilePlus size={16} /><span>Duplicate</span></button>
+    <button role="menuitem" onClick={run(onSaveTemplate)}><Stack size={16} /><span>Save as template</span></button>
     <div className="context-menu-divider" role="separator" />
     <button className="archive" role="menuitem" onClick={run(onArchive)}><Archive size={16} /><span>Archive</span></button>
     <button className="danger" role="menuitem" onClick={run(onTrash)}><Trash size={16} /><span>Trash</span></button>
@@ -1363,14 +1641,70 @@ function EmptyState({ icon, title, description, action }: { icon: React.ReactNod
   return <div className="empty-state"><div className="empty-state-icon">{icon}</div><h2>{title}</h2><p>{description}</p>{action}</div>;
 }
 
-function SettingsDialog({ vault, vaultCount, preferences, storageInfo, onStorageLocation, onClose, onPreferences, onVault, onExport, onImport, onDelete }: { vault: VaultRecord; vaultCount: number; preferences: VaultPreferences; storageInfo: StorageInfo | null; onStorageLocation: () => Promise<void>; onClose: () => void; onPreferences: (patch: Partial<VaultPreferences>) => Promise<void>; onVault: (patch: Partial<VaultRecord>) => Promise<void>; onExport: () => void; onImport: () => void; onDelete: () => void }) {
-  const [tab, setTab] = useState<"general" | "editor" | "appearance" | "data">("general");
+function TemplatesView({ templates, preferences, onCreate, onUse, onEdit, onDelete, onDefaults }: {
+  templates: TemplateRecord[];
+  preferences: VaultPreferences;
+  onCreate: () => void;
+  onUse: (template: TemplateRecord) => void;
+  onEdit: (template: TemplateRecord) => void;
+  onDelete: (template: TemplateRecord) => void;
+  onDefaults: (defaults: VaultPreferences["defaultTemplateIds"]) => void;
+}) {
+  return <div className="library-view templates-view">
+    <div className="view-heading">
+      <div><span className="eyebrow"><Stack size={14} /> Reusable starting points</span><h1>Templates</h1><p>Turn any page into a template, then use it for new pages or daily journal entries.</p></div>
+      <button className="primary-button" onClick={onCreate}><Plus size={17} weight="bold" /> New template</button>
+    </div>
+    <section className="template-defaults-panel">
+      <div><strong>Default for new pages</strong><small>Used by New page and ⌘ N.</small><select value={preferences.defaultTemplateIds.note ?? ""} onChange={(event) => onDefaults({ ...preferences.defaultTemplateIds, note: event.target.value || null })}><option value="">Blank page</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></div>
+      <div><strong>Default for journal entries</strong><small>Used when you write on a date for the first time.</small><select value={preferences.defaultTemplateIds.journal ?? ""} onChange={(event) => onDefaults({ ...preferences.defaultTemplateIds, journal: event.target.value || null })}><option value="">Blank page</option>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></div>
+    </section>
+    {templates.length ? <div className="template-card-grid">{templates.map((template) => {
+      const page = templatePageRecord(template);
+      const pageDefault = preferences.defaultTemplateIds.note === template.id;
+      const journalDefault = preferences.defaultTemplateIds.journal === template.id;
+      return <article className="template-card" key={template.id}>
+        <div className="template-card-heading"><span className="template-card-icon"><PageIcon note={page} size={21} /></span><span>{pageDefault && <i>Page default</i>}{journalDefault && <i>Journal default</i>}</span></div>
+        <h2>{template.name}</h2>
+        <strong className="template-default-title">{template.defaultTitle || "Untitled"}</strong>
+        <p>{template.body.replace(/\s+/g, " ").trim() || "Empty page template"}</p>
+        <div className="template-card-tags">{template.tags.slice(0, 3).map((tag) => <span key={tag}>#{tag}</span>)}</div>
+        <footer><button className="primary-button" onClick={() => onUse(template)}>Use</button><button className="secondary-button" onClick={() => onEdit(template)}>Edit</button><button className="template-delete-button" aria-label={`Delete ${template.name}`} title="Delete template" onClick={() => onDelete(template)}><Trash size={15} /></button></footer>
+      </article>;
+    })}</div> : <EmptyState icon={<Stack size={28} />} title="No templates yet" description="Create a blank template here, or save an existing page from its More menu." action={<button className="primary-button" onClick={onCreate}><Plus size={16} /> New template</button>} />}
+  </div>;
+}
+
+function TemplatePickerDialog({ templates, defaultTemplateId, parentTitle, onClose, onBlank, onTemplate }: {
+  templates: TemplateRecord[];
+  defaultTemplateId: string | null;
+  parentTitle?: string;
+  onClose: () => void;
+  onBlank: () => void;
+  onTemplate: (template: TemplateRecord) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const filtered = templates.filter((template) => `${template.name} ${template.defaultTitle} ${template.body} ${template.tags.join(" ")}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  return <div className="dialog-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="template-picker-dialog" role="dialog" aria-modal="true" aria-label="New page from template">
+    <header><span><Stack size={20} /><span><strong>New page</strong><small>{parentTitle ? `Inside ${parentTitle}` : "Choose a starting point"}</small></span></span><button aria-label="Close template picker" onClick={onClose}><X size={18} /></button></header>
+    <label className="template-picker-search"><MagnifyingGlass size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search templates…" /></label>
+    <div className="template-picker-grid">
+      {!query && <button className="template-picker-card" onClick={onBlank}><span className="template-picker-card-icon"><FileText size={21} /></span><span><strong>Blank page</strong><small>Start with an empty page.</small></span></button>}
+      {filtered.map((template) => <button className="template-picker-card" key={template.id} onClick={() => onTemplate(template)}><span className="template-picker-card-icon"><PageIcon note={templatePageRecord(template)} size={21} /></span><span><strong>{template.name}{defaultTemplateId === template.id && <i>Default</i>}</strong><small>{template.body.replace(/\s+/g, " ").trim() || template.defaultTitle || "Empty page template"}</small></span></button>)}
+      {!filtered.length && query && <div className="template-picker-empty">No matching templates</div>}
+    </div>
+  </section></div>;
+}
+
+function SettingsDialog({ vault, vaultCount, templates, preferences, storageInfo, onStorageLocation, onClose, onPreferences, onVault, onExport, onImport, onDelete }: { vault: VaultRecord; vaultCount: number; templates: TemplateRecord[]; preferences: VaultPreferences; storageInfo: StorageInfo | null; onStorageLocation: () => Promise<void>; onClose: () => void; onPreferences: (patch: Partial<VaultPreferences>) => Promise<void>; onVault: (patch: Partial<VaultRecord>) => Promise<void>; onExport: () => void; onImport: () => void; onDelete: () => void }) {
+  const [tab, setTab] = useState<"general" | "editor" | "templates" | "appearance" | "data">("general");
   const [name, setName] = useState(vault.name);
   const [description, setDescription] = useState(vault.description);
   const themes: { value: ThemePreference; label: string; icon: React.ReactNode }[] = [{ value: "system", label: "System", icon: <Sparkle size={18} /> }, { value: "light", label: "Light", icon: <Sun size={18} /> }, { value: "dark", label: "Dark", icon: <Moon size={18} /> }];
-  return <div className="dialog-layer"><section className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings"><header><div><HyperionMark small /><span><strong>Settings</strong><small>{vault.name}</small></span></div><button onClick={onClose}><X size={19} /></button></header><div className="settings-body"><nav>{(["general", "editor", "appearance", "data"] as const).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "general" ? <GearSix size={17} /> : item === "editor" ? <BookOpenText size={17} /> : item === "appearance" ? <Sun size={17} /> : <Database size={17} />}<span>{item[0].toUpperCase() + item.slice(1)}</span></button>)}</nav><div className="settings-content">
+  return <div className="dialog-layer"><section className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings"><header><div><HyperionMark small /><span><strong>Settings</strong><small>{vault.name}</small></span></div><button onClick={onClose}><X size={19} /></button></header><div className="settings-body"><nav>{(["general", "editor", "templates", "appearance", "data"] as const).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}>{item === "general" ? <GearSix size={17} /> : item === "editor" ? <BookOpenText size={17} /> : item === "templates" ? <Stack size={17} /> : item === "appearance" ? <Sun size={17} /> : <Database size={17} />}<span>{item[0].toUpperCase() + item.slice(1)}</span></button>)}</nav><div className="settings-content">
     {tab === "general" && <><div className="settings-heading"><h2>General</h2><p>Name and describe this local vault.</p></div><label className="setting-field"><span>Vault name</span><input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => name.trim() && void onVault({ name: name.trim() })} /></label><label className="setting-field"><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} onBlur={() => void onVault({ description })} /></label><SettingToggle title="Open page details" description="Show outline, backlinks, and properties when opening a page." checked={preferences.showDetails} onChange={(checked) => void onPreferences({ showDetails: checked })} /></>}
     {tab === "editor" && <><div className="settings-heading"><h2>Editor</h2><p>Configure the AFFiNE block editor for this vault.</p></div><SettingToggle title="Spell check" description="Use the browser’s local spell checker while writing." checked={preferences.spellcheck} onChange={(checked) => void onPreferences({ spellcheck: checked })} /><label className="setting-range"><span><strong>Editor text size</strong><small>Adjust text between 14 and 22 pixels.</small></span><input type="range" min="14" max="22" value={preferences.editorFontSize} onChange={(event) => void onPreferences({ editorFontSize: Number(event.target.value) })} /><output>{preferences.editorFontSize}px</output></label><div className="settings-note"><BookOpenText size={19} /><span><strong>Rich blocks are enabled</strong><small>Type / for tables, database views, code, LaTeX, callouts, media, embeds, and more. Select text for inline formatting.</small></span></div></>}
+    {tab === "templates" && <><div className="settings-heading"><h2>Template defaults</h2><p>Choose what new pages and journal entries start with in this vault.</p></div><label className="setting-field"><span>Default for new pages</span><select value={preferences.defaultTemplateIds.note ?? ""} onChange={(event) => void onPreferences({ defaultTemplateIds: { ...preferences.defaultTemplateIds, note: event.target.value || null } })}><option value="">Blank page</option>{templates.map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select></label><label className="setting-field"><span>Default for journal entries</span><select value={preferences.defaultTemplateIds.journal ?? ""} onChange={(event) => void onPreferences({ defaultTemplateIds: { ...preferences.defaultTemplateIds, journal: event.target.value || null } })}><option value="">Blank page</option>{templates.map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select></label><div className="settings-note"><Stack size={19} /><span><strong>Existing pages never change</strong><small>Changing a default only affects pages and journal entries created afterward.</small></span></div></>}
     {tab === "appearance" && <><div className="settings-heading"><h2>Appearance</h2><p>Choose a theme and comfortable writing width.</p></div><div className="setting-block"><span>Theme</span><div className="theme-options">{themes.map((theme) => <button key={theme.value} className={preferences.theme === theme.value ? "active" : ""} onClick={() => void onPreferences({ theme: theme.value })}>{theme.icon}<span>{theme.label}</span>{preferences.theme === theme.value && <Check size={14} />}</button>)}</div></div><div className="setting-block"><span>Editor width</span><div className="segmented-control">{(["compact", "comfortable", "wide"] as const).map((width) => <button key={width} className={preferences.editorWidth === width ? "active" : ""} onClick={() => void onPreferences({ editorWidth: width })}>{width[0].toUpperCase() + width.slice(1)}</button>)}</div></div></>}
     {tab === "data" && <><div className="settings-heading"><h2>Data</h2><p>Everything remains local unless you export it yourself.</p></div>{storageInfo && <div className="data-setting storage-location-setting"><span className="data-setting-icon"><Database size={20} /></span><span><strong>SQLite storage folder</strong><small title={storageInfo.databasePath}>{storageInfo.directory}{storageInfo.isDefault ? " · Default" : ""}</small></span><button onClick={() => void onStorageLocation()}>Choose…</button></div>}<div className="data-setting"><span className="data-setting-icon"><DownloadSimple size={20} /></span><span><strong>Export this vault</strong><small>Download pages, hierarchy, settings, and full block documents.</small></span><button onClick={onExport}>Export</button></div><div className="data-setting"><span className="data-setting-icon"><UploadSimple size={20} /></span><span><strong>Import a vault</strong><small>Import a Hyperion backup as a new, separate local vault.</small></span><button onClick={onImport}>Import</button></div><div className="local-data-note"><Archive size={18} /><span><strong>No account or cloud sync</strong><small>{storageInfo ? "Hyperion stores records, editor documents, and assets in a local SQLite file. Native local-AI services remain on this device." : "Hyperion uses IndexedDB and Yjs in this browser. Nothing is uploaded by the app."}</small></span></div>{vaultCount > 1 && <div className="danger-zone"><span><strong>Delete vault</strong><small>Remove this vault and its metadata from this {storageInfo ? "database" : "browser"}.</small></span><button onClick={onDelete}>Delete vault</button></div>}</>}
   </div></div><footer><span>Changes save automatically to this {storageInfo ? "device" : "browser"}.</span><button className="primary-button" onClick={onClose}>Done</button></footer></section></div>;

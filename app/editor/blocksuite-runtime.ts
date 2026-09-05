@@ -255,14 +255,29 @@ export function readEditorMetadata(store: Store) {
   return { title, body };
 }
 
-export async function duplicateEditorDocument(vaultId: string, sourceId: string, targetId: string) {
+export function templateDocumentId(templateId: string) {
+  return `template:${templateId}`;
+}
+
+export async function duplicateEditorDocument(
+  vaultId: string,
+  sourceId: string,
+  targetId: string,
+  options: { title?: string } = {},
+) {
   const workspace = await getVaultWorkspace(vaultId);
   const source = workspace.getDoc(sourceId);
-  if (!source) return;
+  if (!source) return false;
   const target = workspace.createDoc(targetId);
   target.spaceDoc.load();
   Y.applyUpdate(target.spaceDoc, Y.encodeStateAsUpdate(source.spaceDoc));
-  target.getStore().load();
+  const store = target.getStore();
+  store.load();
+  if (options.title && store.root) {
+    store.updateBlock(store.root, { title: new Text(options.title) });
+  }
+  store.resetHistory();
+  return true;
 }
 
 function bytesToBase64(bytes: Uint8Array) {
