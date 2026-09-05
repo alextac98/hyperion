@@ -1,6 +1,6 @@
 {
   "name": "hyperion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A local-first personal knowledge base for the web and desktop.",
   "author": "Hyperion contributors",
   "private": true,
