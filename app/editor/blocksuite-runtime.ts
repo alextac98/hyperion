@@ -1,23 +1,13 @@
-import { StoreExtensionManager, ViewExtensionManager } from "@blocksuite/affine/ext-loader";
+import { StoreExtensionManager } from "@blocksuite/affine/ext-loader";
 import { getInternalStoreExtensions } from "@blocksuite/affine/extensions/store";
-import { getInternalViewExtensions } from "@blocksuite/affine/extensions/view";
-import { BlockStdScope, TextSelection } from "@blocksuite/affine/std";
-import { TableDataManager } from "@blocksuite/affine/blocks/table";
 import type { Store } from "@blocksuite/affine/store";
 import { Text } from "@blocksuite/affine/store";
 import { TestWorkspace } from "@blocksuite/affine/store/test";
-import { PageDraggingAreaViewExtension } from "@blocksuite/affine/widgets/page-dragging-area/view";
 import * as Y from "yjs";
+import type { NoteRecord } from "../lib/local-database";
 import { platformRuntime } from "../platform/runtime";
 
 const storeManager = new StoreExtensionManager(getInternalStoreExtensions());
-const viewManager = new ViewExtensionManager(
-  getInternalViewExtensions().filter(
-    (extension) => extension !== PageDraggingAreaViewExtension,
-  ),
-);
-const pageExtensions = viewManager.get("page");
-
 const workspacePromises = new Map<string, Promise<TestWorkspace>>();
 const storePromises = new Map<string, Promise<Store>>();
 
@@ -65,7 +55,10 @@ async function createWorkspace(vaultId: string) {
 export function getVaultWorkspace(vaultId: string) {
   let workspace = workspacePromises.get(vaultId);
   if (!workspace) {
-    workspace = createWorkspace(vaultId);
+    workspace = createWorkspace(vaultId).catch((error: unknown) => {
+      workspacePromises.delete(vaultId);
+      throw error;
+    });
     workspacePromises.set(vaultId, workspace);
   }
   return workspace;
@@ -97,11 +90,16 @@ function addInitialBlocks(store: Store, title: string, body: string) {
     } else if (/^□\s+/.test(line)) {
       store.addBlock(
         "affine:list",
-        { type: "todo", checked: false, text: new Text(line.replace(/^□\s+/, "")) },
+        {
+          type: "todo",
+          checked: false,
+          text: new Text(line.replace(/^□\s+/, "")),
+        },
         noteId,
       );
     } else {
-      const looksLikeHeading = previousBlank && nextBlank && line.length < 64 && !/[.!?]$/.test(line);
+      const looksLikeHeading =
+        previousBlank && nextBlank && line.length < 64 && !/[.!?]$/.test(line);
       store.addBlock(
         "affine:paragraph",
         { type: looksLikeHeading ? "h2" : "text", text: new Text(line) },
@@ -150,85 +148,15 @@ export function getOrCreateEditorStore(
   const key = `${vaultId}:${noteId}`;
   let store = storePromises.get(key);
   if (!store) {
-    store = initializeEditorStore(vaultId, noteId, title, legacyBody);
+    store = initializeEditorStore(vaultId, noteId, title, legacyBody).catch(
+      (error: unknown) => {
+        storePromises.delete(key);
+        throw error;
+      },
+    );
     storePromises.set(key, store);
   }
   return store;
-}
-
-export function renderPageEditor(store: Store) {
-  const scope = new BlockStdScope({ store, extensions: pageExtensions });
-  const viewport = document.createElement("div");
-  viewport.className = "affine-page-viewport hyperion-blocksuite-viewport";
-  viewport.dataset.theme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
-
-  const title = document.createElement("doc-title") as HTMLElement & { doc: Store };
-  title.doc = store;
-  const editorContainer = document.createElement("div");
-  editorContainer.className = "page-editor hyperion-blocksuite-page";
-  editorContainer.append(scope.render());
-
-  // BlockSuite progressively changes repeated Select All presses from text
-  // selection into paragraph-block selection. Hyperion keeps Select All
-  // text-only so an extra Cmd/Ctrl+A can never turn the page into opaque
-  // block overlays.
-  viewport.addEventListener(
-    "keydown",
-    (event) => {
-      if (
-        event.key.toLowerCase() !== "a" ||
-        (!event.metaKey && !event.ctrlKey) ||
-        event.altKey ||
-        event.shiftKey ||
-        !event.composedPath().some((target) => target === editorContainer)
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-
-      type TextBlockElement = HTMLElement & {
-        model?: { text?: { length: number } };
-      };
-
-      const textBlocks = Array.from(
-        editorContainer.querySelectorAll<HTMLElement>(".inline-editor"),
-      ).reduce<TextBlockElement[]>((blocks, inlineEditor) => {
-        const block = inlineEditor.closest<HTMLElement>(
-          "[data-block-id]",
-        ) as TextBlockElement | null;
-        if (block?.model?.text && !blocks.includes(block)) blocks.push(block);
-        return blocks;
-      }, []);
-      if (!textBlocks.length) return;
-
-      const first = textBlocks[0];
-      const last = textBlocks[textBlocks.length - 1];
-      const from = {
-        blockId: first.dataset.blockId,
-        index: 0,
-        length: first.model?.text?.length ?? 0,
-      };
-      const to =
-        first === last
-          ? null
-          : {
-              blockId: last.dataset.blockId,
-              index: 0,
-              length: last.model?.text?.length ?? 0,
-            };
-
-      scope.selection.setGroup("note", [
-        scope.selection.create(TextSelection, { from, to }),
-      ]);
-    },
-    { capture: true },
-  );
-
-  viewport.append(title, editorContainer);
-  return { viewport, scope };
 }
 
 export function readEditorMetadata(store: Store) {
@@ -248,16 +176,19 @@ export function readEditorMetadata(store: Store) {
   };
   if (root) visit(root);
   const body = models
-    .filter((model) => !["affine:page", "affine:surface", "affine:note"].includes(model.flavour))
+    .filter(
+      (model) =>
+        !["affine:page", "affine:surface", "affine:note"].includes(
+          model.flavour,
+        ),
+    )
     .map((model) => model.text?.toString().trim() ?? "")
     .filter(Boolean)
     .join("\n");
   return { title, body };
 }
 
-export function templateDocumentId(templateId: string) {
-  return `template:${templateId}`;
-}
+export { templateDocumentId } from "./document-id";
 
 export async function duplicateEditorDocument(
   vaultId: string,
@@ -292,21 +223,29 @@ function bytesToBase64(bytes: Uint8Array) {
 function base64ToBytes(value: string) {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  for (let index = 0; index < binary.length; index += 1)
+    bytes[index] = binary.charCodeAt(index);
   return bytes;
 }
 
-export async function exportEditorDocuments(vaultId: string, noteIds: string[]) {
+export async function exportEditorDocuments(
+  vaultId: string,
+  noteIds: string[],
+) {
   const workspace = await getVaultWorkspace(vaultId);
   const result: Record<string, string> = {};
   noteIds.forEach((noteId) => {
     const doc = workspace.getDoc(noteId);
-    if (doc) result[noteId] = bytesToBase64(Y.encodeStateAsUpdate(doc.spaceDoc));
+    if (doc)
+      result[noteId] = bytesToBase64(Y.encodeStateAsUpdate(doc.spaceDoc));
   });
   return result;
 }
 
-export async function importEditorDocuments(vaultId: string, documents: Record<string, string>) {
+export async function importEditorDocuments(
+  vaultId: string,
+  documents: Record<string, string>,
+) {
   const workspace = await getVaultWorkspace(vaultId);
   Object.entries(documents).forEach(([noteId, value]) => {
     const doc = workspace.getDoc(noteId) ?? workspace.createDoc(noteId);
@@ -323,30 +262,16 @@ export async function removeEditorDocument(vaultId: string, noteId: string) {
   storePromises.delete(`${vaultId}:${noteId}`);
 }
 
-export function insertTable(store: Store) {
-  const parent = store.getModelsByFlavour("affine:note")[0];
-  if (!parent) return;
-  const blockId = store.addBlock("affine:table", {}, parent);
-  const model = store.getModelById(blockId);
-  if (!model) return;
-  const manager = new TableDataManager(model as ConstructorParameters<typeof TableDataManager>[0]);
-  manager.addNRow(3);
-  manager.addNColumn(3);
-  store.addBlock("affine:paragraph", {}, parent);
-}
-
-export function insertBlock(
-  store: Store,
-  kind: "paragraph" | "heading" | "todo" | "code" | "quote" | "callout",
-) {
-  const parent = store.getModelsByFlavour("affine:note")[0];
-  if (!parent) return;
-  if (kind === "paragraph") store.addBlock("affine:paragraph", {}, parent);
-  if (kind === "heading") store.addBlock("affine:paragraph", { type: "h2" }, parent);
-  if (kind === "todo") store.addBlock("affine:list", { type: "todo", checked: false }, parent);
-  if (kind === "code") store.addBlock("affine:code", {}, parent);
-  if (kind === "quote") store.addBlock("affine:paragraph", { type: "quote" }, parent);
-  if (kind === "callout") store.addBlock("affine:callout", {}, parent);
-}
-
 export type EditorStore = Store;
+
+export async function renameEditorDocument(note: NoteRecord, title: string) {
+  const store = await getOrCreateEditorStore(
+    note.vaultId,
+    note.id,
+    note.title,
+    note.body,
+  );
+  if (!store.root)
+    throw new Error("This page could not be opened for renaming.");
+  store.updateBlock(store.root, { title: new Text(title) });
+}
