@@ -1,0 +1,73 @@
+.collection-card-grid > button { display: flex; min-height: 70px; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); text-align: left; }
+.collection-card-grid > button:hover { border-color: var(--line-strong); background: var(--panel); }
+.collection-card-icon { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+.collection-card-grid > button > span:nth-child(2) { min-width: 0; flex: 1; }
+.collection-card-grid strong,
+.collection-card-grid small { display: block; }
+.collection-card-grid strong { font-size: 12px; }
+.collection-card-grid strong,
+.collection-card-grid small { overflow-wrap: anywhere; }
+.collection-card-grid small { margin-top: 5px; color: var(--text-faint); font-size: 9.5px; }
+.collection-card-grid > button > svg { color: var(--text-faint); }
+
+.data-toolbar { display: flex; align-items: center; gap: 7px; margin: -16px 0 20px; }
+.data-toolbar label { display: flex; height: 34px; min-width: 190px; flex: 1; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text-faint); }
+.data-toolbar input { min-width: 0; flex: 1; border: 0; background: transparent; outline: 0; font-size: 11px; }
+.data-toolbar select { height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text-soft); font-size: 10.5px; outline: 0; }
+.view-toggle { display: flex; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.view-toggle button { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 5px; background: transparent; color: var(--text-faint); }
+.view-toggle button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+
+.notes-table { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.notes-table-head,
+.notes-table-row { display: grid; grid-template-columns: minmax(260px, 1.6fr) minmax(135px, .75fr) minmax(110px, .6fr) 72px; gap: 12px; align-items: center; }
+.notes-table-head { height: 34px; padding: 0 13px; border-bottom: 1px solid var(--line); background: var(--panel); color: var(--text-faint); font-size: 9px; font-weight: 680; letter-spacing: .04em; text-transform: uppercase; }
+.notes-table-row { width: 100%; min-height: 67px; padding: 9px 13px; border-bottom: 1px solid var(--line); background: transparent; text-align: left; }
+.notes-table-row:last-child { border-bottom: 0; }
+.notes-table-row:hover { background: var(--panel); }
+.table-title { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.table-title > svg:first-child { flex: 0 0 auto; color: var(--text-faint); }
+.table-title > span:not(.page-icon-glyph) { min-width: 0; flex: 1; }
+.table-title strong,
+.table-title small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-title strong { margin-bottom: 5px; color: var(--text); font-size: 11.5px; }
+.table-title small { color: var(--text-faint); font-size: 9.5px; }
+.table-title > svg:last-child { color: var(--yellow); }
+.table-location,
+.table-tags { display: flex; min-width: 0; flex-wrap: wrap; gap: 4px; }
+.table-location { overflow: hidden; color: var(--text-faint); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+.table-tags i { display: inline-flex; max-width: 100%; align-items: center; gap: 5px; overflow: hidden; padding: 3px 6px; border-radius: 5px; background: var(--panel-strong); color: var(--text-soft); font-size: 9px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.table-date { color: var(--text-faint); font-size: 9.5px; text-align: right; }
+.note-card-grid.wide { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.tags-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 30px; }
+.tags-layout > aside,
+.tags-layout > section { min-width: 0; }
+.tags-layout h2 { margin: 0 0 12px; overflow-wrap: anywhere; font-size: 12px; }
+.tags-layout aside { padding-right: 18px; border-right: 1px solid var(--line); }
+.tags-layout aside button { display: flex; width: 100%; height: 32px; align-items: center; gap: 7px; padding: 0 8px; border-radius: 6px; background: transparent; color: var(--text-soft); font-size: 11px; text-align: left; }
+.tags-layout aside button:hover,
+.tags-layout aside button.active { background: var(--hover); color: var(--text); }
+.tags-layout aside button span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tags-layout aside em { color: var(--text-faint); font-size: 9px; font-style: normal; }
+.simple-note-list { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; }
+.simple-note-list button { display: flex; width: 100%; min-height: 60px; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); background: var(--surface); text-align: left; }
+.simple-note-list button:last-child { border-bottom: 0; }
+.simple-note-list button:hover { background: var(--panel); }
+.simple-note-list button > svg { flex-shrink: 0; color: var(--text-faint); }
+.simple-note-list button > span:nth-child(2) { min-width: 0; flex: 1; }
+.simple-note-list strong,
+.simple-note-list small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.simple-note-list strong { font-size: 11px; }
+.simple-note-list small { margin-top: 5px; color: var(--text-faint); font-size: 9px; }
+.simple-note-list button > span:last-child { flex-shrink: 0; color: var(--text-faint); font-size: 9px; white-space: nowrap; }
+
+.trash-list > div > svg { color: var(--text-faint); }
+.trash-list > div > .page-icon-glyph { flex: 0 0 auto; }
+.trash-list > div > span:not(.page-icon-glyph) { min-width: 0; flex: 1; }
+.trash-list > div > span:not(.page-icon-glyph) strong,
+.trash-list > div > span:not(.page-icon-glyph) small { display: block; }
+.trash-list > div > span:not(.page-icon-glyph) { overflow-wrap: anywhere; }
+.trash-list > div > span strong { font-size: 11.5px; }
+.trash-list > div > span small { margin-top: 4px; color: var(--text-faint); font-size: 9.5px; }
+.trash-list > div > button { flex-shrink: 0; min-height: 29px; padding: 5px 9px; border-radius: 6px; background: var(--panel); color: var(--text-soft); font-size: 9.5px; }

@@ -19,6 +19,18 @@ electron/                    desktop-only trusted boundary
 └── database.ts              SQLite, storage migration, documents, and assets
 ```
 
+The application shell composes feature views and dialogs from `app/components`.
+Pure page mutation rules live in `app/application/page-operations.ts`; hierarchy
+and search indexing helpers live in `app/lib`. Editor operations enter through
+`app/editor/editor-client.ts`, which loads the document runtime and editor views
+as separate modules. Startup preloads both modules alongside repository initialization;
+opening a vault begins editor workspace initialization alongside metadata reads.
+Document initialization and view loading run concurrently, with shared module
+promises and retry after failed imports. The workspace synchronization barrier
+still completes before document initialization.
+The emoji catalog is also loaded on demand. Shared styles are grouped under
+`app/styles`, with cascade order declared in `app/globals.css`.
+
 The composition root is intentionally small. A later mobile shell can provide
 the same `KnowledgeRepository`, editor document source, blob source, and
 capability services without forking `HyperionApp`.

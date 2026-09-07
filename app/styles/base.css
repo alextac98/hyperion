@@ -1,0 +1,102 @@
+:root {
+  --bg: #ffffff;
+  --panel: #f7f7f6;
+  --panel-strong: #f0f0ee;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --text: #242522;
+  --text-soft: #696b65;
+  --text-faint: #9a9c96;
+  --line: #e8e8e4;
+  --line-strong: #dcded8;
+  --hover: #eeeeeb;
+  --active: #e8e8e4;
+  --accent: #4b65d1;
+  --accent-soft: #eef1ff;
+  --accent-text: #4057bc;
+  --green: #4a8a64;
+  --green-soft: #edf7f0;
+  --danger: #c74747;
+  --danger-soft: #fff0ef;
+  --yellow: #d09c2f;
+  --sidebar-width: 272px;
+  --topbar-height: 52px;
+  --shadow-sm: 0 1px 2px rgb(16 20 16 / 5%), 0 1px 7px rgb(16 20 16 / 4%);
+  --shadow-lg: 0 18px 65px rgb(18 22 18 / 18%), 0 2px 12px rgb(18 22 18 / 8%);
+}
+
+:root[data-theme="dark"] {
+  --bg: #191a18;
+  --panel: #20211f;
+  --panel-strong: #292a27;
+  --surface: #1b1c1a;
+  --surface-raised: #252623;
+  --text: #f0f1ed;
+  --text-soft: #adafa8;
+  --text-faint: #777a73;
+  --line: #30322e;
+  --line-strong: #3d3f3a;
+  --hover: #2a2b28;
+  --active: #343631;
+  --accent: #92a5ff;
+  --accent-soft: #2d334a;
+  --accent-text: #b9c4ff;
+  --green: #77b38a;
+  --green-soft: #213229;
+  --danger: #ef7b76;
+  --danger-soft: #422827;
+  --yellow: #e0b75a;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 16%), 0 1px 7px rgb(0 0 0 / 12%);
+  --shadow-lg: 0 18px 65px rgb(0 0 0 / 38%), 0 2px 12px rgb(0 0 0 / 22%);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body,
+button,
+input,
+textarea {
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button,
+input,
+textarea {
+  color: inherit;
+}
+
+button {
+  border: 0;
+  cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 78%, transparent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--accent) 23%, transparent);
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
+  text-shadow: none;
+}
+
+kbd {
+  font-family: inherit;
+}
+

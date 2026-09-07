@@ -1,0 +1,118 @@
+/* Hyperion knowledge system + MIT BlockSuite integration */
+:root {
+  --affine-font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --affine-font-number-family: var(--affine-font-family);
+  --affine-font-code-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --affine-font-base: var(--hyperion-editor-font-size, 17px);
+  --affine-font-sm: 14px;
+  --affine-font-xs: 12px;
+  --affine-font-h-1: 34px;
+  --affine-font-h-2: 27px;
+  --affine-font-h-3: 22px;
+  --affine-font-h-4: 19px;
+  --affine-font-h-5: 17px;
+  --affine-font-h-6: 15px;
+  --affine-line-height: 1.65;
+  --affine-text-primary-color: var(--text);
+  --affine-text-secondary-color: var(--text-soft);
+  --affine-text-disable-color: var(--text-faint);
+  --affine-placeholder-color: var(--text-faint);
+  --affine-icon-color: var(--text);
+  --affine-icon-secondary: var(--text-soft);
+  --affine-border-color: var(--line-strong);
+  --affine-divider-color: var(--line);
+  --affine-hover-color: var(--hover);
+  --affine-hover-color-filled: var(--active);
+  --affine-background-primary-color: var(--bg);
+  --affine-background-secondary-color: var(--panel);
+  --affine-background-tertiary-color: var(--panel-strong);
+  --affine-background-overlay-panel-color: var(--surface-raised);
+  --affine-background-code-block: var(--panel);
+  --affine-background-error-color: var(--danger-soft);
+  --affine-link-color: var(--accent);
+  --affine-quote-color: var(--text-soft);
+  --affine-primary-color: var(--accent);
+  --affine-brand-color: var(--accent);
+  --affine-editor-width: 800px;
+  --affine-editor-side-padding: 24px;
+  --affine-popover-radius: 10px;
+  --affine-popover-shadow: var(--shadow-lg);
+  --affine-z-index-popover: 80;
+  --affine-z-index-modal: 90;
+  --hyperion-bs-button-primary: var(--accent);
+  --hyperion-bs-database-border: var(--line-strong);
+  --hyperion-bs-icon-primary: var(--text);
+  --hyperion-bs-icon-secondary: var(--text-soft);
+  --hyperion-bs-layer-background: var(--bg);
+  --hyperion-bs-layer-background-hover: var(--hover);
+  --hyperion-bs-layer-background-overlay: var(--surface-raised);
+  --hyperion-bs-inside-border: var(--line-strong);
+  --hyperion-bs-table-border: var(--line-strong);
+  --hyperion-bs-table-header: var(--panel);
+  --hyperion-bs-indicator-active: var(--accent-soft);
+  --hyperion-bs-indicator-drag: var(--accent-soft);
+  --hyperion-bs-indicator-pointer: var(--accent);
+  --hyperion-bs-text-primary: var(--text);
+  --hyperion-bs-text-secondary: var(--text-soft);
+  --hyperion-bs-tooltip-background: var(--text);
+  --hyperion-bs-tooltip-foreground: var(--bg);
+}
+
+.vault-switcher-wrap {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+.vault-menu {
+  top: 45px;
+  left: 0;
+  width: 250px;
+  padding: 7px;
+}
+
+.vault-menu > button {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+}
+
+.vault-menu > button:hover,
+.vault-menu > button.selected { background: var(--hover); }
+.vault-menu > button > span:nth-child(2) { min-width: 0; flex: 1; }
+.vault-menu strong,
+.vault-menu small { display: block; }
+.vault-menu strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.vault-menu small { margin-top: 3px; color: var(--text-faint); font-size: 9px; }
+.vault-color { width: 11px; height: 11px; flex: 0 0 auto; border-radius: 4px; }
+.popover-label { padding: 5px 8px 7px; color: var(--text-faint); font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.popover-divider { height: 1px; margin: 5px 2px; background: var(--line); }
+.collection-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 3px; }
+.sidebar-empty { margin: 5px 9px 10px; color: var(--text-faint); font-size: 10px; line-height: 1.5; }
+
+.note-workspace {
+  position: relative;
+  min-height: calc(100vh - var(--topbar-height));
+}
+
+.journal-entry-label {
+  display: flex;
+  width: calc(100% - 48px);
+  align-items: center;
+  gap: 7px;
+  margin: 30px auto -17px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 590;
+}
+
+.journal-entry-label.width-compact { max-width: 680px; }
+.journal-entry-label.width-comfortable { max-width: 800px; }
+.journal-entry-label.width-wide { max-width: 1040px; }
+
