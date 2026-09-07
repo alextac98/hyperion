@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import * as Y from "yjs";
-import { assetReferences, array, bytes, documentBytes, documentMetadata, hash, id, object, record, remapDocument, restoreDocument, string, BUNDLE_VERSION, DOCUMENT_VERSION, type RecordValue } from "./data-format.js";
+import { assetReferences, array, bytes, documentBytes, documentMetadata, revisionContentHash, hash, id, object, record, remapDocument, restoreDocument, string, BUNDLE_VERSION, DOCUMENT_VERSION, type RecordValue } from "./data-format.js";
 
 const DATABASE_FILE = "hyperion.sqlite3";
 export const DATABASE_VERSION = 1;
@@ -285,6 +285,15 @@ export class DesktopDatabase {
       });
       case "listRevisions": return this.listRevisions(id(request.vaultId), request.noteId == null ? undefined : id(request.noteId), false).map(revision => { const summary: Partial<Revision> = { ...revision }; delete summary.document; delete summary.assets; return summary; });
       case "getRevision": return this.getRevision(id(request.vaultId), id(request.revisionId));
+      case "compareRevision": return transaction(db, () => {
+        const vaultId = id(request.vaultId); const noteId = id(request.noteId);
+        const revision = this.getRevision(vaultId, id(request.revisionId));
+        if (revision.noteId !== noteId) throw new Error("Version belongs to another page");
+        const row = db.prepare("SELECT record FROM notes WHERE id=? AND vault_id=?").get(noteId, vaultId);
+        if (!row) throw new Error("Page not found");
+        const document = this.fullDocument(vaultId, noteId)?.toString("base64") ?? null;
+        return { revision, current: { note: { ...sqlRecord(row), ...(document ? documentMetadata(documentBytes(document)) : null) }, document } };
+      });
       case "restoreRevision": return transaction(db, () => this.restoreRevision(id(request.vaultId), id(request.revisionId), request.asCopy === true));
       default: throw new Error(`Unknown repository operation: ${request.operation}`);
     }
@@ -339,18 +348,25 @@ export class DesktopDatabase {
     // This supports unknown rich block types without dropping historical attachments.
     return Object.fromEntries(this.rows("assets", vaultId).map(row => [String(row.asset_key), String(row.hash)]));
   }
-  private captureRevision(vaultId: string, noteId: string, label: string | null, reason: string): Revision {
+  private captureRevision(vaultId: string, noteId: string, label: string | null, reason: string): Revision & { captureStatus: "created" | "named" | "reused" } {
     const row = this.database.prepare("SELECT record FROM notes WHERE id=? AND vault_id=?").get(noteId, vaultId);
     if (!row) throw new Error("Page not found");
     const document = this.fullDocument(vaultId, noteId)?.toString("base64") ?? null;
     const note = { ...sqlRecord(row), ...(document ? documentMetadata(documentBytes(document)) : null) };
     const assets = this.revisionAssets(vaultId);
-    const contentHash = hash(JSON.stringify({ note: { ...note, updatedAt: undefined }, document, assets }));
+    const contentHash = revisionContentHash(note, document);
     const previousRow = this.database.prepare("SELECT * FROM revisions WHERE vault_id=? AND note_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1").get(vaultId, noteId);
     const previous = previousRow ? this.decodeRevision(previousRow) : undefined;
-    if (!label && previous?.contentHash === contentHash) return previous;
+    // Recompute the previous digest so existing databases and imports need no rewrite.
+    if (previous && previous.documentVersion === DOCUMENT_VERSION && revisionContentHash(previous.note, previous.document) === contentHash) {
+      if (label && !previous.label) {
+        this.database.prepare("UPDATE revisions SET label=?,reason=? WHERE id=?").run(label, reason, previous.id);
+        return { ...previous, label, reason, captureStatus: "named" };
+      }
+      return { ...previous, captureStatus: "reused" };
+    }
     const revision: Revision = { id: randomUUID(), vaultId, noteId, createdAt: now(), label, reason, documentVersion: DOCUMENT_VERSION, note, document, assets, contentHash };
-    this.insertRevision(revision); return revision;
+    this.insertRevision(revision); return { ...revision, captureStatus: "created" };
   }
   private insertRevision(revision: Revision) {
     if (revision.documentVersion !== DOCUMENT_VERSION) throw new Error("Unsupported historical document format");
@@ -450,7 +466,7 @@ export class DesktopDatabase {
         const note = { ...original, id: mapped(original.id), vaultId, parentId: original.parentId ? ids.get(String(original.parentId)) ?? null : null, collectionIds: (original.collectionIds as string[]).flatMap(key => ids.has(key) ? [ids.get(key)!] : []), links: (original.links as RecordValue[]).map(link => ({ ...link, targetId: ids.get(String(link.targetId)) ?? link.targetId })) };
         const revision: Revision = { id: randomUUID(), vaultId, noteId: String(mapped(r.noteId)), createdAt: string(r.createdAt), label: r.label === null ? null : string(r.label), reason: string(r.reason), documentVersion: Number(r.documentVersion), note, document: r.document === null ? null : remapDocument(string(r.document), ids), assets: object(r.assets) as Record<string,string>, contentHash: "" };
         if (!Number.isFinite(Date.parse(revision.createdAt))) throw new Error("Invalid revision date");
-        revision.contentHash = hash(JSON.stringify({ note: { ...note, updatedAt: undefined }, document: revision.document, assets: revision.assets }));
+        revision.contentHash = revisionContentHash(note, revision.document);
         this.insertRevision(revision);
       }
       this.validateRelationships();

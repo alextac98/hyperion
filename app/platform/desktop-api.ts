@@ -1,4 +1,7 @@
 import type { NoteRecord } from "../lib/local-database";
+export type RevisionCapture = PageRevision & { captureStatus: "created" | "named" | "reused" };
+export type PageSnapshot = { note: NoteRecord; document?: string | null };
+export type PageComparison = { revision: PageRevision; current: PageSnapshot };
 export type PageRevision = {
   id: string; vaultId: string; noteId: string; createdAt: string; label: string | null;
   reason: string; documentVersion: number; note: NoteRecord; document?: string | null;

@@ -1,5 +1,7 @@
 import { saves } from "./lib/save-coordinator";
 import { dataBusy, dataOperation, flushAll } from "./lib/data-operations";
+import { PageHistory, PageHistoryPreview } from "./components/PageHistory";
+import type { PageComparison } from "./platform/desktop-api";
 import { HistoryDialog } from "./components/HistoryDialog";
 import { DataRecovery } from "./components/DataRecovery";
 import {
@@ -285,6 +287,9 @@ export default function HyperionApp() {
   const [sidebarWidth, setSidebarWidth] = useState(getStoredSidebarWidth);
   const [sidebarResizing, setSidebarResizing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
+  const [detailsTab, setDetailsTab] = useState<"details" | "history">("details");
+  const [comparison, setComparison] = useState<PageComparison | null>(null);
+  const pageComparison = view === "note" && comparison?.revision.noteId === activeId && comparison?.revision.vaultId === vaultId ? comparison : null;
   const [favoritesOpen, setFavoritesOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -468,6 +473,7 @@ export default function HyperionApp() {
   }, []);
 
   const selectNote = useCallback((id: string) => {
+    setComparison(null);
     setActiveId(id);
     setView("note");
     setMoreOpen(false);
@@ -581,7 +587,7 @@ export default function HyperionApp() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (dataBusy.getSnapshot() || document.querySelector(".history-dialog")) return;
+      if (dataBusy.getSnapshot() || document.querySelector(".history-dialog, .page-comparison")) return;
       const command = event.metaKey || event.ctrlKey;
       if (command && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -1047,20 +1053,19 @@ export default function HyperionApp() {
         <header className="topbar">
           <div className="topbar-left">
             {!sidebarOpen && <button className="icon-button" aria-label="Open sidebar" onClick={() => setSidebarOpen(true)}><SidebarSimple size={19} /></button>}
-            {view === "note" && activeNote && <button className={`icon-button topbar-favorite${activeNote.favorite ? " active" : ""}`} aria-label={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} title={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} onClick={() => updateNoteById(activeNote.id, { favorite: !activeNote.favorite }, true)}><Star size={17} weight={activeNote.favorite ? "fill" : "regular"} /></button>}
+            {view === "note" && activeNote && <button disabled={!!pageComparison} className={`icon-button topbar-favorite${activeNote.favorite ? " active" : ""}`} aria-label={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} title={activeNote.favorite ? "Remove from favorites" : "Add to favorites"} onClick={() => updateNoteById(activeNote.id, { favorite: !activeNote.favorite }, true)}><Star size={17} weight={activeNote.favorite ? "fill" : "regular"} /></button>}
             <div className="breadcrumbs">{view === "note" && activeNote?.kind === "journal" && <span className="breadcrumb-parent"><button onClick={() => navigateView("journal")}><CalendarBlank size={12} />Journal</button><CaretRight size={12} /></span>}{view === "template" && <span className="breadcrumb-parent"><button onClick={() => navigateView("templates")}><Stack size={12} />Templates</button><CaretRight size={12} /></span>}{activeAncestors.map((ancestor) => <span className="breadcrumb-parent" key={ancestor.id}><button onClick={() => selectNote(ancestor.id)}><PageIcon note={ancestor} size={12} />{ancestor.title}</button><CaretRight size={12} /></span>)}{view === "note" && activeNote && <PageIcon note={activeNote} size={13} />}{view === "template" && activeTemplatePage && <PageIcon note={activeTemplatePage} size={13} />}<strong>{heading ?? "Untitled"}</strong></div>
           </div>
           <div className="topbar-actions">
             {(view === "note" && activeNote || view === "template" && activeTemplate) && <div className="topbar-history" aria-label="Editing history">
-              <button className="icon-button" aria-label="Undo" title="Undo" onClick={() => editorStore?.undo()} disabled={!editorStore}><ArrowCounterClockwise size={16} /></button>
-              <button className="icon-button" aria-label="Redo" title="Redo" onClick={() => editorStore?.redo()} disabled={!editorStore}><ArrowClockwise size={16} /></button>
+              <button className="icon-button" aria-label="Undo" title="Undo" onClick={() => editorStore?.undo()} disabled={!editorStore || !!pageComparison}><ArrowCounterClockwise size={16} /></button>
+              <button className="icon-button" aria-label="Redo" title="Redo" onClick={() => editorStore?.redo()} disabled={!editorStore || !!pageComparison}><ArrowClockwise size={16} /></button>
             </div>}
             <span className={`save-status ${saveStatus}`} title={saves.getError()}>{saveStatus === "saved" ? <Check size={13} weight="bold" /> : saveStatus === "saving" ? <span className="saving-spinner" /> : null}{saveStatus === "saved" ? "Saved locally" : saveStatus === "error" ? "Save failed" : "Saving"}</span>
             {saveStatus === "error" && <button onClick={() => void flushAll().catch(error => setDataError(String(error)))}>Retry save</button>}
-            {view === "note" && activeNote && <button className="history-button" onClick={() => setHistory({ noteId: activeNote.id })}>History</button>}
-            {view === "note" && <button className={`icon-button${detailsOpen ? " active" : ""}`} aria-label="Toggle note details" onClick={() => setDetailsOpen((open) => !open)}><ListBullets size={19} /></button>}
+            {view === "note" && <button className={`icon-button${detailsOpen ? " active" : ""}`} aria-label="Toggle note details" onClick={() => { setDetailsOpen((open) => !open); setComparison(null); }}><ListBullets size={19} /></button>}
             {view === "note" && activeNote && <div className="more-wrap topbar-more">
-              <button className="icon-button" aria-label="More page actions" title="More actions" onClick={() => setMoreOpen((open) => !open)}><DotsThree size={21} weight="bold" /></button>
+              <button className="icon-button" aria-label="More page actions" title="More actions" disabled={!!pageComparison} onClick={() => setMoreOpen((open) => !open)}><DotsThree size={21} weight="bold" /></button>
               {moreOpen && <div className="popover note-menu"><button onClick={() => { setMoreOpen(false); setComposer({ type: "rename", noteId: activeNote.id, value: activeNote.title }); }}><PencilSimple size={17} /> Rename {activeNote.kind === "journal" ? "entry" : "page"}</button><button onClick={() => void duplicateNote(activeNote)}><FilePlus size={17} /> Duplicate {activeNote.kind === "journal" ? "entry" : "page"}</button><button onClick={() => { setMoreOpen(false); setComposer({ type: "template", noteId: activeNote.id, value: activeNote.title }); }}><Stack size={17} /> Save as template</button><button className="archive" onClick={() => archiveNote(activeNote)}><Archive size={17} /> Archive</button><button className="danger" onClick={() => trashNote(activeNote)}><Trash size={17} /> Trash</button></div>}
             </div>}
           </div>
@@ -1069,7 +1074,9 @@ export default function HyperionApp() {
         <div className="content-shell">
           <section className="main-content">
             {view === "note" && activeNote ? (
-              <article className={`note-workspace${activeNote.icon ? " has-page-icon" : ""}`}>
+              <>
+              {pageComparison && <PageHistoryPreview key={pageComparison.revision.id} comparison={pageComparison} onClose={() => setComparison(null)} />}
+              <article hidden={!!pageComparison} className={`note-workspace${activeNote.icon ? " has-page-icon" : ""}`}>
                 {activeNote.kind === "journal" && activeNote.journalDate && <div className={`journal-entry-label width-${preferences.editorWidth}`}><CalendarBlank size={14} /><span>{new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(journalDate(activeNote.journalDate))}</span></div>}
                 <div className={`page-icon-row width-${preferences.editorWidth}`}>
                   <PageIconPicker key={activeNote.id} note={activeNote} onChange={(icon) => updateNoteById(activeNote.id, { icon }, true)} />
@@ -1083,6 +1090,7 @@ export default function HyperionApp() {
                   onStoreReady={setEditorStore}
                 />
               </article>
+              </>
             ) : view === "template" && activeTemplate && activeTemplatePage ? (
               <article className={`note-workspace template-workspace${activeTemplate.icon ? " has-page-icon" : ""}`}>
                 <div className={`template-editor-banner width-${preferences.editorWidth}`}>
@@ -1130,7 +1138,9 @@ export default function HyperionApp() {
             )}
           </section>
 
-          {detailsOpen && view === "note" && activeNote && <aside className="details-panel">
+          {detailsOpen && view === "note" && activeNote && <aside className={`details-panel${detailsTab === "history" ? " history-open" : ""}`} aria-label="Page sidebar">
+            <div className="details-tabs"><button aria-pressed={detailsTab === "details"} onClick={() => { setDetailsTab("details"); setComparison(null); }}>Details</button><button aria-pressed={detailsTab === "history"} onClick={() => setDetailsTab("history")}>History</button></div>
+            {detailsTab === "history" ? <PageHistory key={`${vaultId}:${activeNote.id}`} vaultId={vaultId} noteId={activeNote.id} selectedId={pageComparison?.revision.id} onSelect={value => { setMoreOpen(false); setPageSearchOpen(false); setComparison(value); }} /> : <>
             <section><div className="details-title"><span>On this page</span><em>{outline.length}</em></div><div className="outline-list">{outline.length ? outline.map((line, index) => <button key={`${line}-${index}`}><span className={index === 0 ? "outline-marker active" : "outline-marker"} /><span>{line}</span></button>) : <p>No headings yet</p>}</div></section>
             <section className="details-tags"><div className="details-title"><span>Tags</span><em>{activeNote.tags.length}</em></div><div className="details-tag-list">
               {activeNote.tags.map((tag) => <span className="tag-pill" key={tag}>#{tag}<button aria-label={`Remove tag ${tag}`} onClick={() => updateNoteById(activeNote.id, { tags: activeNote.tags.filter((item) => item !== tag) }, true)}><X size={10} /></button></span>)}
@@ -1145,6 +1155,7 @@ export default function HyperionApp() {
             </section>
             <section><div className="details-title"><span>Backlinks</span><em>{backlinks.length}</em></div>{backlinks.length ? <div className="backlinks-list">{backlinks.map((note) => <button key={note.id} onClick={() => selectNote(note.id)}><PageIcon note={note} size={15} /><span>{note.title}</span><ArrowRight size={13} /></button>)}</div> : <div className="details-empty"><span className="linked-rings"><i /><i /></span><p>No pages link here yet.</p><small>Mention with [[{activeNote.title}]]</small></div>}</section>
             <section className="details-properties"><div className="details-title"><span>Properties</span></div><dl>{activeNote.kind === "journal" && activeNote.journalDate && <div><dt>Journal date</dt><dd>{dateLabel(journalDate(activeNote.journalDate).toISOString())}</dd></div>}<div><dt>Created</dt><dd>{dateLabel(activeNote.createdAt)}</dd></div><div><dt>Edited</dt><dd>{relativeTime(activeNote.updatedAt)}</dd></div><div><dt>Words</dt><dd>{activeNote.body.trim().split(/\s+/).filter(Boolean).length}</dd></div><div><dt>Identity</dt><dd title={activeNote.id}>Stable through moves</dd></div>{activeNote.aliases.length > 0 && <div><dt>Former names</dt><dd title={activeNote.aliases.join(", ")}>{activeNote.aliases.length}</dd></div>}<div><dt>Storage</dt><dd>Local vault</dd></div></dl></section>
+            </>}
           </aside>}
         </div>
       </section>

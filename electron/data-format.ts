@@ -172,3 +172,31 @@ export function documentMetadata(encoded: Uint8Array): { title: string; body: st
     return { title: text instanceof Y.Text ? text.toString() || "Untitled" : "Untitled", body: lines.join("\n") };
   } finally { doc.destroy(); }
 }
+
+/** Hash page values, excluding Yjs clocks/tombstones and unrelated vault assets. */
+export function revisionContentHash(note: RecordValue, encoded: string | null): string {
+  const canonical = (value: unknown): unknown => {
+    if (value instanceof Y.Text) return { type: "text", value: canonical(value.toDelta()) };
+    if (value instanceof Y.Map) return { type: "map", value: canonical(Object.fromEntries(value.entries())) };
+    if (value instanceof Y.Array) return { type: "array", value: canonical(value.toArray()) };
+    if (value instanceof Y.AbstractType) throw new Error("Unknown shared type");
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)]));
+    return value;
+  };
+  let document: unknown = null;
+  if (encoded) {
+    const doc = new Y.Doc();
+    try {
+      Y.applyUpdate(doc, documentBytes(encoded));
+      // Unknown document structures must never be accidentally deduplicated away.
+      if ([...doc.share.keys()].some(key => key !== "blocks")) document = encoded;
+      else {
+        try { document = canonical(doc.getMap("blocks")); }
+        catch { document = encoded; }
+      }
+    } finally { doc.destroy(); }
+  }
+  // Asset keys are immutable, and references are part of the document values.
+  return hash(JSON.stringify(canonical({ note: { ...note, updatedAt: undefined }, document })));
+}

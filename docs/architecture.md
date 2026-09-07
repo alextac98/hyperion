@@ -78,7 +78,12 @@ capture time and immutable asset references. Yjs snapshot markers and undo stack
 are not used as durable history. Automatic capture runs every minute for changed
 pages, at startup and before closing. Automatic versions expire after 30 days,
 except the newest version of a page; named and pre-destructive-operation versions
-are retained. Unchanged automatic captures are deduplicated.
+are retained. All captures deduplicate against the latest version using canonical
+page values, including formatting and layout. Edit timestamps, Yjs clocks and
+unrelated vault assets do not create new versions. Naming an unchanged automatic
+version promotes it to a named version; an existing name is preserved. Returning
+to older content after a different version still records that transition. Existing
+history is compared without rewriting or deleting stored snapshots.
 
 Assets are content-addressed and cannot change under an existing key. The initial
 implementation conservatively retains every vault asset in a checkpoint, including
@@ -88,7 +93,18 @@ block type. Retention therefore bounds automatic revisions, not total attachment
 storage. Optimize references and reclaim unreachable blobs only with coverage for
 all rich block types and historical formats.
 
-The page History dialog previews a revision in an isolated read-only workspace.
+The right sidebar has Details and History tabs. History lists only the active
+page’s versions and lets users save named checkpoints. Selecting a version flushes
+pending editor writes, then reads the revision and current document in one SQLite
+transaction without creating a revision. The main page area shows block-level
+text and metadata changes in aligned saved/current columns with jsdiff word-level
+highlighting and a unified layout option. Diff computation has size and time bounds;
+large sections fall back to highlighting the complete text. The viewer flags
+formatting and layout changes, and offers Saved
+page / Current page previews in isolated read-only workspaces. Comparisons show
+the current state at preview time; selecting a version again refreshes it. Page
+navigation clears the selection. The live editor stays mounted but hidden during
+comparison to preserve editing state when returning.
 Restore-as-copy creates a new page; in-place restore first captures the current
 page and writes the old block content as fresh CRDT operations. It never merges
 an old update expecting it to rewind the live document. Successful restoration

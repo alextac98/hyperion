@@ -221,3 +221,68 @@ test('unknown document fields abort import without silently dropping content', a
   assert.throws(() => execute(db, 'importVault', { bundle }), /Unsupported document fields/);
   assert.equal(execute(db, 'listVaults').length, 1); doc.destroy();
 });
+
+test('page comparison reads coherent current rich content without adding history and rejects mismatched pages', async context => {
+  const { db } = await fixture(context); const doc = page('Before');
+  db.editorPush('vault', 'note', encode(Y.encodeStateAsUpdate(doc)));
+  const revision = execute(db, 'captureRevision', { vaultId: 'vault', noteId: 'note', label: 'Checkpoint' });
+  doc.getMap('blocks').get('p').get('prop:text').insert(6, ' after');
+  db.editorPush('vault', 'note', encode(Y.encodeStateAsUpdate(doc)));
+  const comparison = execute(db, 'compareRevision', { vaultId: 'vault', noteId: 'note', revisionId: revision.id });
+  assert.equal(comparison.revision.id, revision.id);
+  assert.ok(comparison.current.note.body.includes('Before after'));
+  assert.notEqual(comparison.revision.document, comparison.current.document);
+  assert.equal(execute(db, 'listRevisions', { vaultId: 'vault', noteId: 'note' }).length, 1);
+  assert.throws(() => execute(db, 'compareRevision', { vaultId: 'vault', noteId: 'other', revisionId: revision.id }), /another page/);
+  assert.throws(() => execute(db, 'compareRevision', { vaultId: 'other', noteId: 'note', revisionId: revision.id }), /not found/);
+  doc.destroy();
+});
+
+test('unchanged captures reuse snapshots, promote automatic versions and preserve existing names', async context => {
+  const { db } = await fixture(context); const doc = page('Original');
+  db.editorPush('vault', 'note', encode(Y.encodeStateAsUpdate(doc)));
+  execute(db, 'captureAutomaticRevisions');
+  const first = execute(db, 'listRevisions', { vaultId:'vault', noteId:'note' })[0];
+  const named = execute(db, 'captureRevision', { vaultId:'vault', noteId:'note', label:'Checkpoint' });
+  assert.equal(named.id, first.id); assert.equal(named.createdAt, first.createdAt); assert.equal(named.captureStatus, 'named');
+  const again = execute(db, 'captureRevision', { vaultId:'vault', noteId:'note', label:'Another name' });
+  assert.equal(again.id, first.id); assert.equal(again.label, 'Checkpoint'); assert.equal(again.captureStatus, 'reused');
+  // A transient edit produces new CRDT bytes, but no changed page values.
+  const text = doc.getMap('blocks').get('p').get('prop:text');
+  text.insert(0, 'Temporary '); text.delete(0, 10);
+  db.editorPush('vault', 'note', encode(Y.encodeStateAsUpdate(doc)));
+  db.assetSet('vault', 'unrelated-asset', 'image/png', encode([1,2,3]));
+  execute(db, 'saveNote', { note: { ...named.note, updatedAt:'2026-02-01T00:00:00.000Z' } });
+  execute(db, 'captureAutomaticRevisions');
+  const unchanged = execute(db, 'captureRevision', { vaultId:'vault', noteId:'note', label:'Still unchanged' });
+  assert.equal(unchanged.id, first.id);
+  assert.equal(execute(db, 'listRevisions', { vaultId:'vault', noteId:'note' }).length, 1);
+  // Formatting is real content even when its plain text matches.
+  text.format(0, 8, { bold:true }); db.editorPush('vault', 'note', encode(Y.encodeStateAsUpdate(doc)));
+  const formatted = execute(db, 'captureRevision', { vaultId:'vault', noteId:'note', label:'Formatted' });
+  assert.equal(formatted.captureStatus, 'created'); assert.notEqual(formatted.id, first.id);
+  // Returning to older content after an intervening version is a new transition.
+  text.format(0, 8, { bold:null }); db.editorPush('vault', 'note', encode(Y.encodeStateAsUpdate(doc)));
+  assert.equal(execute(db, 'captureRevision', { vaultId:'vault', noteId:'note', label:'Unformatted' }).captureStatus, 'created');
+  doc.destroy();
+});
+
+test('deduplication supports old snapshot hashes and still records metadata, attachments and layout edits', async context => {
+  const { db, dir } = await fixture(context); const doc = page('Original');
+  db.editorPush('vault', 'note', encode(Y.encodeStateAsUpdate(doc)));
+  const first = execute(db, 'captureRevision', { vaultId:'vault', noteId:'note', label:'Original' });
+  const connection = new DatabaseSync(join(dir, 'hyperion.sqlite3'));
+  connection.prepare('UPDATE revisions SET content_hash=? WHERE id=?').run(hash(JSON.stringify({ note:{...first.note,updatedAt:undefined}, document:first.document, assets:first.assets })),first.id);
+  connection.close();
+  assert.equal(execute(db, 'captureRevision', { vaultId:'vault', noteId:'note', label:'Same' }).id, first.id);
+  execute(db, 'saveNote', { note:note({tags:['new']}) });
+  assert.equal(execute(db, 'captureRevision', { vaultId:'vault', noteId:'note', label:'Tagged' }).captureStatus, 'created');
+  db.assetSet('vault','image','image/png',encode([7]));
+  doc.getMap('blocks').set('image', new Y.Map([['sys:flavour','affine:image'],['prop:sourceId','image']]));
+  db.editorPush('vault','note',encode(Y.encodeStateAsUpdate(doc)));
+  assert.equal(execute(db, 'captureRevision', { vaultId:'vault', noteId:'note', label:'Image' }).captureStatus, 'created');
+  doc.getMap('blocks').get('root').get('sys:children').insert(0,['image']);
+  db.editorPush('vault','note',encode(Y.encodeStateAsUpdate(doc)));
+  assert.equal(execute(db, 'captureRevision', { vaultId:'vault', noteId:'note', label:'Layout' }).captureStatus, 'created');
+  doc.destroy();
+});
