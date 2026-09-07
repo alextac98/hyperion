@@ -1,3 +1,4 @@
+import { saves } from "../../lib/save-coordinator";
 import {
   type CollectionRecord,
   DEFAULT_PREFERENCES,
@@ -5,8 +6,6 @@ import {
   makeDefaultVault,
   makeSeedCollections,
   makeSeedNotes,
-  normalizeNoteRecord,
-  normalizePageIcon,
   normalizeVaultPreferences,
   type NoteRecord,
   type TemplateRecord,
@@ -23,7 +22,7 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
   constructor(private readonly desktop: HyperionDesktopApi) {}
 
   private execute<T>(request: RepositoryRequest) {
-    return this.desktop.repositoryExecute<T>(request);
+    return /^(list|get)/.test(request.operation) ? this.desktop.repositoryExecute<T>(request) : saves.track(() => this.desktop.repositoryExecute<T>(request));
   }
 
   async initialize() {
@@ -67,21 +66,8 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
     return this.execute<void>({ operation: "deleteVault", id });
   }
 
-  async listNotes(vaultId: string) {
-    const notes = await this.execute<NoteRecord[]>({ operation: "listNotes", vaultId });
-    const normalized = notes.map((note) => normalizeNoteRecord({
-      ...note,
-      icon: normalizePageIcon(note.icon),
-      aliases: note.aliases ?? [],
-      links: note.links ?? [],
-      parentId: note.parentId ?? null,
-      sortOrder: Number.isFinite(note.sortOrder) ? note.sortOrder : 0,
-      archived: note.archived ?? false,
-    }));
-    await Promise.all(normalized.flatMap((note, index) => JSON.stringify(notes[index]) === JSON.stringify(note)
-      ? []
-      : [this.saveNote(note)]));
-    return normalized;
+  listNotes(vaultId: string) {
+    return this.execute<NoteRecord[]>({ operation: "listNotes", vaultId });
   }
 
   saveNote(note: NoteRecord) {

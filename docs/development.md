@@ -1,51 +1,37 @@
 # Development
 
-Hyperion has web and desktop targets built from one shared React application.
-Neither target requires an application server, account system, or remote
-database.
+Hyperion is an Electron desktop application using local SQLite. No application
+server, account or remote database is required.
 
-## Requirements
-
-- Node.js 22.13 or newer and pnpm 11.1.0
-- Platform build tools are only needed when creating installers: Xcode
-  command-line tools on macOS, Visual Studio build tools on Windows, or the
-  standard Electron packaging dependencies on Linux
-
-Install JavaScript dependencies once:
+Use Node.js 22.16 or newer and pnpm 11.1.0, then run:
 
 ```sh
 pnpm install
+pnpm dev
 ```
 
-## Web development
+`pnpm dev` and `pnpm dev:desktop` build Electron, start the Vite renderer server,
+and open the desktop app. The default database is
+`~/.config/hyperion/hyperion.sqlite3`. Settings → Data can choose another folder.
+Set `HYPERION_DATA_DIRECTORY` to an isolated absolute directory for development
+with disposable data. The application never auto-imports browser prototype data.
 
-```sh
-pnpm dev:web
-```
-
-This starts Vite at `http://127.0.0.1:3000`. The web target stores all data in
-the browser's IndexedDB databases.
-
-## Desktop development
-
-```sh
-pnpm dev:desktop
-```
-
-The command compiles the Electron main and preload processes, starts Vite, and
-opens the shared app in Electron's bundled Chromium. The default database is
-`~/.config/hyperion/hyperion.sqlite3`. Use
-Settings → Data → SQLite storage folder to migrate to or open another folder.
-
-Changes under `app/` update through Vite. Restart `pnpm dev:desktop` after
-changing files under `electron/` so the trusted processes are recompiled.
+Changes under `app/` update through Vite. Restart development after changing
+`electron/` so the main process and preload are rebuilt. `pnpm dev:web` starts
+only the renderer server; visiting it in a browser shows a desktop-only message.
+It is not a supported standalone web product.
 
 ## Checks
 
-- `pnpm build:web` type-checks and builds the portable web assets.
-- `pnpm check:desktop` type-checks Electron's main and preload processes.
-- `pnpm test:desktop` exercises SQLite persistence and storage migration.
-- `pnpm lint` checks TypeScript and React code with ESLint.
-- `pnpm test` builds the web target and validates both target configurations.
+- `pnpm build:web`: builds the renderer assets (the historical script name is retained).
+- `pnpm check:desktop`: checks the native boundary and data implementation types.
+- `pnpm test:desktop`: validates SQLite persistence, migration, backup and history behavior.
+- `pnpm test`: builds the renderer and runs database, save coordinator and configuration tests.
+- `pnpm lint`: checks TypeScript and React code.
+- `pnpm test:integration`: builds both processes and runs the native Electron smoke test
+  against a temporary isolated vault; requires a graphical desktop session.
 
-See [Building](./building.md) for production packages.
+The renderer currently uses the repository's existing `noCheck` configuration
+because BlockSuite exports dependency sources with upstream type errors. Native
+TypeScript checking remains strict. Do not interpret the renderer build alone as
+proof of complete TypeScript coverage.

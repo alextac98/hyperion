@@ -1,8 +1,8 @@
 # Hyperion
 
 Hyperion is a local-first personal knowledge base for ideas, notes, meeting
-transcriptions, and more. It ships from one shared React codebase as a web app
-and an Electron desktop app with a consistent bundled Chromium runtime.
+transcriptions, and more. It ships as an Electron desktop app with a React interface and a consistent
+bundled Chromium runtime. SQLite stores all knowledge data locally.
 
 ## Current capabilities
 
@@ -11,7 +11,8 @@ and an Electron desktop app with a consistent bundled Chromium runtime.
   kanban, images, attachments, bookmarks, and embeds
 - Independent local vaults with switching, creation, deletion, JSON backup,
   and restore
-- Browser-local IndexedDB storage for the web target
+- Automatic and named page versions with rich previews and restoration
+- Verified database backups and complete portable vault exports, including assets and history
 - A desktop SQLite database containing notes, rich editor documents, and assets,
   stored in `~/.config/hyperion` by default with a user-selectable location
 - A resizable sidebar with a collapsible Notes tree where every page can
@@ -37,9 +38,9 @@ and an Electron desktop app with a consistent bundled Chromium runtime.
 
 ## Development and builds
 
-- `pnpm dev:web` starts the browser target.
+- `pnpm dev` starts desktop development.
 - `pnpm dev:desktop` starts the Electron desktop target.
-- `pnpm build:web` creates static web assets.
+- `pnpm build:web` creates the desktop renderer assets.
 - `pnpm build:desktop` creates native desktop packages.
 
 See [development](docs/development.md), [building](docs/building.md), and

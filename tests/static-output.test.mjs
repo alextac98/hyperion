@@ -20,13 +20,13 @@ test("keeps all knowledge persistence on the device", async () => {
     readFile(new URL("electron/database.ts", projectRoot), "utf8"),
   ]);
 
-  assert.match(databaseSource, /indexedDB\.open/);
+  assert.doesNotMatch(databaseSource, /indexedDB\.open/);
   assert.match(databaseSource, /KnowledgeRepository/);
   assert.match(runtimeSource, /ElectronKnowledgeRepository/);
-  assert.match(runtimeSource, /IndexedDbKnowledgeRepository/);
-  assert.match(desktopSource, /CREATE TABLE IF NOT EXISTS notes/);
-  assert.match(desktopSource, /CREATE TABLE IF NOT EXISTS editor_updates/);
-  assert.match(desktopSource, /CREATE TABLE IF NOT EXISTS assets/);
+  assert.doesNotMatch(runtimeSource, /IndexedDbKnowledgeRepository/);
+  assert.match(desktopSource, /CREATE TABLE notes/);
+  assert.match(desktopSource, /CREATE TABLE editor_updates/);
+  assert.match(desktopSource, /CREATE TABLE assets/);
   assert.match(desktopSource, /\.config.*hyperion/);
   assert.match(appSource, /No account or cloud sync/i);
   assert.doesNotMatch(appSource, /sign.?in|sign.?out|fetch\s*\(|XMLHttpRequest|new WebSocket/i);
@@ -50,7 +50,7 @@ test("includes rich local editing and organization", async () => {
   assert.match(editorSource, /getInternalViewExtensions/);
   assert.match(editorSource, /affine:table/);
   assert.match(editorSource, /platformRuntime\.createEditorStorage/);
-  assert.match(runtimeSource, /IndexedDBDocSource/);
+  assert.doesNotMatch(runtimeSource, /IndexedDBDocSource/);
   assert.match(editorSource, /event\.key\.toLowerCase\(\) !== "a"/);
   assert.match(editorSource, /scope\.selection\.create\(TextSelection/);
   assert.match(editorSource, /event\.stopImmediatePropagation\(\)/);
@@ -112,7 +112,6 @@ test("includes rich local editing and organization", async () => {
   assert.match(databaseSource, /icon: PageIconRecord \| null/);
   assert.match(databaseSource, /export type TemplateRecord/);
   assert.match(databaseSource, /defaultTemplateIds/);
-  assert.match(databaseSource, /DATABASE_VERSION = 11/);
   assert.match(appSource, /New template/);
   assert.match(appSource, /activeAncestors = view === "note"/);
   assert.match(linksSource, /reconcilePageLinks/);
@@ -123,7 +122,7 @@ test("includes rich local editing and organization", async () => {
   assert.match(globalStyles, /::selection\s*{[^}]*-webkit-text-fill-color:\s*var\(--text\)/s);
 });
 
-test("configures web and desktop build targets", async () => {
+test("configures the renderer and desktop build targets", async () => {
   const [packageSource, pnpmConfig, viteConfig, builderConfig, electronMain, preload, desktopRepository, desktopEditorStorage, buildingDocs] = await Promise.all([
     readFile(new URL("package.json", projectRoot), "utf8"),
     readFile(new URL("pnpm-workspace.yaml", projectRoot), "utf8"),

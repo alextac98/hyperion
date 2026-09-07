@@ -1,7 +1,7 @@
 {
   "name": "hyperion",
   "version": "0.1.0",
-  "description": "A local-first personal knowledge base for the web and desktop.",
+  "description": "A desktop personal knowledge base with local SQLite storage.",
   "author": "Hyperion contributors",
   "private": true,
   "packageManager": "pnpm@11.1.0",
@@ -10,7 +10,7 @@
     "node": ">=22.16.0"
   },
   "scripts": {
-    "dev": "pnpm dev:web",
+    "dev": "pnpm dev:desktop",
     "dev:web": "vite",
     "dev:desktop": "pnpm build:electron && concurrently -k -s first \"pnpm dev:web\" \"pnpm dev:electron\"",
     "dev:electron": "wait-on http://127.0.0.1:3000 && node scripts/run-electron.mjs",
@@ -20,9 +20,10 @@
     "build:desktop": "pnpm build:web && pnpm build:electron && electron-builder",
     "check:desktop": "tsc -p electron/tsconfig.json --noEmit",
     "preview": "vite preview",
-    "test": "pnpm build:web && pnpm test:desktop && node --test tests/static-output.test.mjs",
+    "test": "pnpm build:web && pnpm test:desktop && node --test tests/static-output.test.mjs tests/save-coordinator.test.mjs",
     "test:desktop": "pnpm build:electron && node --test tests/electron-database.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-electron --ignore-pattern release"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-electron --ignore-pattern release",
+    "test:integration": "pnpm build:web && pnpm build:electron && node scripts/run-electron-test.mjs"
   },
   "dependencies": {
     "@blocksuite/affine": "^0.22.4",

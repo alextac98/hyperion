@@ -1,22 +1,8 @@
 # Building Hyperion
 
-Both deliverables use the same source under `app/`. Run `pnpm install` before
-the first build.
-
-## Web app
-
-```sh
-pnpm build:web
-```
-
-The deployable static files are written to `dist/`. Preview them locally with:
-
-```sh
-pnpm preview
-```
-
-The web build is static and has no backend. Knowledge records, editor documents,
-and assets remain in that browser's IndexedDB storage.
+Hyperion ships as an Electron desktop application. Run `pnpm install` before the
+first build. `pnpm build:web` creates renderer assets under `dist/`; it is an
+internal build step, not a standalone browser product.
 
 ## Desktop app
 
@@ -58,7 +44,10 @@ Users can choose another folder under Settings → Data. Hyperion copies the
 current database when the selected folder is empty. Selecting a folder that
 already has `hyperion.sqlite3` opens that database instead. The SQLite file is
 self-contained: it includes metadata, rich editor state, and embedded assets.
-Back up the file only while Hyperion is closed, or use the in-app vault export.
+Use Settings → Data for verified database snapshots or a complete portable vault
+export. Database restores go into a separate folder; select that folder to open
+the restored database. See [Architecture](architecture.md) for retention and
+migration behavior.
 
 The small `~/.config/hyperion/storage-location` file remembers a custom folder.
 Removing that pointer makes the next launch use the default folder again; it

@@ -27,7 +27,6 @@ export function AffineEditor({ document: editorDocument, preferences, onChange, 
 
   useEffect(() => {
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let unsubscribe: (() => void) | undefined;
     const mount = mountRef.current;
     const initialDocument = initialDocumentRef.current;
@@ -44,8 +43,7 @@ export function AffineEditor({ document: editorDocument, preferences, onChange, 
         const { viewport } = renderPageEditor(store);
         mount.replaceChildren(viewport);
         const subscription = store.slots.blockUpdated.subscribe(() => {
-          if (timer) clearTimeout(timer);
-          timer = setTimeout(() => callbacksRef.current.onChange(readEditorMetadata(store)), 220);
+          callbacksRef.current.onChange(readEditorMetadata(store));
         });
         unsubscribe = () => subscription.unsubscribe();
         const metadata = readEditorMetadata(store);
@@ -63,7 +61,6 @@ export function AffineEditor({ document: editorDocument, preferences, onChange, 
 
     return () => {
       cancelled = true;
-      if (timer) clearTimeout(timer);
       unsubscribe?.();
       mount.replaceChildren();
     };
