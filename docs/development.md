@@ -25,6 +25,7 @@ It is not a supported standalone web product.
 
 - `pnpm build:web`: builds the renderer assets (the historical script name is retained).
 - `pnpm check:desktop`: checks the native boundary and data implementation types.
+- `pnpm test:migrations`: runs the frozen-database upgrade, preservation and rollback suite.
 - `pnpm test:desktop`: validates SQLite persistence, migration, backup and history behavior.
 - `pnpm test`: builds the renderer and runs database, semantic page diff, save coordinator and configuration tests.
 - `pnpm lint`: checks TypeScript and React code.
@@ -36,3 +37,6 @@ The renderer currently uses the repository's existing `noCheck` configuration
 because BlockSuite exports dependency sources with upstream type errors. Native
 TypeScript checking remains strict. Do not interpret the renderer build alone as
 proof of complete TypeScript coverage.
+
+See [Database migration regression tests](migration-tests.md) for fixture contents,
+what the migration checks verify, and how to add coverage for future releases.

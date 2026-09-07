@@ -2131,6 +2131,8 @@ kbd {
 
 .note-workspace {
   position: relative;
+  /* Contain child margins so they do not add overflow outside the full-height page. */
+  display: flow-root;
   min-height: calc(100vh - var(--topbar-height));
 }
 

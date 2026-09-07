@@ -43,6 +43,9 @@ unrecognized data. Newer database versions are rejected before writes.
 
 Future migrations must be ordered, transactional where practical, and tested
 against prior released database fixtures, skipped-version upgrades and failures.
+The [migration regression suite](migration-tests.md) exercises frozen prototype and
+version-1 databases through the real startup path, including preservation, rollback
+and safe reopening.
 Do not update historical migration definitions once released. Preserve source
 backups and original historical payloads when introducing document converters.
 

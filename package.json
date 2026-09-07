@@ -21,7 +21,8 @@
     "check:desktop": "tsc -p electron/tsconfig.json --noEmit",
     "preview": "vite preview",
     "test": "pnpm build:web && pnpm test:desktop && node --test tests/static-output.test.mjs tests/save-coordinator.test.mjs tests/page-diff.test.mjs",
-    "test:desktop": "pnpm build:electron && node --test tests/electron-database.test.mjs",
+    "test:desktop": "pnpm build:electron && node --test tests/electron-database.test.mjs tests/electron-migrations.test.mjs",
+    "test:migrations": "pnpm build:electron && node --test tests/electron-migrations.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-electron --ignore-pattern release",
     "test:integration": "pnpm build:web && pnpm build:electron && node scripts/run-electron-test.mjs"
   },
