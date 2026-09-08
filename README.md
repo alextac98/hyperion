@@ -38,6 +38,10 @@ bundled Chromium runtime. SQLite stores all knowledge data locally.
 
 ## Development and builds
 
+See the [brand and design guidelines](docs/brand.md) for the shared identity,
+design tokens, and icon assets. A live brand guide is available from
+**Settings → Appearance** in the app.
+
 - `pnpm dev` starts desktop development.
 - `pnpm dev:desktop` starts the Electron desktop target.
 - `pnpm build:web` creates the desktop renderer assets.

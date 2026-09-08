@@ -2,62 +2,43 @@
  * Hyperion-owned compatibility tokens for the MIT BlockSuite editor modules.
  * This module intentionally replaces the differently licensed AFFiNE theme package.
  */
+import { themeToken } from "./palette";
+
 export type AffineCssVariables = Record<string, string>;
 export type AffineTheme = "light" | "dark";
 
 export const baseTheme = {
-  fontSansFamily: "Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  fontSansFamily: "var(--font-sans)",
 };
 
-const light: Record<string, string> = {
-  "--affine-background-overlay-panel-color": "#ffffff",
-  "--affine-background-error-color": "#fff0ef",
-  "--affine-background-primary-color": "#ffffff",
-  "--affine-background-secondary-color": "#f7f7f6",
-  "--affine-background-tertiary-color": "#f0f0ee",
-  "--affine-icon-color": "#242522",
-  "--affine-icon-secondary": "#696b65",
-  "--affine-border-color": "#dcded8",
-  "--affine-divider-color": "#e8e8e4",
-  "--affine-text-primary-color": "#242522",
-  "--affine-text-secondary-color": "#696b65",
-  "--affine-hover-color": "#eeeeeb",
-  "--affine-hover-color-filled": "#e8e8e4",
-  "--affine-placeholder-color": "#9a9c96",
-  "--affine-link-color": "#4b65d1",
-  "--affine-v2-layer-background-overlayPanel": "#ffffff",
-  "--affine-v2-layer-insideBorder-blackBorder": "#dcded8",
-  "--affine-v2-icon-primary": "#242522",
+const semanticVariables: Record<string, string> = {
+  "--affine-background-overlay-panel-color": "var(--surface-raised)",
+  "--affine-background-error-color": "var(--danger-soft)",
+  "--affine-background-primary-color": "var(--bg)",
+  "--affine-background-secondary-color": "var(--panel)",
+  "--affine-background-tertiary-color": "var(--panel-strong)",
+  "--affine-icon-color": "var(--text)",
+  "--affine-icon-secondary": "var(--text-soft)",
+  "--affine-border-color": "var(--line-strong)",
+  "--affine-divider-color": "var(--line)",
+  "--affine-text-primary-color": "var(--text)",
+  "--affine-text-secondary-color": "var(--text-soft)",
+  "--affine-hover-color": "var(--hover)",
+  "--affine-hover-color-filled": "var(--active)",
+  "--affine-placeholder-color": "var(--text-faint)",
+  "--affine-link-color": "var(--accent)",
+  "--affine-v2-layer-background-overlayPanel": "var(--surface-raised)",
+  "--affine-v2-layer-insideBorder-blackBorder": "var(--line-strong)",
+  "--affine-v2-icon-primary": "var(--text)",
 };
 
-const dark: Record<string, string> = {
-  "--affine-background-overlay-panel-color": "#252623",
-  "--affine-background-error-color": "#422827",
-  "--affine-background-primary-color": "#191a18",
-  "--affine-background-secondary-color": "#20211f",
-  "--affine-background-tertiary-color": "#292a27",
-  "--affine-icon-color": "#f0f1ed",
-  "--affine-icon-secondary": "#adafa8",
-  "--affine-border-color": "#3d3f3a",
-  "--affine-divider-color": "#30322e",
-  "--affine-text-primary-color": "#f0f1ed",
-  "--affine-text-secondary-color": "#adafa8",
-  "--affine-hover-color": "#2a2b28",
-  "--affine-hover-color-filled": "#343631",
-  "--affine-placeholder-color": "#777a73",
-  "--affine-link-color": "#92a5ff",
-  "--affine-v2-layer-background-overlayPanel": "#252623",
-  "--affine-v2-layer-insideBorder-blackBorder": "#3d3f3a",
-  "--affine-v2-icon-primary": "#f0f1ed",
-};
-
-export const combinedLightCssVariables = new Proxy(light, {
-  get: (target, key: string) => target[key] ?? "#696b65",
-});
-
-export const combinedDarkCssVariables = new Proxy(dark, {
-  get: (target, key: string) => target[key] ?? "#adafa8",
-});
+function resolvedVariables(theme: AffineTheme) {
+  return new Proxy(semanticVariables, {
+    get: (target, key: string) => themeToken((target[key] ?? "var(--text-soft)").slice(4, -1), theme),
+  });
+}
+export const combinedLightCssVariables = resolvedVariables("light");
+export const combinedDarkCssVariables = resolvedVariables("dark");
 
 const legacyAliases: Record<string, string> = {
   activeShadow: "--affine-shadow-2",

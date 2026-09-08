@@ -1,6 +1,9 @@
 appId: app.hyperion.desktop
 productName: Hyperion
 asar: true
+extraResources:
+  - from: build/icon.png
+    to: hyperion-icon.png
 
 publish:
   provider: github

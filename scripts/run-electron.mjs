@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
-import electronPath from "electron";
+import { desktopRuntime } from "./desktop-runtime.mjs";
 
 const environment = { ...process.env };
 delete environment.ELECTRON_RUN_AS_NODE;
 
-const child = spawn(electronPath, [".", ...process.argv.slice(2)], {
+const child = spawn(await desktopRuntime(), [".", ...process.argv.slice(2)], {
   cwd: process.cwd(),
   env: environment,
   stdio: "inherit",

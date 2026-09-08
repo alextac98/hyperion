@@ -7,6 +7,10 @@ import updater from "electron-updater";
 import { DesktopDatabase, type RepositoryRequest } from "./database.js";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
+app.setName("Hyperion");
+const applicationIcon = app.isPackaged
+  ? join(process.resourcesPath, "hyperion-icon.png")
+  : resolve(currentDirectory, "../build/icon.png");
 const developmentUrl = "http://127.0.0.1:3000";
 const useBuiltRenderer = app.isPackaged || process.env.HYPERION_TEST_RENDERER === "1";
 const packagedRendererDirectory = resolve(currentDirectory, "../dist");
@@ -203,6 +207,7 @@ async function createWindow() {
     show: false,
     backgroundColor: "#f7f6f2",
     title: "Hyperion",
+    icon: applicationIcon,
     webPreferences: {
       preload: join(currentDirectory, "preload.cjs"),
       contextIsolation: true,
@@ -241,6 +246,8 @@ if (!ownsInstance) app.quit();
 app.on("second-instance", () => { if (mainWindow?.isMinimized()) mainWindow.restore(); mainWindow?.focus(); });
 app.whenReady().then(async () => {
   if (!ownsInstance) return;
+  app.dock?.setIcon(applicationIcon);
+  app.setAboutPanelOptions({ applicationName: "Hyperion", iconPath: applicationIcon });
   const dataDirectoryOverride = process.env.HYPERION_DATA_DIRECTORY?.trim();
   database = new DesktopDatabase(dataDirectoryOverride
     ? { defaultDirectory: dataDirectoryOverride }

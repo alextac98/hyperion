@@ -1,5 +1,6 @@
 {
   "name": "hyperion",
+  "productName": "Hyperion",
   "version": "0.1.0",
   "description": "A desktop personal knowledge base with local SQLite storage.",
   "author": "Hyperion contributors",
