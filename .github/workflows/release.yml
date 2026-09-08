@@ -29,13 +29,13 @@ jobs:
     needs: release-please
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release-please.outputs.tag-name }}
       - uses: pnpm/action-setup@v4
         with:
           version: 11.1.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.16.0
           cache: pnpm
@@ -63,13 +63,13 @@ jobs:
             artifact: desktop-linux
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release-please.outputs.tag-name }}
       - uses: pnpm/action-setup@v4
         with:
           version: 11.1.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.16.0
           cache: pnpm

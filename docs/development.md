@@ -65,3 +65,14 @@ separately and preloads them during startup. UI components should use this share
 loader instead of importing either implementation directly. The emoji catalog also loads only when the icon picker opens.
 
 Use `pnpm format` to format application code, tests, scripts, and documentation.
+
+## Desktop name and icon
+
+`pnpm dev:desktop` uses the Hyperion name and approved icon. On macOS the
+launcher prepares a locally signed `Hyperion.app` copy in
+`node_modules/.cache/hyperion-runtime/`, so the Dock and app switcher also show
+Hyperion. The installed Electron distribution remains unchanged. The copy is
+regenerated when Electron, the icon, or the launcher changes.
+
+Restart the desktop development process after changing the name or icon.
+Packaged builds use the same artwork through `electron-builder.yml`.

@@ -1,6 +1,8 @@
 import { DataRecovery } from "./DataRecovery";
+import { dataOperation } from "../lib/data-operations";
 import {
   Archive,
+  ArrowRight,
   BookOpenText,
   Check,
   Database,
@@ -55,6 +57,7 @@ export function SettingsDialog({
   onImport: () => void;
   onDelete: () => void;
 }) {
+  const [brandError, setBrandError] = useState("");
   const [tab, setTab] = useState<
     "general" | "editor" | "templates" | "appearance" | "data"
   >("general");
@@ -153,7 +156,7 @@ export function SettingsDialog({
               <>
                 <div className="settings-heading">
                   <h2>Editor</h2>
-                  <p>Configure the AFFiNE block editor for this vault.</p>
+                  <p>Adjust writing preferences for this vault.</p>
                 </div>
                 <SettingToggle
                   title="Spell check"
@@ -305,6 +308,14 @@ export function SettingsDialog({
                     )}
                   </div>
                 </div>
+                <a className="brand-guide-link" href="?view=brand" aria-disabled={busy} onClick={(event) => {
+                  event.preventDefault();
+                  if (busy) return;
+                  setBrandError("");
+                  void dataOperation(async () => window.location.assign("?view=brand"))
+                    .catch((error: unknown) => setBrandError(`Could not save before opening the brand guide. ${error instanceof Error ? error.message : String(error)}`));
+                }}>Brand &amp; design guidelines <ArrowRight size={14} /></a>
+                {brandError && <p className="data-error" role="alert">{brandError}</p>}
               </>
             )}
             {tab === "data" && (

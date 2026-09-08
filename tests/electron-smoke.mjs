@@ -22,6 +22,9 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const js = source => window.webContents.executeJavaScript(source, true);
   try {
     await import(pathToFileURL(join(testDirectory, '../dist-electron/main.js')).href);
+    assert.equal(app.getName(), 'Hyperion');
+    assert.equal(app.isPackaged, false);
+    if (process.platform === 'darwin') assert.ok(process.execPath.endsWith('/Hyperion.app/Contents/MacOS/Electron'));
     await until(() => { window = BrowserWindow.getAllWindows()[0]; return window && !window.webContents.isLoading(); }, 'Window did not load');
     window.webContents.on('console-message', (_event, level, message) => { if (level >= 2) console.error('renderer:', message); });
     await until(() => js('Boolean(document.querySelector("doc-title")?.doc?.root)'), 'Editor did not load');
@@ -125,15 +128,27 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(await js(`document.querySelector('.history-dialog doc-title').doc.readonly`), true);
     await js(`document.querySelector('[aria-label="Close history"]').click()`);
     await until(()=>js(`!document.querySelector('dialog[open]')`),'History modal did not close');
+    // The branded route works from file:// and must flush pending edits before navigation.
+    await js(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Settings').click()`);
+    await until(()=>js(`Array.from(document.querySelectorAll('.settings-dialog button')).some(b=>b.textContent==='Appearance')`),'Appearance tab missing');
+    await js(`Array.from(document.querySelectorAll('.settings-dialog button')).find(b=>b.textContent==='Appearance').click()`);
+    await js(`document.querySelector('doc-title').doc.root.props.title.insert('Brand ', 0); document.querySelector('.brand-guide-link').click();`);
+    await until(()=>js('Boolean(document.querySelector(".brand-page"))'),'Brand guide did not open in the desktop app');
+    assert.equal(await js('Boolean(window.hyperionDesktop)'), true);
+    await until(()=>js(`Array.from(document.querySelectorAll('.brand-page img')).every(image=>image.complete && image.naturalWidth>0)`),'Packaged brand images did not load');
+    await js(`document.querySelector('.brand-header button').click()`);
+    assert.ok(await js(`['light','dark'].includes(document.documentElement.dataset.theme)`));
+    await js(`document.querySelector('.brand-back').click()`);
+    await until(()=>js(`document.querySelector('doc-title')?.doc?.root?.props.title.toString().startsWith('Brand Changed Smoke')`),'Pending edit was not preserved across the brand guide visit');
     // Real window-close handshake must drain edits before the window disappears.
     await js(`document.querySelector('doc-title').doc.root.props.title.insert('Closing ', 0);`);
     window.close();
     await until(() => BrowserWindow.getAllWindows().length===0, 'Save-aware close did not complete');
     const { DatabaseSync } = await import('node:sqlite');
     const stored = new DatabaseSync(join(directory, 'hyperion.sqlite3'), { readOnly: true });
-    assert.ok(stored.prepare("SELECT record FROM notes WHERE id=?").get(importedPage.id).record.includes('Closing Changed Smoke'));
+    assert.ok(stored.prepare("SELECT record FROM notes WHERE id=?").get(importedPage.id).record.includes('Closing Brand Changed Smoke'));
     stored.close();
-    console.log('PASS: native editor save, sidebar history, pending-edit diffs, read-only rich previews, in-place restore and restored copy reload, full vault import reload, backup and save-aware close');
+    console.log('PASS: native editor save, sidebar history, pending-edit diffs, read-only rich previews, in-place restore and restored copy reload, full vault import reload, backup, brand navigation and save-aware close');
     await rm(directory, { recursive: true, force: true });
     app.exit(0);
   } catch (error) {

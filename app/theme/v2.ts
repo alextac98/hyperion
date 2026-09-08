@@ -1,3 +1,5 @@
+import { themeToken } from "./palette";
+
 export type AffineThemeKeyV2 = string;
 
 const token = (name: string) => `var(--hyperion-bs-${name})`;
@@ -72,8 +74,8 @@ const darkValues: Record<string, string> = {
   "edgeless/palette/white": "#ffffff",
 };
 
-export const lightThemeV2 = new Proxy(lightValues, { get: (target, key: string) => target[key] ?? "#6f63d9" });
-export const darkThemeV2 = new Proxy(darkValues, { get: (target, key: string) => target[key] ?? "#8f83ee" });
+export const lightThemeV2 = new Proxy(lightValues, { get: (target, key: string) => target[key] ?? themeToken("--accent", "light") });
+export const darkThemeV2 = new Proxy(darkValues, { get: (target, key: string) => target[key] ?? themeToken("--accent", "dark") });
 
 export function themeToVar(key: string) {
   return `--hyperion-bs-${key.replaceAll("/", "-")}`;

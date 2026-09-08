@@ -1,0 +1,34 @@
+/* Shared interaction language: blue means selected or actionable. */
+.primary-nav button.active,
+.section-items button.active,
+.sidebar-footer > button.active,
+.organizer-page-row.active,
+.settings-body > nav button.active,
+.tags-layout aside button.active {
+  background: var(--selected-bg);
+  color: var(--accent-text);
+}
+.organizer-page-row.active .organizer-page-link svg,
+.section-items .active svg { color: var(--accent-text); }
+.new-note-button,
+.new-note-template-button {
+  border-color: var(--action);
+  background: var(--action);
+  color: var(--on-action);
+}
+.new-note-button { font-weight: 650; }
+.new-note-button kbd { color: inherit; opacity: 1; font-weight: 600; }
+.new-note-button:hover,
+.new-note-template-button:hover {
+  border-color: var(--action-hover);
+  background: var(--action-hover);
+  color: var(--on-action);
+}
+.new-note-template-button { border-left: 1px solid color-mix(in srgb, var(--on-action) 25%, transparent); }
+button, a, input, textarea, select { transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, color var(--motion-fast) ease; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+.setting-toggle input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 3px; }
+.brand-guide-link { display: inline-flex; margin-top: 24px; color: var(--accent-text); font-size: var(--font-size-ui); text-underline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  button, a, input, textarea, select { transition: none; }
+}
