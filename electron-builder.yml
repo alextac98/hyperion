@@ -23,6 +23,7 @@ files:
 mac:
   category: public.app-category.productivity
   icon: build/icon.icns
+  # The release build script overrides these defaults when credentials are absent.
   notarize: true
   target:
     - dmg

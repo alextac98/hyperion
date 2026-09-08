@@ -1,0 +1,59 @@
+name: Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: read
+
+concurrency:
+  group: version-main
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Prepare and test version commit
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.16.0
+          cache: pnpm
+      - name: Prepare version commit
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          version=$(node scripts/release-version.mjs "$BUMP")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: prepare v$version"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm check:desktop
+      - name: Push tested version commit
+        run: |
+          # Never rebase or force-push: if main moved, rerun Version on main.
+          git push origin HEAD:refs/heads/main
+          echo "Version committed to main. Nothing has been released." >> "$GITHUB_STEP_SUMMARY"
