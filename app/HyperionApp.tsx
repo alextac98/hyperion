@@ -1,3 +1,8 @@
+import { saves } from "./lib/save-coordinator";
+import { dataBusy, dataOperation, flushAll } from "./lib/data-operations";
+import { PageHistory, PageHistoryPreview } from "./components/PageHistory";
+import type { PageComparison } from "./platform/desktop-api";
+import { HistoryDialog } from "./components/HistoryDialog";
 import { preloadEditor, prepareVaultEditor } from "./editor/editor-client";
 import {
   Archive,
@@ -29,6 +34,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import type {
   Composer,
@@ -61,9 +67,9 @@ import { TemplatePickerDialog } from "./components/TemplatePickerDialog";
 import { AffineEditor } from "./editor/AffineEditor";
 import {
   duplicateEditorDocument,
-  exportEditorDocuments,
+  flushEditorDocuments,
+  forgetVaultWorkspace,
   getOrCreateEditorStore,
-  importEditorDocuments,
   removeEditorDocument,
   renameEditorDocument,
   templateDocumentId,
@@ -78,10 +84,8 @@ import {
   DEFAULT_VAULT_ID,
   journalDateKey,
   normalizeNoteRecord,
-  normalizePageIcon,
   NoteRecord,
   TemplateRecord,
-  VaultBundle,
   VaultPreferences,
   VaultRecord,
 } from "./lib/local-database";
@@ -105,6 +109,7 @@ import {
 import {
   knowledgeRepository,
   platformRuntime,
+  requireDesktop,
   type StorageInfo,
 } from "./platform/runtime";
 
@@ -163,7 +168,7 @@ export default function HyperionApp() {
   const [templates, setTemplates, readTemplates] = useRecords<TemplateRecord>(
     [],
   );
-  const [collections, setCollections] = useState<CollectionRecord[]>([]);
+  const [, setCollections] = useState<CollectionRecord[]>([]);
   const [preferences, setPreferences] = useState(FALLBACK_PREFERENCES);
   const [activeId, setActiveId] = useState("");
   const [activeTemplateId, setActiveTemplateId] = useState("");
@@ -174,6 +179,16 @@ export default function HyperionApp() {
   const [sidebarWidth, setSidebarWidth] = useState(getStoredSidebarWidth);
   const [sidebarResizing, setSidebarResizing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
+  const [detailsTab, setDetailsTab] = useState<"details" | "history">(
+    "details",
+  );
+  const [comparison, setComparison] = useState<PageComparison | null>(null);
+  const pageComparison =
+    view === "note" &&
+    comparison?.revision.noteId === activeId &&
+    comparison?.revision.vaultId === vaultId
+      ? comparison
+      : null;
   const [favoritesOpen, setFavoritesOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [pageSearchOpen, setPageSearchOpen] = useState(false);
@@ -188,16 +203,18 @@ export default function HyperionApp() {
   const [composer, setComposer] = useState<Composer>(null);
   const [templatePicker, setTemplatePicker] =
     useState<TemplatePickerState>(null);
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
+  const saveStatus = useSyncExternalStore(saves.subscribe, saves.getState);
+  const operationBusy = useSyncExternalStore(
+    dataBusy.subscribe,
+    dataBusy.getSnapshot,
+  );
+  const [history, setHistory] = useState<{ noteId?: string } | null>(null);
+  const [dataError, setDataError] = useState("");
   const [editorStore, setEditorStore] = useState<EditorStore | null>(null);
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const pageSearchRef = useRef<HTMLInputElement>(null);
   const pageSearchMatchesRef = useRef<PageSearchMatch[]>([]);
   const importRef = useRef<HTMLInputElement>(null);
-  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const templateSaveTimers = useRef<
-    Record<string, ReturnType<typeof setTimeout>>
-  >({});
   const sidebarWidthRef = useRef(sidebarWidth);
   const sidebarResizeRef = useRef<{
     startX: number;
@@ -205,6 +222,43 @@ export default function HyperionApp() {
   } | null>(null);
   const stableTitles = useRef<Record<string, string>>({});
   const titleTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const lastAutomaticBackup = useRef(0);
+
+  useEffect(
+    () =>
+      requireDesktop().onPrepareClose(async () => {
+        await dataOperation(async () => {
+          await requireDesktop().repositoryExecute({
+            operation: "captureAutomaticRevisions",
+          });
+        });
+      }),
+    [],
+  );
+  useEffect(() => {
+    if (loading) return;
+    if (!lastAutomaticBackup.current) lastAutomaticBackup.current = Date.now();
+    let busy = false;
+    const interval = setInterval(() => {
+      if (busy || dataBusy.getSnapshot()) return;
+      busy = true;
+      void dataOperation(async () => {
+        await requireDesktop().repositoryExecute({
+          operation: "captureAutomaticRevisions",
+        });
+        if (Date.now() - lastAutomaticBackup.current >= 86400000) {
+          await requireDesktop().createBackup(true);
+          lastAutomaticBackup.current = Date.now();
+        }
+      })
+        .catch((error) => setDataError(String(error)))
+        .finally(() => {
+          busy = false;
+        });
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const activeVault = vaults.find((vault) => vault.id === vaultId);
   const activeNote = notes.find((note) => note.id === activeId);
@@ -248,6 +302,8 @@ export default function HyperionApp() {
 
   const loadVault = useCallback(
     async (nextVaultId: string, nextVaults?: VaultRecord[]) => {
+      await flushAll();
+      setComparison(null);
       setLoading(true);
       prepareVaultEditor(nextVaultId);
       const [
@@ -331,16 +387,22 @@ export default function HyperionApp() {
       if (!cancelled) setStorageInfo(info);
     });
     preloadEditor();
-    void knowledgeRepository.initialize().then(async () => {
-      const storedVaults = await knowledgeRepository.listVaults();
-      if (cancelled) return;
-      setVaults(storedVaults);
-      const remembered = localStorage.getItem("hyperion:current-vault");
-      const target = storedVaults.some((vault) => vault.id === remembered)
-        ? remembered!
-        : (storedVaults[0]?.id ?? DEFAULT_VAULT_ID);
-      await loadVault(target, storedVaults);
-    });
+    void knowledgeRepository
+      .initialize()
+      .then(async () => {
+        const storedVaults = await knowledgeRepository.listVaults();
+        if (cancelled) return;
+        setVaults(storedVaults);
+        const remembered = localStorage.getItem("hyperion:current-vault");
+        const target = storedVaults.some((vault) => vault.id === remembered)
+          ? remembered!
+          : (storedVaults[0]?.id ?? DEFAULT_VAULT_ID);
+        await loadVault(target, storedVaults);
+      })
+      .catch((error) => {
+        setDataError(String(error));
+        setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -363,13 +425,11 @@ export default function HyperionApp() {
   }, [preferences.theme]);
 
   const scheduleSave = useCallback((note: NoteRecord, immediate = false) => {
-    setSaveStatus("saving");
-    if (saveTimers.current[note.id]) clearTimeout(saveTimers.current[note.id]);
-    saveTimers.current[note.id] = setTimeout(
-      () => {
-        void knowledgeRepository
-          .saveNote(note)
-          .then(() => setSaveStatus("saved"));
+    saves.enqueue(
+      `note:${note.id}`,
+      async () => {
+        await flushEditorDocuments();
+        await knowledgeRepository.saveNote(note);
       },
       immediate ? 0 : 300,
     );
@@ -410,14 +470,11 @@ export default function HyperionApp() {
         updatedAt: new Date().toISOString(),
       };
       setTemplates(current.map((item) => (item.id === id ? updated : item)));
-      setSaveStatus("saving");
-      if (templateSaveTimers.current[id])
-        clearTimeout(templateSaveTimers.current[id]);
-      templateSaveTimers.current[id] = setTimeout(
-        () => {
-          void knowledgeRepository
-            .saveTemplate(updated)
-            .then(() => setSaveStatus("saved"));
+      saves.enqueue(
+        `template:${id}`,
+        async () => {
+          await flushEditorDocuments();
+          await knowledgeRepository.saveTemplate(updated);
         },
         immediate ? 0 : 300,
       );
@@ -427,6 +484,7 @@ export default function HyperionApp() {
 
   const selectNote = useCallback(
     (id: string) => {
+      setComparison(null);
       setActiveId(id);
       setView("note");
       setMoreOpen(false);
@@ -577,6 +635,11 @@ export default function HyperionApp() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        dataBusy.getSnapshot() ||
+        document.querySelector(".history-dialog, .page-comparison")
+      )
+        return;
       if (
         event.defaultPrevented ||
         (event.target instanceof Element && event.target.closest("dialog"))
@@ -772,10 +835,10 @@ export default function HyperionApp() {
       : "";
     if (!window.confirm(`Delete the “${template.name}” template?${assignment}`))
       return;
-    await Promise.all([
-      knowledgeRepository.deleteTemplate(template.id),
-      removeEditorDocument(vaultId, templateDocumentId(template.id)),
-    ]);
+    await dataOperation(async () => {
+      await knowledgeRepository.deleteTemplate(template.id);
+      await removeEditorDocument(vaultId, templateDocumentId(template.id));
+    });
     const nextDefaults = {
       note:
         preferences.defaultTemplateIds.note === template.id
@@ -853,27 +916,19 @@ export default function HyperionApp() {
   const permanentlyDelete = async (note: NoteRecord) => {
     if (
       !window.confirm(
-        `Permanently delete “${note.title}”? This cannot be undone.`,
+        `Delete “${note.title}”? Its saved versions remain in vault history.`,
       )
     )
       return;
-    const children = notes
-      .filter((item) => item.parentId === note.id)
-      .map((item) => ({
-        ...item,
-        parentId: note.parentId,
-        updatedAt: new Date().toISOString(),
-      }));
-    setNotes((current) =>
-      current
-        .filter((item) => item.id !== note.id)
-        .map((item) => children.find((child) => child.id === item.id) ?? item),
-    );
-    await Promise.all([
-      ...children.map((child) => knowledgeRepository.saveNote(child)),
-      knowledgeRepository.deleteNote(note.id),
-      removeEditorDocument(vaultId, note.id),
-    ]);
+    try {
+      await dataOperation(async () => {
+        await knowledgeRepository.deleteNote(note.id);
+        await removeEditorDocument(vaultId, note.id);
+      });
+      await loadVault(vaultId);
+    } catch (error) {
+      setDataError(String(error));
+    }
   };
 
   const moveNote = useCallback(
@@ -950,150 +1005,36 @@ export default function HyperionApp() {
 
   const exportVault = async () => {
     if (!activeVault) return;
-    const [editorDocuments, storedTemplateDocuments] = await Promise.all([
-      exportEditorDocuments(
-        vaultId,
-        notes.map((note) => note.id),
-      ),
-      exportEditorDocuments(
-        vaultId,
-        templates.map((template) => templateDocumentId(template.id)),
-      ),
-    ]);
-    const templateDocuments = Object.fromEntries(
-      templates.flatMap((template) => {
-        const document =
-          storedTemplateDocuments[templateDocumentId(template.id)];
-        return document ? [[template.id, document]] : [];
-      }),
-    );
-    const bundle: VaultBundle = {
-      format: "hyperion-vault",
-      version: 8,
-      exportedAt: new Date().toISOString(),
-      vault: activeVault,
-      notes,
-      templates,
-      collections,
-      preferences,
-      editorDocuments,
-      templateDocuments,
-    };
-    downloadJson(
-      `${activeVault.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "hyperion"}.hyperion.json`,
-      bundle,
-    );
+    try {
+      const bundle = await dataOperation(() =>
+        requireDesktop().repositoryExecute({
+          operation: "exportVault",
+          vaultId,
+        }),
+      );
+      downloadJson(
+        `${activeVault.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "hyperion"}.hyperion.json`,
+        bundle,
+      );
+    } catch (error) {
+      setDataError(String(error));
+    }
   };
 
   const importVault = async (file: File) => {
     try {
-      const bundle = JSON.parse(await file.text()) as VaultBundle;
-      if (
-        bundle.format !== "hyperion-vault" ||
-        ![1, 2, 3, 4, 5, 6, 7, 8].includes(bundle.version)
-      )
-        throw new Error("Unsupported vault file");
-      const vault = await knowledgeRepository.createVault(
-        `${bundle.vault.name} import`,
+      const bundle: unknown = JSON.parse(await file.text());
+      const result = await dataOperation(() =>
+        requireDesktop().repositoryExecute<{
+          vault: VaultRecord;
+          warnings: string[];
+        }>({ operation: "importVault", bundle }),
       );
-      const collectionMap = new Map(
-        bundle.collections.map((collection) => [
-          collection.id,
-          crypto.randomUUID(),
-        ]),
-      );
-      const noteMap = new Map(
-        bundle.notes.map((note) => [note.id, crypto.randomUUID()]),
-      );
-      const templateMap = new Map(
-        (bundle.templates ?? []).map((template) => [
-          template.id,
-          crypto.randomUUID(),
-        ]),
-      );
-      const importedCollections = bundle.collections.map((collection) => ({
-        ...collection,
-        id: collectionMap.get(collection.id)!,
-        vaultId: vault.id,
-      }));
-      const importedNotes = hydratePageIdentities(
-        bundle.notes.map((note) =>
-          normalizeNoteRecord({
-            ...note,
-            id: noteMap.get(note.id)!,
-            vaultId: vault.id,
-            icon: normalizePageIcon(note.icon),
-            aliases: note.aliases ?? [],
-            links: (note.links ?? []).flatMap((link) => {
-              const targetId = noteMap.get(link.targetId);
-              return targetId ? [{ ...link, targetId }] : [];
-            }),
-            parentId: note.parentId
-              ? (noteMap.get(note.parentId) ?? null)
-              : null,
-            sortOrder: Number.isFinite(note.sortOrder) ? note.sortOrder : 0,
-            archived: note.archived ?? false,
-            collectionIds: (note.collectionIds ?? [])
-              .map((id) => collectionMap.get(id))
-              .filter(Boolean) as string[],
-          }),
-        ),
-      );
-      const importedTemplates = (bundle.templates ?? []).map((template) => ({
-        ...template,
-        id: templateMap.get(template.id)!,
-        vaultId: vault.id,
-        icon: normalizePageIcon(template.icon),
-        tags: template.tags ?? [],
-        body: template.body ?? "",
-      }));
-      const importedPreferences = {
-        ...bundle.preferences,
-        vaultId: vault.id,
-        defaultTemplateIds: {
-          note: bundle.preferences.defaultTemplateIds?.note
-            ? (templateMap.get(bundle.preferences.defaultTemplateIds.note) ??
-              null)
-            : null,
-          journal: bundle.preferences.defaultTemplateIds?.journal
-            ? (templateMap.get(bundle.preferences.defaultTemplateIds.journal) ??
-              null)
-            : null,
-        },
-      };
-      await Promise.all([
-        ...importedCollections.map((collection) =>
-          knowledgeRepository.saveCollection(collection),
-        ),
-        ...importedNotes.map((note) => knowledgeRepository.saveNote(note)),
-        ...importedTemplates.map((template) =>
-          knowledgeRepository.saveTemplate(template),
-        ),
-        knowledgeRepository.savePreferences(importedPreferences),
-      ]);
-      if (bundle.editorDocuments) {
-        const documents = Object.fromEntries(
-          Object.entries(bundle.editorDocuments).flatMap(([id, value]) =>
-            noteMap.has(id) ? [[noteMap.get(id)!, value]] : [],
-          ),
-        );
-        await importEditorDocuments(vault.id, documents);
-      }
-      if (bundle.templateDocuments) {
-        const documents = Object.fromEntries(
-          Object.entries(bundle.templateDocuments).flatMap(([id, value]) => {
-            const importedId = templateMap.get(id);
-            return importedId ? [[templateDocumentId(importedId), value]] : [];
-          }),
-        );
-        await importEditorDocuments(vault.id, documents);
-      }
-      await loadVault(vault.id, [...vaults, vault]);
+      await loadVault(result.vault.id, [...vaults, result.vault]);
       setSettingsOpen(false);
+      if (result.warnings.length) window.alert(result.warnings.join("\n"));
     } catch (error) {
-      window.alert(
-        error instanceof Error ? error.message : "Could not import this vault",
-      );
+      setDataError(error instanceof Error ? error.message : String(error));
     } finally {
       if (importRef.current) importRef.current.value = "";
     }
@@ -1360,6 +1301,7 @@ export default function HyperionApp() {
             )}
             {view === "note" && activeNote && (
               <button
+                disabled={!!pageComparison}
                 className={`icon-button topbar-favorite${activeNote.favorite ? " active" : ""}`}
                 aria-label={
                   activeNote.favorite
@@ -1431,7 +1373,7 @@ export default function HyperionApp() {
                   aria-label="Undo"
                   title="Undo"
                   onClick={() => editorStore?.undo()}
-                  disabled={!editorStore}
+                  disabled={!editorStore || !!pageComparison}
                 >
                   <ArrowCounterClockwise size={16} />
                 </button>
@@ -1440,25 +1382,44 @@ export default function HyperionApp() {
                   aria-label="Redo"
                   title="Redo"
                   onClick={() => editorStore?.redo()}
-                  disabled={!editorStore}
+                  disabled={!editorStore || !!pageComparison}
                 >
                   <ArrowClockwise size={16} />
                 </button>
               </div>
             )}
-            <span className={`save-status ${saveStatus}`}>
+            <span
+              className={`save-status ${saveStatus}`}
+              title={saves.getError()}
+            >
               {saveStatus === "saved" ? (
                 <Check size={13} weight="bold" />
-              ) : (
+              ) : saveStatus === "saving" ? (
                 <span className="saving-spinner" />
-              )}
-              {saveStatus === "saved" ? "Saved locally" : "Saving"}
+              ) : null}
+              {saveStatus === "saved"
+                ? "Saved locally"
+                : saveStatus === "error"
+                  ? "Save failed"
+                  : "Saving"}
             </span>
+            {saveStatus === "error" && (
+              <button
+                onClick={() =>
+                  void flushAll().catch((error) => setDataError(String(error)))
+                }
+              >
+                Retry save
+              </button>
+            )}
             {view === "note" && (
               <button
                 className={`icon-button${detailsOpen ? " active" : ""}`}
                 aria-label="Toggle note details"
-                onClick={() => setDetailsOpen((open) => !open)}
+                onClick={() => {
+                  setDetailsOpen((open) => !open);
+                  setComparison(null);
+                }}
               >
                 <ListBullets size={19} />
               </button>
@@ -1467,6 +1428,7 @@ export default function HyperionApp() {
               <div className="more-wrap topbar-more">
                 <button
                   className="icon-button"
+                  disabled={!!pageComparison}
                   aria-label="More page actions"
                   title="More actions"
                   onClick={() => setMoreOpen((open) => !open)}
@@ -1526,44 +1488,54 @@ export default function HyperionApp() {
         <div className="content-shell">
           <section className="main-content">
             {view === "note" && activeNote ? (
-              <article
-                className={`note-workspace${activeNote.icon ? " has-page-icon" : ""}`}
-              >
-                {activeNote.kind === "journal" && activeNote.journalDate && (
-                  <div
-                    className={`journal-entry-label width-${preferences.editorWidth}`}
-                  >
-                    <CalendarBlank size={14} />
-                    <span>
-                      {new Intl.DateTimeFormat("en", {
-                        weekday: "long",
-                        month: "long",
-                        day: "numeric",
-                        year: "numeric",
-                      }).format(journalDate(activeNote.journalDate))}
-                    </span>
-                  </div>
-                )}
-                <div
-                  className={`page-icon-row width-${preferences.editorWidth}`}
-                >
-                  <PageIconPicker
-                    key={activeNote.id}
-                    note={activeNote}
-                    onChange={(icon) =>
-                      updateNoteById(activeNote.id, { icon }, true)
-                    }
+              <>
+                {pageComparison && (
+                  <PageHistoryPreview
+                    key={pageComparison.revision.id}
+                    comparison={pageComparison}
+                    onClose={() => setComparison(null)}
                   />
-                </div>
+                )}
+                <article
+                  hidden={!!pageComparison}
+                  className={`note-workspace${activeNote.icon ? " has-page-icon" : ""}`}
+                >
+                  {activeNote.kind === "journal" && activeNote.journalDate && (
+                    <div
+                      className={`journal-entry-label width-${preferences.editorWidth}`}
+                    >
+                      <CalendarBlank size={14} />
+                      <span>
+                        {new Intl.DateTimeFormat("en", {
+                          weekday: "long",
+                          month: "long",
+                          day: "numeric",
+                          year: "numeric",
+                        }).format(journalDate(activeNote.journalDate))}
+                      </span>
+                    </div>
+                  )}
+                  <div
+                    className={`page-icon-row width-${preferences.editorWidth}`}
+                  >
+                    <PageIconPicker
+                      key={activeNote.id}
+                      note={activeNote}
+                      onChange={(icon) =>
+                        updateNoteById(activeNote.id, { icon }, true)
+                      }
+                    />
+                  </div>
 
-                <AffineEditor
-                  key={`${vaultId}:${activeNote.id}`}
-                  document={activeNote}
-                  preferences={preferences}
-                  onChange={(patch) => updateNoteById(activeNote.id, patch)}
-                  onStoreReady={setEditorStore}
-                />
-              </article>
+                  <AffineEditor
+                    key={`${vaultId}:${activeNote.id}`}
+                    document={activeNote}
+                    preferences={preferences}
+                    onChange={(patch) => updateNoteById(activeNote.id, patch)}
+                    onStoreReady={setEditorStore}
+                  />
+                </article>
+              </>
             ) : view === "template" && activeTemplate && activeTemplatePage ? (
               <article
                 className={`note-workspace template-workspace${activeTemplate.icon ? " has-page-icon" : ""}`}
@@ -1702,14 +1674,52 @@ export default function HyperionApp() {
           </section>
 
           {detailsOpen && view === "note" && activeNote && (
-            <NoteDetails
-              key={activeNote.id}
-              note={activeNote}
-              notes={activeNotes}
-              store={editorStore}
-              onSelect={selectNote}
-              onChange={(patch) => updateNoteById(activeNote.id, patch, true)}
-            />
+            <aside
+              className={`details-panel${detailsTab === "history" ? " history-open" : ""}`}
+              aria-label="Page sidebar"
+            >
+              <div className="details-tabs">
+                <button
+                  aria-pressed={detailsTab === "details"}
+                  onClick={() => {
+                    setDetailsTab("details");
+                    setComparison(null);
+                  }}
+                >
+                  Details
+                </button>
+                <button
+                  aria-pressed={detailsTab === "history"}
+                  onClick={() => setDetailsTab("history")}
+                >
+                  History
+                </button>
+              </div>
+              {detailsTab === "history" ? (
+                <PageHistory
+                  key={`${vaultId}:${activeNote.id}`}
+                  vaultId={vaultId}
+                  noteId={activeNote.id}
+                  selectedId={pageComparison?.revision.id}
+                  onSelect={(value) => {
+                    setMoreOpen(false);
+                    setPageSearchOpen(false);
+                    setComparison(value);
+                  }}
+                />
+              ) : (
+                <NoteDetails
+                  key={activeNote.id}
+                  note={activeNote}
+                  notes={activeNotes}
+                  store={editorStore}
+                  onSelect={selectNote}
+                  onChange={(patch) =>
+                    updateNoteById(activeNote.id, patch, true)
+                  }
+                />
+              )}
+            </aside>
           )}
         </div>
       </section>
@@ -1776,16 +1786,37 @@ export default function HyperionApp() {
         />
       )}
 
+      {history && (
+        <HistoryDialog
+          vaultId={vaultId}
+          noteId={history.noteId}
+          onClose={() => setHistory(null)}
+        />
+      )}
+      {operationBusy && (
+        <div className="data-operation-overlay" role="status">
+          Finishing data operation…
+        </div>
+      )}
+      {dataError && (
+        <div className="data-error-banner" role="alert">
+          {dataError}
+          <button onClick={() => setDataError("")}>Dismiss</button>
+        </div>
+      )}
       {settingsOpen && activeVault && (
         <SettingsDialog
           vault={activeVault}
           vaultCount={vaults.length}
+          busy={operationBusy}
           templates={templates}
           preferences={preferences}
           storageInfo={storageInfo}
           onStorageLocation={async () => {
             try {
-              const info = await platformRuntime.chooseStorageLocation();
+              const info = await dataOperation(() =>
+                platformRuntime.chooseStorageLocation(),
+              );
               if (info) {
                 setStorageInfo(info);
                 window.location.reload();
@@ -1807,6 +1838,10 @@ export default function HyperionApp() {
               ),
             );
           }}
+          onHistory={() => {
+            setSettingsOpen(false);
+            setHistory({});
+          }}
           onExport={() => void exportVault()}
           onImport={() => importRef.current?.click()}
           onDelete={async () => {
@@ -1817,7 +1852,10 @@ export default function HyperionApp() {
               )
             )
               return;
-            await knowledgeRepository.deleteVault(activeVault.id);
+            await dataOperation(async () => {
+              await knowledgeRepository.deleteVault(activeVault.id);
+              await forgetVaultWorkspace(activeVault.id);
+            });
             const nextVaults = vaults.filter(
               (vault) => vault.id !== activeVault.id,
             );

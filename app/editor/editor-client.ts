@@ -79,3 +79,39 @@ export async function removeEditorDocument(
 export async function renameEditorDocument(note: NoteRecord, title: string) {
   return (await runtime()).renameEditorDocument(note, title);
 }
+
+export async function flushEditorDocuments(
+  ...args: Parameters<
+    typeof import("./blocksuite-runtime").flushEditorDocuments
+  >
+) {
+  return (await runtime()).flushEditorDocuments(...args);
+}
+
+export async function stopEditorWorkspaces(
+  ...args: Parameters<
+    typeof import("./blocksuite-runtime").stopEditorWorkspaces
+  >
+) {
+  return (await runtime()).stopEditorWorkspaces(...args);
+}
+
+export async function previewRevision(
+  ...args: Parameters<typeof import("./blocksuite-runtime").previewRevision>
+) {
+  return (await runtime()).previewRevision(...args);
+}
+
+export async function lockEditorStores(
+  ...args: Parameters<typeof import("./blocksuite-runtime").lockEditorStores>
+) {
+  return (await runtime()).lockEditorStores(...args);
+}
+
+export async function forgetVaultWorkspace(
+  ...args: Parameters<
+    typeof import("./blocksuite-runtime").forgetVaultWorkspace
+  >
+) {
+  return (await runtime()).forgetVaultWorkspace(...args);
+}

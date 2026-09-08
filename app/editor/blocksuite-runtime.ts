@@ -1,3 +1,4 @@
+import { saves } from "../lib/save-coordinator";
 import { StoreExtensionManager } from "@blocksuite/affine/ext-loader";
 import { getInternalStoreExtensions } from "@blocksuite/affine/extensions/store";
 import type { Store } from "@blocksuite/affine/store";
@@ -46,6 +47,13 @@ async function createWorkspace(vaultId: string) {
     blobSources: { main: storage.blobs },
   });
   workspace.storeExtensions = storeManager.get("store");
+  const setBlob = workspace.blobSync.set.bind(workspace.blobSync);
+  workspace.blobSync.set = ((valueOrKey: string | Blob, value?: Blob) =>
+    saves.track(() =>
+      typeof valueOrKey === "string"
+        ? setBlob(valueOrKey, value!)
+        : setBlob(valueOrKey),
+    )) as typeof workspace.blobSync.set;
   workspace.start();
   await workspace.waitForSynced();
   workspace.meta.initialize();
@@ -121,16 +129,9 @@ async function initializeEditorStore(
   legacyBody: string,
 ) {
   const workspace = await getVaultWorkspace(vaultId);
-  let doc = workspace.getDoc(noteId);
-  if (!doc) {
-    doc = workspace.createDoc(noteId);
-    const store = doc.getStore();
-    store.load(() => {
-      if (!store.root) addInitialBlocks(store, title, legacyBody);
-      repairDuplicateRoots(store);
-    });
-    return store;
-  }
+  const doc = workspace.getDoc(noteId) ?? workspace.createDoc(noteId);
+  doc.spaceDoc.load();
+  await workspace.docSync.waitForSynced(AbortSignal.timeout(15000));
   const store = doc.getStore();
   store.load(() => {
     if (!store.root) addInitialBlocks(store, title, legacyBody);
@@ -199,6 +200,8 @@ export async function duplicateEditorDocument(
   const workspace = await getVaultWorkspace(vaultId);
   const source = workspace.getDoc(sourceId);
   if (!source) return false;
+  source.spaceDoc.load();
+  await workspace.docSync.waitForSynced(AbortSignal.timeout(15000));
   const target = workspace.createDoc(targetId);
   target.spaceDoc.load();
   Y.applyUpdate(target.spaceDoc, Y.encodeStateAsUpdate(source.spaceDoc));
@@ -264,6 +267,73 @@ export async function removeEditorDocument(vaultId: string, noteId: string) {
 
 export type EditorStore = Store;
 
+// Wait for BlockSuite's root and loaded subdocuments to reach durable primary storage.
+export async function flushEditorDocuments() {
+  for (const promise of workspacePromises.values()) {
+    const workspace = await promise;
+    await workspace.docSync.waitForSynced(AbortSignal.timeout(15000));
+  }
+}
+export async function stopEditorWorkspaces() {
+  await flushEditorDocuments();
+  for (const promise of workspacePromises.values()) (await promise).forceStop();
+}
+export async function previewRevision(
+  vaultId: string,
+  encoded: string | null | undefined,
+  note: { title: string; body: string },
+) {
+  const storage = platformRuntime.createEditorStorage(vaultId);
+  const workspace = new TestWorkspace({
+    id: `preview:${crypto.randomUUID()}`,
+    blobSources: {
+      main: {
+        ...storage.blobs,
+        name: "history-assets",
+        readonly: true,
+        get: (key) => storage.blobs.get(key),
+        list: () => storage.blobs.list(),
+        set: async () => {
+          throw new Error("History is read-only");
+        },
+        delete: async () => {
+          throw new Error("History is read-only");
+        },
+      },
+    },
+  });
+  workspace.storeExtensions = storeManager.get("store");
+  workspace.meta.initialize();
+  const doc = workspace.createDoc();
+  doc.spaceDoc.load();
+  if (encoded) Y.applyUpdate(doc.spaceDoc, base64ToBytes(encoded));
+  const store = doc.getStore();
+  store.load();
+  if (!store.root) addInitialBlocks(store, note.title, note.body);
+  store.readonly = true;
+  const { renderPageEditor } = await import("./editor-view");
+  const { viewport } = renderPageEditor(store);
+  return {
+    viewport,
+    dispose: () => {
+      workspace.forceStop();
+      workspace.dispose();
+      workspace.doc.destroy();
+    },
+  };
+}
+export async function lockEditorStores() {
+  const stores = await Promise.all(storePromises.values());
+  const previous = stores.map((store) => store.readonly);
+  stores.forEach((store) => {
+    store.readonly = true;
+  });
+  return () =>
+    stores.forEach((store, index) => {
+      store.readonly = previous[index];
+    });
+}
+
 export async function renameEditorDocument(note: NoteRecord, title: string) {
   const store = await getOrCreateEditorStore(
     note.vaultId,
@@ -274,4 +344,17 @@ export async function renameEditorDocument(note: NoteRecord, title: string) {
   if (!store.root)
     throw new Error("This page could not be opened for renaming.");
   store.updateBlock(store.root, { title: new Text(title) });
+}
+
+export async function forgetVaultWorkspace(vaultId: string) {
+  const promise = workspacePromises.get(vaultId);
+  if (promise) {
+    const workspace = await promise;
+    workspace.forceStop();
+    workspace.dispose();
+    workspace.doc.destroy();
+  }
+  workspacePromises.delete(vaultId);
+  for (const key of storePromises.keys())
+    if (key.startsWith(`${vaultId}:`)) storePromises.delete(key);
 }

@@ -1,0 +1,23 @@
+{
+  "createdAt": "2026-09-07",
+  "sourceCommit": "2bc222198a7f32c62cad69fda3d4d7a859c5d1f4",
+  "provenance": "Synthetic prototype schema; v1 produced once by the source commit. No customer data. These files are never regenerated during tests.",
+  "documentVersion": 1,
+  "historyRevisionId": "6cc4a777-ae57-4e3a-b464-253276fdcc87",
+  "fixtures": [
+    {
+      "name": "prototype-v0",
+      "file": "prototype-v0.sqlite3",
+      "expected": "prototype-v0.expected.json",
+      "schemaVersion": 0,
+      "sha256": "83865f7ff6fcabc28d617e2269d7222e8f4e1347da9758187db99531f61ba920"
+    },
+    {
+      "name": "desktop-v1",
+      "file": "desktop-v1.sqlite3",
+      "expected": "desktop-v1.expected.json",
+      "schemaVersion": 1,
+      "sha256": "18be0edb5d451dcfe7c6adc7b6d1a2612946ec98968a3dbadf638bda64cb3d82"
+    }
+  ]
+}

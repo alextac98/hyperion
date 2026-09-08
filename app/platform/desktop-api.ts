@@ -1,3 +1,12 @@
+import type { NoteRecord } from "../lib/local-database";
+export type RevisionCapture = PageRevision & { captureStatus: "created" | "named" | "reused" };
+export type PageSnapshot = { note: NoteRecord; document?: string | null };
+export type PageComparison = { revision: PageRevision; current: PageSnapshot };
+export type PageRevision = {
+  id: string; vaultId: string; noteId: string; createdAt: string; label: string | null;
+  reason: string; documentVersion: number; note: NoteRecord; document?: string | null;
+  assets?: Record<string, string>; contentHash: string;
+};
 export type RepositoryRequest = {
   operation: string;
   [key: string]: unknown;
@@ -23,10 +32,14 @@ export type StoredAsset = {
 export interface HyperionDesktopApi {
   repositoryExecute<T>(request: RepositoryRequest): Promise<T>;
   storageInfo(): Promise<StorageInfo>;
+  createBackup(automatic?: boolean): Promise<{ name: string; path: string }>;
+  listBackups(): Promise<Array<{ name: string; path: string }>>;
+  restoreBackup(): Promise<StorageInfo | null>;
+  showBackupFolder(): Promise<void>;
+  onPrepareClose(callback: () => Promise<void>): () => void;
   chooseStorageLocation(): Promise<StorageInfo | null>;
   editorPull(vaultId: string, documentId: string): Promise<string[]>;
   editorPush(vaultId: string, documentId: string, data: string): Promise<void>;
-  editorReplace(vaultId: string, documentId: string, data: string): Promise<void>;
   editorDelete(vaultId: string, documentId: string): Promise<void>;
   assetGet(vaultId: string, key: string): Promise<StoredAsset | null>;
   assetSet(vaultId: string, key: string, mimeType: string, data: string): Promise<void>;

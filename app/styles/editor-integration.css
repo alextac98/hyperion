@@ -97,6 +97,8 @@
 .sidebar-empty { margin: 5px 9px 10px; color: var(--text-faint); font-size: 10px; line-height: 1.5; }
 
 .note-workspace {
+  /* Contain child margins so they do not add overflow outside the full-height page. */
+  display: flow-root;
   position: relative;
   min-height: calc(100vh - var(--topbar-height));
 }
@@ -115,4 +117,3 @@
 .journal-entry-label.width-compact { max-width: 680px; }
 .journal-entry-label.width-comfortable { max-width: 800px; }
 .journal-entry-label.width-wide { max-width: 1040px; }
-

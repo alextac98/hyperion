@@ -1,3 +1,4 @@
+import { saves } from "../../lib/save-coordinator";
 import type { BlobSource, DocSource } from "@blocksuite/sync";
 import { diffUpdate, encodeStateVectorFromUpdate, mergeUpdates } from "yjs";
 import type { HyperionDesktopApi } from "../desktop-api";
@@ -30,9 +31,6 @@ class ElectronSqliteDocSource implements DocSource {
     const encodedUpdates = await this.desktop.editorPull(this.vaultId, docId);
     if (!encodedUpdates.length) return null;
     const update = mergeUpdates(encodedUpdates.map(base64ToBytes));
-    if (encodedUpdates.length > 32) {
-      await this.desktop.editorReplace(this.vaultId, docId, bytesToBase64(update));
-    }
     return {
       data: state.length ? diffUpdate(update, state) : update,
       state: encodeStateVectorFromUpdate(update),
@@ -40,7 +38,7 @@ class ElectronSqliteDocSource implements DocSource {
   }
 
   push(docId: string, data: Uint8Array) {
-    return this.desktop.editorPush(this.vaultId, docId, bytesToBase64(data));
+    return saves.track(() => this.desktop.editorPush(this.vaultId, docId, bytesToBase64(data)));
   }
 
   subscribe() {
@@ -65,13 +63,10 @@ class ElectronSqliteBlobSource implements BlobSource {
   }
 
   async set(key: string, value: Blob) {
-    await this.desktop.assetSet(
-      this.vaultId,
-      key,
-      value.type,
-      bytesToBase64(new Uint8Array(await value.arrayBuffer())),
-    );
-    return key;
+    return saves.track(async () => {
+      await this.desktop.assetSet(this.vaultId, key, value.type, bytesToBase64(new Uint8Array(await value.arrayBuffer())));
+      return key;
+    });
   }
 
   delete(key: string) {

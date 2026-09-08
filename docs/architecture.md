@@ -1,23 +1,26 @@
 # Architecture
 
-Hyperion is a local-first application with a shared React product surface and
-explicit platform adapters. The web and desktop builds use the same editor,
-navigation, domain records, backup format, and repository contract. Platform
-code decides how those records and BlockSuite documents are persisted.
+Hyperion is a desktop product. React and BlockSuite run in Electron's sandboxed
+renderer; SQLite is the only supported persistence backend and is owned by the
+main process. A standalone browser shows a desktop launch screen. Browser
+prototype data is neither migrated nor deleted. There is no IndexedDB adapter.
 
-```text
-app/                         shared product UI and domain behavior
-├── editor/                  shared BlockSuite editor integration
-├── lib/local-database.ts    records, repository contract, web IndexedDB adapter
-└── platform/
-    ├── runtime.ts           web/desktop composition root and capabilities
-    └── desktop/             Electron repository and editor-storage clients
+## Boundaries and authority
 
-electron/                    desktop-only trusted boundary
-├── main.ts                  window, IPC allowlist, dialogs, native services
-├── preload.cts              narrow context-isolated renderer bridge
-└── database.ts              SQLite, storage migration, documents, and assets
-```
+- `app/lib/local-database.ts`: domain types, defaults, seed records and repository contract.
+- `app/platform/`: typed Electron bridge and document/blob storage adapters.
+- `app/lib/save-coordinator.ts`: pending writes, error reporting and retry.
+- `app/lib/data-operations.ts`: editor write barrier for backups, history and restore.
+- `electron/data-format.ts`: runtime validation, document transformations and hashing.
+- `electron/database.ts`: transactions, migrations, records, documents, assets and revisions.
+- `electron/main.ts`: trusted IPC, dialogs, storage locations and save-aware shutdown.
+
+Yjs is authoritative for rich page content and the editor title. Note `body` and
+`title` are projections used for search and navigation; initial prototype pages
+without a document are seeded from those fields. Tags, hierarchy, collection
+membership and lifecycle flags are domain records. IDs survive renames and moves.
+UI-only preferences such as the open page and sidebar width remain localStorage
+values and are not knowledge data. Vault preferences remain in SQLite.
 
 The application shell composes feature views and dialogs from `app/components`.
 Pure page mutation rules live in `app/application/page-operations.ts`; hierarchy
@@ -35,62 +38,104 @@ The composition root is intentionally small. A later mobile shell can provide
 the same `KnowledgeRepository`, editor document source, blob source, and
 capability services without forking `HyperionApp`.
 
-## Platform behavior
+All metadata writes are validated in the main process. Foreign keys enforce vault
+ownership and same-vault parents; application checks reject hierarchy cycles,
+invalid collection membership and invalid default templates. Page links may
+retain the identity of deleted pages. Metadata operations involving several rows
+run in one transaction. Editor compaction reads, merges and replaces updates
+inside a single transaction; renderers cannot submit a stale replacement.
 
-| Concern | Web | Desktop |
-| --- | --- | --- |
-| Shell | Browser/Vite | Electron with bundled Chromium |
-| Knowledge records | IndexedDB | SQLite |
-| BlockSuite/Yjs state | IndexedDB | SQLite BLOB rows |
-| Embedded assets | IndexedDB | SQLite BLOB rows |
-| Storage location | Browser-managed | User-selectable folder |
-| Native local AI | Unavailable | Native capability boundary |
+## SQLite migrations and durability
 
-`app/platform/runtime.ts` is the only target-selection point. It detects the
-Electron preload bridge and supplies the appropriate repository and editor sources.
-Shared UI code must use that runtime or an injected interface instead of
-calling native APIs directly.
+The database uses WAL and `synchronous=FULL`. `PRAGMA user_version` and the
+`migrations` ledger version the physical schema; `storage_metadata` guards the live
+document version. These are independent of document revision and
+portable backup formats. Version 1 upgrades the unversioned prototype schema.
+Before upgrading an existing database, Hyperion writes a verified SQLite snapshot
+under `backups/migration-0-…sqlite3`. Table replacement, legacy record normalization,
+relationship checks and the version update commit together. A failed upgrade
+rolls back and reports the problem; it does not silently repair or discard
+unrecognized data. Newer database versions are rejected before writes.
 
-## Desktop data
+Future migrations must be ordered, transactional where practical, and tested
+against prior released database fixtures, skipped-version upgrades and failures.
+The [migration regression suite](migration-tests.md) exercises frozen prototype and
+version-1 databases through the real startup path, including preservation, rollback
+and safe reopening.
+Do not update historical migration definitions once released. Preserve source
+backups and original historical payloads when introducing document converters.
 
-The native layer creates `hyperion.sqlite3` in `~/.config/hyperion` by default.
-It contains vaults, notes, collections, preferences, Yjs updates, and assets.
-The Data settings screen can select another folder. When the target has no
-Hyperion database, the native layer copies the existing database with SQLite's
-online backup API before switching. When the target already contains
-`hyperion.sqlite3`, Hyperion opens that existing database. The selected folder
-is remembered in `~/.config/hyperion/storage-location`.
+## Save and recovery lifecycle
 
-SQLite access stays in Electron's main process. The renderer receives typed
-records or base64-encoded document and asset payloads through an explicit
-preload API; it never receives arbitrary filesystem, Node.js, or SQL access.
-Context isolation and Chromium's renderer sandbox remain enabled, navigation
-is restricted to Hyperion's own content, and IPC calls validate their sender.
+Editor changes synchronously enqueue metadata projections, including the final edit
+before a history or close operation; writes wait for the document source
+to finish syncing to SQLite. The save coordinator tracks document and asset writes,
+retains failed jobs for retry, and exposes saving/saved/error UI states. Backups,
+imports, historical capture, restore and storage switching lock loaded editor
+stores, drain pending work and then invoke the native operation. Window close and
+app quit wait for this barrier; a save error leaves the window open.
 
-## Data model
+SQLite snapshots use `VACUUM INTO` and verification before publishing a completed
+file. Snapshots include all vaults, documents, assets and history. Automatic backups
+run at startup and daily while the app is open; retain the latest 10. Manual and
+pre-migration backups are retained. Settings → Data opens the folder or creates a
+manual snapshot. Restoring a database backup writes to a separate folder, validates
+it, and leaves the current database active. The storage folder chooser can open
+the restored database. Copy backups off-device for protection against disk loss.
 
-All knowledge data uses the `KnowledgeRepository` interface in
-`app/lib/local-database.ts`. Pages form the Organize hierarchy through
-`NoteRecord.parentId`, while `NoteRecord.sortOrder` preserves sibling order.
-Permanent note IDs keep page links stable through moves and renames. Previous
-titles live in `aliases`, and inline and manual links both target IDs.
+Portable vault format 9 includes metadata, independently encoded page and template
+documents, immutable blobs, asset mappings and revisions. A SHA-256 checksum covers
+the serialized payload; each blob has its own content hash. Import validates and
+writes everything in one transaction into a separate vault, remaps page/template/
+collection IDs and rich document references, and publishes nothing on failure.
+Legacy formats 1–8 are accepted with an explicit missing-attachments warning.
+Checksums detect accidental corruption; they are not cryptographic authentication.
 
-Templates are vault-scoped `TemplateRecord` values rather than hidden notes.
-Their rich content uses the same Yjs storage under namespaced document IDs,
-while vault preferences hold stable template IDs for the default page and
-journal creation paths. Instantiating a template clones its document and
-creates an independent note; later template edits never mutate existing pages.
+## Page history
 
-The desktop tables keep an indexed ID, vault ID, and sorting fields alongside
-the complete JSON record. This preserves backup compatibility while allowing
-schema-independent record evolution. Editor documents remain Yjs updates, so
-the editor semantics are identical across targets.
+Revisions store an independent encoded document, metadata, format version, label,
+capture time and immutable asset references. Yjs snapshot markers and undo stacks
+are not used as durable history. Automatic capture runs every minute for changed
+pages, at startup and before closing. Automatic versions expire after 30 days,
+except the newest version of a page; named and pre-destructive-operation versions
+are retained. All captures deduplicate against the latest version using canonical
+page values, including formatting and layout. Edit timestamps, Yjs clocks and
+unrelated vault assets do not create new versions. Naming an unchanged automatic
+version promotes it to a named version; an existing name is preserved. Returning
+to older content after a different version still records that transition. Existing
+history is compared without rewriting or deleting stored snapshots.
 
-## Desktop-only capabilities
+Assets are content-addressed and cannot change under an existing key. The initial
+implementation conservatively retains every vault asset in a checkpoint, including
+keys marked deleted by the editor. Asset garbage collection is intentionally
+conservative: blobs are retained rather than risk deleting data used by an unknown
+block type. Retention therefore bounds automatic revisions, not total attachment
+storage. Optimize references and reclaim unreachable blobs only with coverage for
+all rich block types and historical formats.
 
-`platformRuntime.capabilities` distinguishes native features from portable
-features. A native local-AI service boundary and status command now exist so a
-future speech-to-text or text-to-speech provider can run outside the webview
-without changing shared UI code. No model or voice engine is bundled yet; the
-status API reports that honestly. Add providers behind this native boundary,
-not directly inside React components.
+The right sidebar has Details and History tabs. History lists only the active
+page’s versions and lets users save named checkpoints. Selecting a version flushes
+pending editor writes, then reads the revision and current document in one SQLite
+transaction without creating a revision. The main page area shows block-level
+text and metadata changes in aligned saved/current columns with jsdiff word-level
+highlighting and a unified layout option. Diff computation has size and time bounds;
+large sections fall back to highlighting the complete text. The viewer flags
+formatting and layout changes, and offers Saved
+page / Current page previews in isolated read-only workspaces. Comparisons show
+the current state at preview time; selecting a version again refreshes it. Page
+navigation clears the selection. The live editor stays mounted but hidden during
+comparison to preserve editing state when returning.
+Restore-as-copy creates a new page; in-place restore first captures the current
+page and writes the old block content as fresh CRDT operations. It never merges
+an old update expecting it to rewind the live document. Successful restoration
+reloads the renderer to discard stale editor instances. Deleting a page preserves
+a revision accessible through Settings → Data → Browse page history. Deleting a
+vault removes its revision records too. Database backups may still contain it.
+
+## Future collaboration
+
+The storage boundary remains replaceable, but no sync outbox, server protocol,
+remote backend or browser database is introduced. A future sync design must define
+metadata conflicts, deletion tombstones, permissions, attribution and historical
+restore behavior with concurrent editors. It must not equate a local checkpoint
+with a globally synchronized revision or trust a device ID as authorship.

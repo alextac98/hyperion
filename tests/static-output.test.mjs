@@ -29,3 +29,16 @@ test("desktop main and preload build artifacts exist", async () => {
   await access(new URL("dist-electron/main.js", root));
   await access(new URL("dist-electron/preload.cjs", root));
 });
+
+test("knowledge persistence has no browser database fallback", async () => {
+  const [runtime, database] = await Promise.all([
+    readFile(new URL("app/platform/runtime.ts", root), "utf8"),
+    readFile(new URL("app/lib/local-database.ts", root), "utf8"),
+  ]);
+  assert.match(runtime, /ElectronKnowledgeRepository/);
+  assert.doesNotMatch(
+    runtime,
+    /IndexedDbKnowledgeRepository|IndexedDBDocSource/,
+  );
+  assert.doesNotMatch(database, /indexedDB\.open/);
+});

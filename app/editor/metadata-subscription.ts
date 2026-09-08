@@ -13,6 +13,10 @@ export function observeMetadata<T>(
     publish(read());
   };
   const unsubscribe = subscribe(() => {
+    if (delay === 0) {
+      publish(read());
+      return;
+    }
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(flush, delay);
   });

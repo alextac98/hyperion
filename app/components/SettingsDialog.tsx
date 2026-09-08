@@ -1,3 +1,4 @@
+import { DataRecovery } from "./DataRecovery";
 import {
   Archive,
   BookOpenText,
@@ -26,6 +27,7 @@ import { HyperionMark } from "./HyperionMark";
 export function SettingsDialog({
   vault,
   vaultCount,
+  busy,
   templates,
   preferences,
   storageInfo,
@@ -33,12 +35,14 @@ export function SettingsDialog({
   onClose,
   onPreferences,
   onVault,
+  onHistory,
   onExport,
   onImport,
   onDelete,
 }: {
   vault: VaultRecord;
   vaultCount: number;
+  busy: boolean;
   templates: TemplateRecord[];
   preferences: VaultPreferences;
   storageInfo: StorageInfo | null;
@@ -46,6 +50,7 @@ export function SettingsDialog({
   onClose: () => void;
   onPreferences: (patch: Partial<VaultPreferences>) => Promise<void>;
   onVault: (patch: Partial<VaultRecord>) => Promise<void>;
+  onHistory: () => void;
   onExport: () => void;
   onImport: () => void;
   onDelete: () => void;
@@ -65,7 +70,12 @@ export function SettingsDialog({
     { value: "dark", label: "Dark", icon: <Moon size={18} /> },
   ];
   return (
-    <Dialog label="Settings" onClose={onClose}>
+    <Dialog
+      busy={busy}
+      className="settings-layer"
+      label="Settings"
+      onClose={onClose}
+    >
       <section className="settings-dialog">
         <header>
           <div>
@@ -303,6 +313,7 @@ export function SettingsDialog({
                   <h2>Data</h2>
                   <p>Everything remains local unless you export it yourself.</p>
                 </div>
+                <DataRecovery onHistory={onHistory} />
                 {storageInfo && (
                   <div className="data-setting storage-location-setting">
                     <span className="data-setting-icon">
@@ -352,7 +363,7 @@ export function SettingsDialog({
                     <small>
                       {storageInfo
                         ? "Hyperion stores records, editor documents, and assets in a local SQLite file. Native local-AI services remain on this device."
-                        : "Hyperion uses IndexedDB and Yjs in this browser. Nothing is uploaded by the app."}
+                        : "Open Hyperion on desktop to access your data."}
                     </small>
                   </span>
                 </div>

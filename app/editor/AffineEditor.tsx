@@ -59,6 +59,7 @@ export function AffineEditor({
           },
           () => runtime.readEditorMetadata(store),
           (metadata) => callbacksRef.current.onChange(metadata),
+          0, // Queue projections synchronously so history/close barriers see the latest edit.
         );
         unsubscribe = () => {
           stopMetadata();

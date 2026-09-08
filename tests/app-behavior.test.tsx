@@ -225,6 +225,28 @@ test("leaving an editor before the debounce expires publishes its final metadata
   assert.ok(unsubscribed);
 });
 
+test("immediate editor metadata is available to a same-turn save barrier", async () => {
+  let changed = () => {};
+  let value = "first";
+  const published: string[] = [];
+  const dispose = observeMetadata(
+    (callback) => {
+      changed = callback;
+      return () => {};
+    },
+    () => value,
+    (next) => published.push(next),
+    0,
+  );
+  changed();
+  value = "last edit before snapshot";
+  changed();
+  assert.deepEqual(published, ["first", "last edit before snapshot"]);
+  dispose();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(published.length, 2, "cleanup must not queue a duplicate save");
+});
+
 test("in-page search finds text in editor shadow roots", () => {
   const root = document.createElement("div");
   const shadow = root.attachShadow({ mode: "open" });

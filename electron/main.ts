@@ -1,4 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import updater from "electron-updater";
@@ -6,16 +8,23 @@ import { DesktopDatabase, type RepositoryRequest } from "./database.js";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const developmentUrl = "http://127.0.0.1:3000";
+const useBuiltRenderer = app.isPackaged || process.env.HYPERION_TEST_RENDERER === "1";
 const packagedRendererDirectory = resolve(currentDirectory, "../dist");
 const { autoUpdater } = updater;
 
 const channels = {
   repositoryExecute: "hyperion:repository-execute",
   storageInfo: "hyperion:storage-info",
+  createBackup: "hyperion:create-backup",
+  listBackups: "hyperion:list-backups",
+  restoreBackup: "hyperion:restore-backup",
+  showBackupFolder: "hyperion:show-backup-folder",
+  prepareClose: "hyperion:prepare-close",
+  rendererReady: "hyperion:renderer-ready",
+  closeReady: "hyperion:close-ready",
   chooseStorageLocation: "hyperion:choose-storage-location",
   editorPull: "hyperion:editor-pull",
   editorPush: "hyperion:editor-push",
-  editorReplace: "hyperion:editor-replace",
   editorDelete: "hyperion:editor-delete",
   assetGet: "hyperion:asset-get",
   assetSet: "hyperion:asset-set",
@@ -27,6 +36,10 @@ const channels = {
 let mainWindow: BrowserWindow | null = null;
 let database: DesktopDatabase | null = null;
 let updateCheckStarted = false;
+let closeToken: string | null = null;
+let closeApproved = false;
+let quitting = false;
+let rendererReady = false;
 
 function showAppMessageBox(options: Electron.MessageBoxOptions) {
   return mainWindow
@@ -83,7 +96,7 @@ function databaseInstance() {
 function isTrustedRendererUrl(value: string) {
   try {
     const url = new URL(value);
-    if (app.isPackaged) {
+    if (useBuiltRenderer) {
       if (url.protocol !== "file:") return false;
       const rendererPath = fileURLToPath(url);
       const relativePath = relative(packagedRendererDirectory, rendererPath);
@@ -114,6 +127,32 @@ function registerDesktopHandlers() {
     databaseInstance().repositoryExecute(request as RepositoryRequest)
   ));
   handle(channels.storageInfo, () => databaseInstance().storageInfo());
+  handle(channels.createBackup, (_event, automatic) => databaseInstance().createBackup(automatic === true));
+  handle(channels.listBackups, () => databaseInstance().listBackups());
+  handle(channels.showBackupFolder, async () => {
+    const folder = join(databaseInstance().storageInfo().directory, "backups");
+    mkdirSync(folder, { recursive: true });
+    const error = await shell.openPath(folder); if (error) throw new Error(error);
+  });
+  handle(channels.restoreBackup, async () => {
+    const source = await dialog.showOpenDialog({ title: "Choose a Hyperion database backup", properties: ["openFile"], filters: [{ name: "Hyperion SQLite backup", extensions: ["sqlite3"] }] });
+    if (source.canceled || !source.filePaths[0]) return null;
+    const target = await dialog.showOpenDialog({ title: "Restore into a separate folder", properties: ["openDirectory", "createDirectory"] });
+    if (target.canceled || !target.filePaths[0]) return null;
+    return databaseInstance().restoreBackup(source.filePaths[0], target.filePaths[0]);
+  });
+  handle(channels.rendererReady, () => { rendererReady = true; });
+  handle(channels.closeReady, async (_event, token, error) => {
+    if (token !== closeToken) return;
+    closeToken = null;
+    if (error) {
+      quitting = false;
+      await showAppMessageBox({ type: "error", message: "Hyperion could not finish saving", detail: String(error) + "\nYour window will remain open. Retry saving before closing.", buttons: ["Keep working"] });
+      return;
+    }
+    closeApproved = true;
+    if (quitting) app.quit(); else mainWindow?.close();
+  });
   handle(channels.chooseStorageLocation, async () => {
     const current = databaseInstance().storageInfo();
     const options: Electron.OpenDialogOptions = {
@@ -134,9 +173,6 @@ function registerDesktopHandlers() {
   ));
   handle(channels.editorPush, (_event, vaultId, documentId, data) => (
     databaseInstance().editorPush(String(vaultId), String(documentId), String(data))
-  ));
-  handle(channels.editorReplace, (_event, vaultId, documentId, data) => (
-    databaseInstance().editorReplace(String(vaultId), String(documentId), String(data))
   ));
   handle(channels.editorDelete, (_event, vaultId, documentId) => (
     databaseInstance().editorDelete(String(vaultId), String(documentId))
@@ -181,23 +217,36 @@ async function createWindow() {
     if (!isTrustedRendererUrl(url)) event.preventDefault();
   });
   window.once("ready-to-show", () => window.show());
+  window.webContents.on("did-start-loading", () => { rendererReady = false; });
+  window.on("close", event => {
+    if (closeApproved || !rendererReady) return;
+    event.preventDefault();
+    if (!closeToken) { closeToken = randomUUID(); window.webContents.send(channels.prepareClose, closeToken); }
+  });
   window.on("closed", () => {
+    closeApproved = false; closeToken = null;
     if (mainWindow === window) mainWindow = null;
   });
 
   mainWindow = window;
-  if (app.isPackaged) {
+  if (useBuiltRenderer) {
     await window.loadFile(join(currentDirectory, "../dist/index.html"));
   } else {
     await window.loadURL(developmentUrl);
   }
 }
 
+const ownsInstance = app.requestSingleInstanceLock();
+if (!ownsInstance) app.quit();
+app.on("second-instance", () => { if (mainWindow?.isMinimized()) mainWindow.restore(); mainWindow?.focus(); });
 app.whenReady().then(async () => {
+  if (!ownsInstance) return;
   const dataDirectoryOverride = process.env.HYPERION_DATA_DIRECTORY?.trim();
   database = new DesktopDatabase(dataDirectoryOverride
     ? { defaultDirectory: dataDirectoryOverride }
     : undefined);
+  database.repositoryExecute({ operation: "captureAutomaticRevisions" });
+  database.createBackup(true);
   registerDesktopHandlers();
   await createWindow();
   registerAutoUpdater();
@@ -207,13 +256,15 @@ app.whenReady().then(async () => {
   });
 }).catch((error: unknown) => {
   console.error(error);
+  dialog.showErrorBox("Hyperion could not open your data", `${error instanceof Error ? error.message : String(error)}\nYour existing data and any pre-migration backup have been preserved.`);
   app.quit();
 });
 
-app.on("before-quit", () => {
-  database?.close();
-  database = null;
+app.on("before-quit", event => {
+  quitting = true;
+  if (mainWindow && !closeApproved) { event.preventDefault(); mainWindow.close(); }
 });
+app.on("will-quit", () => { database?.close(); database = null; });
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

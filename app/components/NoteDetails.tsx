@@ -78,7 +78,7 @@ export function NoteDetails({
   };
 
   return (
-    <aside className="details-panel">
+    <>
       <DocumentOutline store={editorStore} />
       <section className="details-tags">
         <div className="details-title">
@@ -264,6 +264,6 @@ export function NoteDetails({
           </div>
         </dl>
       </section>
-    </aside>
+    </>
   );
 }
