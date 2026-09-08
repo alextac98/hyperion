@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageComparison, PageRevision, PageSnapshot, RevisionCapture } from "../platform/desktop-api";
 import { requireDesktop } from "../platform/runtime";
-import { previewRevision, stopEditorWorkspaces } from "../editor/blocksuite-runtime";
+import { previewRevision, stopEditorWorkspaces } from "../editor/editor-client";
 import { dataOperation } from "../lib/data-operations";
 import { PageDiffViewer } from "./PageDiffViewer";
 import { pageChanges } from "../lib/page-diff";

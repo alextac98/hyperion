@@ -1,4 +1,4 @@
-import { flushEditorDocuments, lockEditorStores } from "../editor/blocksuite-runtime";
+import { flushEditorDocuments, lockEditorStores } from "../editor/editor-client";
 import { saves } from "./save-coordinator";
 let busy = false;
 const listeners = new Set<() => void>();

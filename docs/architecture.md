@@ -22,6 +22,22 @@ membership and lifecycle flags are domain records. IDs survive renames and moves
 UI-only preferences such as the open page and sidebar width remain localStorage
 values and are not knowledge data. Vault preferences remain in SQLite.
 
+The application shell composes feature views and dialogs from `app/components`.
+Pure page mutation rules live in `app/application/page-operations.ts`; hierarchy
+and search indexing helpers live in `app/lib`. Editor operations enter through
+`app/editor/editor-client.ts`, which loads the document runtime and editor views
+as separate modules. Startup preloads both modules alongside repository initialization;
+opening a vault begins editor workspace initialization alongside metadata reads.
+Document initialization and view loading run concurrently, with shared module
+promises and retry after failed imports. The workspace synchronization barrier
+still completes before document initialization.
+The emoji catalog is also loaded on demand. Shared styles are grouped under
+`app/styles`, with cascade order declared in `app/globals.css`.
+
+The composition root is intentionally small. A later mobile shell can provide
+the same `KnowledgeRepository`, editor document source, blob source, and
+capability services without forking `HyperionApp`.
+
 All metadata writes are validated in the main process. Foreign keys enforce vault
 ownership and same-vault parents; application checks reject hierarchy cycles,
 invalid collection membership and invalid default templates. Page links may
@@ -51,7 +67,8 @@ backups and original historical payloads when introducing document converters.
 
 ## Save and recovery lifecycle
 
-Editor changes enqueue metadata projections; writes wait for the document source
+Editor changes synchronously enqueue metadata projections, including the final edit
+before a history or close operation; writes wait for the document source
 to finish syncing to SQLite. The save coordinator tracks document and asset writes,
 retains failed jobs for retry, and exposes saving/saved/error UI states. Backups,
 imports, historical capture, restore and storage switching lock loaded editor

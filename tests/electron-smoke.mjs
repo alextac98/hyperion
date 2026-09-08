@@ -117,7 +117,14 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await wait(200);
     assert.ok(await js('document.querySelector(".settings-dialog").getBoundingClientRect().bottom <= innerHeight'));
     await window.webContents.capturePage().then(image=>writeFileSync('/tmp/hyperion-data-settings.png',image.toPNG()));
-    await js(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Done').click()`);
+    // Recovery uses the refactored native modal, including page history navigation.
+    assert.equal(await js(`document.querySelector('dialog[aria-label="Settings"]')?.matches(':modal')`), true);
+    await js(`Array.from(document.querySelectorAll('.settings-dialog button')).find(b=>b.textContent==='Browse page history').click()`);
+    await until(()=>js(`document.querySelector('dialog[aria-label="Page history"]')?.matches(':modal')`),'Vault history did not open as a native modal');
+    await until(()=>js(`Boolean(document.querySelector('.history-dialog doc-title')?.doc?.root)`),'Vault history rich preview did not load');
+    assert.equal(await js(`document.querySelector('.history-dialog doc-title').doc.readonly`), true);
+    await js(`document.querySelector('[aria-label="Close history"]').click()`);
+    await until(()=>js(`!document.querySelector('dialog[open]')`),'History modal did not close');
     // Real window-close handshake must drain edits before the window disappears.
     await js(`document.querySelector('doc-title').doc.root.props.title.insert('Closing ', 0);`);
     window.close();
