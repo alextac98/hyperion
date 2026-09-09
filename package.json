@@ -22,7 +22,7 @@
     "build:desktop": "pnpm build:web && pnpm build:electron && electron-builder",
     "check:desktop": "tsc -p electron/tsconfig.json --noEmit",
     "preview": "vite preview",
-    "test": "pnpm build:web && pnpm test:app && pnpm test:desktop && node --test tests/static-output.test.mjs tests/save-coordinator.test.mjs tests/page-diff.test.mjs tests/release-version.test.mjs tests/release-signing.test.mjs",
+    "test": "pnpm build:web && pnpm test:app && pnpm test:desktop && node --test tests/static-output.test.mjs tests/save-coordinator.test.mjs tests/page-diff.test.mjs tests/release-version.test.mjs tests/release-signing.test.mjs tests/release-downloads.test.mjs",
     "test:desktop": "pnpm build:electron && node --test tests/electron-database.test.mjs tests/electron-migrations.test.mjs tests/electron-updates.test.mjs",
     "test:migrations": "pnpm build:electron && node --test tests/electron-migrations.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-electron --ignore-pattern release",

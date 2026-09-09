@@ -30,17 +30,20 @@ mac:
     - zip
   artifactName: "${productName}-${version}-mac-${arch}.${ext}"
 
+dmg:
+  artifactName: "${productName}-mac-${arch}.${ext}"
+
 win:
   icon: build/icon.ico
   target:
     - nsis
-  artifactName: "${productName}-${version}-windows-${arch}.${ext}"
+  artifactName: "${productName}-windows-${arch}.${ext}"
 
 linux:
   category: Office
   icon: build/icon.png
   target:
     - AppImage
-  artifactName: "${productName}-${version}-linux-${arch}.${ext}"
+  artifactName: "${productName}-linux-${arch}.${ext}"
 
 npmRebuild: false

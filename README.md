@@ -1,8 +1,18 @@
 # Hyperion
 
+![Hyperion desktop app showing the welcome page, note sidebar, and page details in dark mode](docs/assets/hyperion-screenshot.png)
+
 Hyperion is a local-first personal knowledge base for ideas, notes, meeting
 transcriptions, and more. It ships as an Electron desktop app with a React interface and a consistent
 bundled Chromium runtime. SQLite stores all knowledge data locally.
+
+## Download
+
+[![Latest release](https://img.shields.io/github/v/release/alextac98/hyperion?label=latest%20release&color=20211f)](https://github.com/alextac98/hyperion/releases/latest)
+
+[![Download for macOS Apple Silicon](docs/assets/download-macos.svg)](https://github.com/alextac98/hyperion/releases/latest/download/Hyperion-mac-arm64.dmg) &nbsp; [![Download for Linux x86_64](docs/assets/download-linux-x64.svg)](https://github.com/alextac98/hyperion/releases/latest/download/Hyperion-linux-x86_64.AppImage)
+
+[![Download for Windows x64](docs/assets/download-windows.svg)](https://github.com/alextac98/hyperion/releases/latest/download/Hyperion-windows-x64.exe) &nbsp; [![Download for Linux ARM64](docs/assets/download-linux-arm64.svg)](https://github.com/alextac98/hyperion/releases/latest/download/Hyperion-linux-arm64.AppImage)
 
 ## Current capabilities
 

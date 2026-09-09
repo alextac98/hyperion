@@ -61,3 +61,22 @@ finished. Preview mode is disabled in packaged builds.
 states in Electron. These tests do not verify real network downloads, signature
 validation, differential downloads, or binary replacement; those require a
 separate packaged-build test with an update feed.
+
+## README and release download buttons
+
+The README uses GitHub's `/releases/latest/download/<filename>` links. The four
+installers therefore have stable filenames across releases; the release tag and
+packaged app metadata identify their versions. The macOS update ZIP keeps its
+versioned filename. No duplicate installer aliases are uploaded.
+
+`scripts/release-downloads.mjs` generates matching buttons for each release with
+links pinned to that release's tag. Button SVGs live in `docs/assets`; release
+notes use the copies from the same tag. Publication fails if any button's
+installer is missing. Keep the README, builder naming, and installer list in sync
+when adding platforms.
+
+The stable README URLs start working with the first release built using this
+configuration. Existing releases retain their original versioned asset names and
+remain accessible through All releases. A Windows update crossing this filename
+change may fall back to a full installer download if the old blockmap URL cannot
+be resolved. Subsequent releases use the new naming consistently.
