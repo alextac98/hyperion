@@ -28,8 +28,7 @@ export function renderPageEditor(store: Store) {
 
   // BlockSuite progressively changes repeated Select All presses from text
   // selection into paragraph-block selection. Hyperion keeps Select All
-  // text-only so an extra Cmd/Ctrl+A can never turn the page into opaque
-  // block overlays.
+  // text-only so an extra Cmd/Ctrl+A keeps the same selection behavior.
   viewport.addEventListener(
     "keydown",
     (event) => {

@@ -15,7 +15,9 @@ In **Actions → Release → Run workflow**, select **main**. The workflow captu
 
 Download the published installers and smoke-test them. Current targets are **macOS arm64**, **Windows x64**, and **Linux x64/arm64**. Windows builds unsigned without signing-key checks. macOS signs and notarizes when all credentials below are present; otherwise it logs a warning and uses an ad-hoc signature (no Apple certificate) without notarization. For unsigned Mac builds, on first launch, users may need **System Settings → Privacy & Security → Open Anyway**. See [Apple's instructions](https://support.apple.com/en-us/102445).
 
-Optional macOS repository secrets: `MACOS_CERTIFICATE` (base64 `.p12` or certificate URL), `MACOS_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`. Missing or incomplete credentials warn but do not block publication. With all credentials present, signing and notarization must succeed; invalid credentials fail the build. Windows and Linux need no signing secrets.
+In **Settings → Environments**, create an environment named **release** and restrict deployment branches to **main**. Required reviewers are optional; leave them off to avoid an extra approval step.
+
+Add these optional macOS **environment secrets**: `MACOS_CERTIFICATE` (base64 `.p12` or certificate URL), `MACOS_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`. The build job uses the `release` environment. Missing or incomplete credentials warn but do not block publication. With all credentials present, signing and notarization must succeed; invalid credentials fail the build. Windows and Linux need no signing secrets.
 
 ## If something fails
 

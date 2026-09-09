@@ -58,6 +58,13 @@
   --hyperion-bs-tooltip-foreground: var(--bg);
 }
 
+/* BlockSuite draws selection above the block; keep its content unobscured. */
+.hyperion-blocksuite-viewport affine-block-selection {
+  background: transparent;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .vault-switcher-wrap {
   position: relative;
   min-width: 0;
