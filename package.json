@@ -5,7 +5,7 @@
   "description": "A desktop personal knowledge base with local SQLite storage.",
   "author": "Hyperion contributors",
   "private": true,
-  "packageManager": "pnpm@11.1.0",
+  "packageManager": "pnpm@12.4.0",
   "main": "dist-electron/main.js",
   "engines": {
     "node": ">=22.16.0"
