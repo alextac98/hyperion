@@ -22,18 +22,18 @@ export async function desktopRuntime() {
   const destination = join(cache, fingerprint);
   // Electron uses its executable basename to distinguish development from a
   // packaged app. Keep that basename; the bundle supplies the visible name.
-  const executable = join(destination, "Hyperion.app/Contents/MacOS/Electron");
+  const executable = join(destination, "[Dev] Hyperion.app/Contents/MacOS/Electron");
   if (await stat(executable).then(() => true, () => false)) return executable;
 
   await mkdir(cache, { recursive: true });
   const staging = await mkdtemp(join(cache, ".prepare-"));
   try {
-    const bundle = join(staging, "Hyperion.app");
+    const bundle = join(staging, "[Dev] Hyperion.app");
     await cp(source, bundle, { recursive: true, verbatimSymlinks: true });
     const plist = join(bundle, "Contents/Info.plist");
     for (const [key, value] of Object.entries({
-      CFBundleName: "Hyperion",
-      CFBundleDisplayName: "Hyperion",
+      CFBundleName: "[Dev] Hyperion",
+      CFBundleDisplayName: "[Dev] Hyperion",
       CFBundleIdentifier: "app.hyperion.desktop.development",
       CFBundleIconFile: "hyperion.icns",
       LSApplicationCategoryType: "public.app-category.productivity",

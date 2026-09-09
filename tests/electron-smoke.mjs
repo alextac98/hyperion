@@ -22,10 +22,12 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   const js = source => window.webContents.executeJavaScript(source, true);
   try {
     await import(pathToFileURL(join(testDirectory, '../dist-electron/main.js')).href);
-    assert.equal(app.getName(), 'Hyperion');
+    assert.equal(app.getName(), '[Dev] Hyperion');
+    assert.equal(app.getPath('userData'), join(directory, 'electron-profile'));
     assert.equal(app.isPackaged, false);
-    if (process.platform === 'darwin') assert.ok(process.execPath.endsWith('/Hyperion.app/Contents/MacOS/Electron'));
+    if (process.platform === 'darwin') assert.ok(process.execPath.endsWith('/[Dev] Hyperion.app/Contents/MacOS/Electron'));
     await until(() => { window = BrowserWindow.getAllWindows()[0]; return window && !window.webContents.isLoading(); }, 'Window did not load');
+    assert.equal(window.getTitle(), '[Dev] Hyperion');
     window.webContents.on('console-message', (_event, level, message) => { if (level >= 2) console.error('renderer:', message); });
     await until(() => js('Boolean(document.querySelector("doc-title")?.doc?.root)'), 'Editor did not load');
     await until(() => js('document.querySelector(".save-status")?.textContent.includes("Saved locally")'), 'Initial save did not finish');
