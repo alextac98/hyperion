@@ -1,3 +1,4 @@
+import type { UpdateState } from "../../electron/updates";
 import type { NoteRecord } from "../lib/local-database";
 export type RevisionCapture = PageRevision & { captureStatus: "created" | "named" | "reused" };
 export type PageSnapshot = { note: NoteRecord; document?: string | null };
@@ -30,6 +31,12 @@ export type StoredAsset = {
 };
 
 export interface HyperionDesktopApi {
+  updateState(): Promise<UpdateState>;
+  checkForUpdates(): Promise<UpdateState>;
+  downloadUpdate(): Promise<UpdateState>;
+  installUpdate(): Promise<UpdateState>;
+  downloadUpdateManually(): Promise<void>;
+  onUpdateState(callback: (state: UpdateState) => void): () => void;
   repositoryExecute<T>(request: RepositoryRequest): Promise<T>;
   storageInfo(): Promise<StorageInfo>;
   createBackup(automatic?: boolean): Promise<{ name: string; path: string }>;

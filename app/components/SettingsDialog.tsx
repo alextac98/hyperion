@@ -1,3 +1,4 @@
+import { UpdateControls } from "./UpdateControls";
 import { DataRecovery } from "./DataRecovery";
 import { dataOperation } from "../lib/data-operations";
 import {
@@ -27,6 +28,7 @@ import { Dialog } from "./Dialog";
 import { HyperionMark } from "./HyperionMark";
 
 export function SettingsDialog({
+  initialTab = "general",
   vault,
   vaultCount,
   busy,
@@ -42,6 +44,7 @@ export function SettingsDialog({
   onImport,
   onDelete,
 }: {
+  initialTab?: "general" | "updates";
   vault: VaultRecord;
   vaultCount: number;
   busy: boolean;
@@ -59,8 +62,8 @@ export function SettingsDialog({
 }) {
   const [brandError, setBrandError] = useState("");
   const [tab, setTab] = useState<
-    "general" | "editor" | "templates" | "appearance" | "data"
-  >("general");
+    "general" | "editor" | "templates" | "appearance" | "data" | "updates"
+  >(initialTab);
   const [name, setName] = useState(vault.name);
   const [description, setDescription] = useState(vault.description);
   const themes: {
@@ -95,7 +98,7 @@ export function SettingsDialog({
         <div className="settings-body">
           <nav>
             {(
-              ["general", "editor", "templates", "appearance", "data"] as const
+              ["general", "editor", "templates", "appearance", "data", ...(window.hyperionDesktop ? ["updates" as const] : [])] as const
             ).map((item) => (
               <button
                 key={item}
@@ -104,6 +107,8 @@ export function SettingsDialog({
               >
                 {item === "general" ? (
                   <GearSix size={17} />
+                ) : item === "updates" ? (
+                  <DownloadSimple size={17} />
                 ) : item === "editor" ? (
                   <BookOpenText size={17} />
                 ) : item === "templates" ? (
@@ -118,6 +123,7 @@ export function SettingsDialog({
             ))}
           </nav>
           <div className="settings-content">
+            {tab === "updates" && <UpdateControls />}
             {tab === "general" && (
               <>
                 <div className="settings-heading">

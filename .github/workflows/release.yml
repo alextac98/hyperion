@@ -108,7 +108,7 @@ jobs:
           find release -maxdepth 1 -type f \( \
             -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o \
             -name '*.AppImage' -o -name 'latest*.yml' -o -name '*.blockmap' \
-          \) -exec cp {} release-publish/ \;
+          \) ! -name '*.dmg.blockmap' -exec cp {} release-publish/ \;
           test -n "$(find release-publish -type f -print -quit)"
       - uses: actions/upload-artifact@v4
         with:
@@ -144,6 +144,10 @@ jobs:
         run: find . -maxdepth 1 -type f -print0 | sort -z | xargs -0 sha256sum > ../SHA256SUMS.txt
       - name: Include checksums
         run: mv SHA256SUMS.txt release-publish/
+      - name: Prepare download links
+        run: node scripts/release-downloads.mjs release-publish > release-downloads.md
+        env:
+          GH_REPO: ${{ github.repository }}
       - name: Upload assets and publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -151,5 +155,5 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$TAG_NAME" release-publish/* --target "$RELEASE_SHA" --title "$TAG_NAME" --generate-notes --draft
+          gh release create "$TAG_NAME" release-publish/* --target "$RELEASE_SHA" --title "$TAG_NAME" --notes-file release-downloads.md --generate-notes --draft
           gh release edit "$TAG_NAME" --draft=false --latest

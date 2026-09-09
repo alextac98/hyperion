@@ -4,8 +4,16 @@ import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import updater from "electron-updater";
+import { createUpdates } from "./updates.js";
+import { createUpdatePreview } from "./update-preview.js";
 import { DesktopDatabase, type RepositoryRequest } from "./database.js";
 
+const updatePreview = !app.isPackaged && Boolean(process.env.HYPERION_UPDATE_PREVIEW);
+if (updatePreview) {
+  const profile = process.env.HYPERION_UPDATE_PREVIEW_PROFILE;
+  if (!profile) throw new Error("Use pnpm dev:updates to launch the isolated preview.");
+  app.setPath("userData", profile);
+}
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 app.setName("Hyperion");
 const applicationIcon = app.isPackaged
@@ -51,45 +59,26 @@ function showAppMessageBox(options: Electron.MessageBoxOptions) {
     : dialog.showMessageBox(options);
 }
 
+const previewInstalled = process.argv.includes("--update-preview-installed");
+const previewVersion = app.getVersion().replace(/^(\d+\.\d+\.)(\d+).*$/, (_match, prefix, patch) => `${prefix}${Number(patch) + 1}`);
+const updateDriver = updatePreview ? createUpdatePreview(
+  process.env.HYPERION_UPDATE_PREVIEW!, previewVersion, previewInstalled,
+  () => {
+    app.relaunch({ args: [...process.argv.slice(1).filter(arg => arg !== "--update-preview-installed"), "--update-preview-installed"] });
+    app.quit();
+  },
+) : autoUpdater;
+const updates = createUpdates(updateDriver, updatePreview && previewInstalled ? previewVersion : app.getVersion(),
+  updatePreview ? null : !app.isPackaged ? "Updates are available in the installed desktop app."
+    : process.platform === "linux" && !process.env.APPIMAGE ? "Run the AppImage to use in-app updates." : null,
+  state => { if (state.status === "error") closeApproved = false; if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("hyperion:update-state", { ...state, preview: updatePreview }); });
+let installRequested = false;
 function registerAutoUpdater() {
-  if (!app.isPackaged || updateCheckStarted) return;
+  if (updateCheckStarted) return;
   updateCheckStarted = true;
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
-
-  autoUpdater.on("update-available", async (info) => {
-    const choice = await showAppMessageBox({
-      type: "info",
-      title: "Hyperion update available",
-      message: `Hyperion ${info.version} is available.`,
-      detail: "Download the update now? You can continue working while it downloads.",
-      buttons: ["Download", "Later"],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (choice.response === 0) void autoUpdater.downloadUpdate();
-  });
-
-  autoUpdater.on("update-downloaded", async (info) => {
-    const choice = await showAppMessageBox({
-      type: "info",
-      title: "Hyperion update ready",
-      message: `Hyperion ${info.version} is ready to install.`,
-      detail: "Restart Hyperion to finish installing the update.",
-      buttons: ["Restart and install", "Later"],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (choice.response === 0) autoUpdater.quitAndInstall();
-  });
-
-  autoUpdater.on("error", (error) => {
-    console.error("Automatic update failed", error);
-  });
-
-  void autoUpdater.checkForUpdates().catch((error: unknown) => {
-    console.error("Unable to check for updates", error);
-  });
+  const startup = setTimeout(() => { void updates.check(true); }, updatePreview ? 2_000 : 15_000);
+  const interval = setInterval(() => { void updates.check(true); }, 4 * 60 * 60 * 1000);
+  app.once("will-quit", () => { clearTimeout(startup); clearInterval(interval); });
 }
 
 function databaseInstance() {
@@ -127,6 +116,17 @@ function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: 
 }
 
 function registerDesktopHandlers() {
+  handle("hyperion:update-state", () => ({ ...updates.getState(), ...(updatePreview ? { preview: true } : {}) }));
+  handle("hyperion:update-check", () => updates.check());
+  handle("hyperion:update-download", () => updates.download());
+  handle("hyperion:update-manual", () => shell.openExternal("https://github.com/alextac98/hyperion/releases/latest"));
+  handle("hyperion:update-install", () => {
+    if (!rendererReady || closeToken || !updates.prepareInstall()) return updates.getState();
+    installRequested = true;
+    closeToken = randomUUID();
+    mainWindow?.webContents.send(channels.prepareClose, closeToken);
+    return updates.getState();
+  });
   handle(channels.repositoryExecute, (_event, request) => (
     databaseInstance().repositoryExecute(request as RepositoryRequest)
   ));
@@ -151,10 +151,12 @@ function registerDesktopHandlers() {
     closeToken = null;
     if (error) {
       quitting = false;
+      if (installRequested) { installRequested = false; updates.saveFailed(); }
       await showAppMessageBox({ type: "error", message: "Hyperion could not finish saving", detail: String(error) + "\nYour window will remain open. Retry saving before closing.", buttons: ["Keep working"] });
       return;
     }
     closeApproved = true;
+    if (installRequested) { installRequested = false; updates.install(); if (updates.getState().status === "error") closeApproved = false; return; }
     if (quitting) app.quit(); else mainWindow?.close();
   });
   handle(channels.chooseStorageLocation, async () => {
@@ -206,7 +208,7 @@ async function createWindow() {
     minHeight: 640,
     show: false,
     backgroundColor: "#f7f6f2",
-    title: "Hyperion",
+    title: updatePreview ? "Hyperion — Update preview (simulated)" : "Hyperion",
     icon: applicationIcon,
     webPreferences: {
       preload: join(currentDirectory, "preload.cjs"),
