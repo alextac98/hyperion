@@ -5,7 +5,7 @@ server, account or remote database is required.
 
 ## Requirements
 
-- Node.js 22.16 or newer and pnpm 11.1.0
+- Node.js 22.16 or newer (CI uses Node.js 24.21.0 LTS) and pnpm 12.4.0
 - Platform build tools are only needed when creating installers: Xcode
   command-line tools on macOS, Visual Studio build tools on Windows, or the
   standard Electron packaging dependencies on Linux
