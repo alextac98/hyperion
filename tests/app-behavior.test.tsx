@@ -1,3 +1,6 @@
+import { UpdateControls } from "../app/components/UpdateControls";
+import type { UpdateState } from "../electron/updates";
+import type { HyperionDesktopApi } from "../app/platform/desktop-api";
 import { NoteDetails } from "../app/components/NoteDetails";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -450,4 +453,91 @@ test("failed editor preloading can retry without reloading successful modules", 
   assert.equal((await loader.open(async () => "document")).store, "document");
   assert.equal(attempts, 2);
   assert.equal(viewLoads, 1);
+});
+
+
+test("update controls show progress, retry and explicit restart without installing on mount", async () => {
+  const previous = window.hyperionDesktop;
+  let listener: ((state: UpdateState) => void) | undefined;
+  let downloads = 0, installs = 0, manual = 0, unsubscribed = false;
+  const initial: UpdateState = { status: "available", currentVersion: "0.1.0", version: "0.4.0", percent: null, message: null, checkedAt: null, retry: "check" };
+  window.hyperionDesktop = {
+    updateState: async () => initial,
+    onUpdateState: (callback: (state: UpdateState) => void) => { listener = callback; return () => { unsubscribed = true; }; },
+    downloadUpdate: async () => { downloads++; },
+    installUpdate: async () => { installs++; },
+    downloadUpdateManually: async () => { manual++; },
+  } as unknown as HyperionDesktopApi;
+  const view = await mount(<UpdateControls />);
+  const click = async (text: string) => {
+    const button = [...view.host.querySelectorAll("button")].find(item => item.textContent === text);
+    assert.ok(button, text);
+    await act(async () => button.click());
+  };
+  try {
+    assert.equal(installs, 0);
+    await click("Download update");
+    assert.equal(downloads, 1);
+    await act(async () => listener?.({ ...initial, status: "downloading", percent: 45 }));
+    assert.equal(view.host.querySelector("progress")?.value, 45);
+    await act(async () => listener?.({ ...initial, status: "error", message: "Download failed", retry: "download" }));
+    assert.match(view.host.textContent ?? "", /Download failed/);
+    await click("Retry");
+    assert.equal(downloads, 2);
+    await click("Download manually");
+    assert.equal(manual, 1);
+    await act(async () => listener?.({ ...initial, status: "ready", percent: 100 }));
+    assert.equal(installs, 0);
+    await click("Restart to update");
+    assert.equal(installs, 1);
+  } finally {
+    await view.unmount();
+    window.hyperionDesktop = previous;
+  }
+  assert.equal(unsubscribed, true);
+});
+
+test("sidebar update icon is hidden until a version is available", async () => {
+  const previous = window.hyperionDesktop;
+  let listener: ((state: UpdateState) => void) | undefined;
+  const initial: UpdateState = { status: "idle", currentVersion: "0.1.0", version: null, percent: null, message: null, checkedAt: null, retry: "check" };
+  window.hyperionDesktop = {
+    updateState: async () => initial,
+    onUpdateState: (callback: (state: UpdateState) => void) => { listener = callback; return () => {}; },
+  } as unknown as HyperionDesktopApi;
+  let detailsOpened = 0;
+  const view = await mount(<UpdateControls compact onOpenDetails={() => { detailsOpened++; }} />);
+  try {
+    assert.equal(view.host.querySelector("button"), null);
+    await act(async () => listener?.({ ...initial, status: "checking" }));
+    assert.equal(view.host.querySelector("button"), null);
+    await act(async () => listener?.({ ...initial, status: "error", message: "Offline" }));
+    assert.equal(view.host.querySelector("button"), null);
+    await act(async () => listener?.({ ...initial, status: "available", version: "0.1.1" }));
+    assert.equal(view.host.querySelectorAll("button").length, 1);
+    assert.match(view.host.querySelector("button")?.getAttribute("aria-label") ?? "", /Download Hyperion 0.1.1/);
+    await act(async () => listener?.({ ...initial, status: "downloading", version: "0.1.1", percent: 45 }));
+    assert.match(view.host.querySelector("button")?.getAttribute("aria-label") ?? "", /45%/);
+    const failed: UpdateState = { ...initial, status: "error", version: "0.1.1", retry: "download", message: "Download failed" };
+    await act(async () => listener?.(failed));
+    assert.ok(view.host.querySelector(".update-error-badge"));
+    await act(async () => view.host.querySelector("button")?.focus());
+    assert.match(document.querySelector('[role="tooltip"]')?.textContent ?? "", /An error occurred while downloading/);
+    await act(async () => key(view.host.querySelector("button")!, "Escape"));
+    assert.equal(document.querySelector('[role="tooltip"]'), null);
+    await act(async () => view.host.querySelector("button")?.click());
+    assert.equal(detailsOpened, 1);
+    assert.equal(view.host.querySelector("button"), null);
+    await act(async () => listener?.(failed));
+    assert.equal(view.host.querySelector("button"), null);
+    await act(async () => listener?.({ ...initial, status: "downloading", version: "0.1.1", percent: 0 }));
+    assert.ok(view.host.querySelector("button"));
+    await act(async () => listener?.(failed));
+    assert.ok(view.host.querySelector(".update-error-badge"));
+    await act(async () => listener?.({ ...initial, status: "ready", version: "0.1.1" }));
+    assert.match(view.host.querySelector("button")?.getAttribute("aria-label") ?? "", /Restart to update/);
+  } finally {
+    await view.unmount();
+    window.hyperionDesktop = previous;
+  }
 });

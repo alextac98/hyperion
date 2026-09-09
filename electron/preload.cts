@@ -22,6 +22,16 @@ const channels = {
 } as const;
 
 contextBridge.exposeInMainWorld("hyperionDesktop", Object.freeze({
+  updateState: () => ipcRenderer.invoke("hyperion:update-state"),
+  checkForUpdates: () => ipcRenderer.invoke("hyperion:update-check"),
+  downloadUpdate: () => ipcRenderer.invoke("hyperion:update-download"),
+  installUpdate: () => ipcRenderer.invoke("hyperion:update-install"),
+  downloadUpdateManually: () => ipcRenderer.invoke("hyperion:update-manual"),
+  onUpdateState: (callback: (state: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);
+    ipcRenderer.on("hyperion:update-state", listener);
+    return () => ipcRenderer.removeListener("hyperion:update-state", listener);
+  },
   repositoryExecute: (request: unknown) => ipcRenderer.invoke(channels.repositoryExecute, request),
   storageInfo: () => ipcRenderer.invoke(channels.storageInfo),
   createBackup: (automatic = false) => ipcRenderer.invoke(channels.createBackup, automatic),

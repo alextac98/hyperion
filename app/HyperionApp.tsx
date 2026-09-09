@@ -1,3 +1,4 @@
+import { UpdateControls } from "./components/UpdateControls";
 import { saves } from "./lib/save-coordinator";
 import { dataBusy, dataOperation, flushAll } from "./lib/data-operations";
 import { PageHistory, PageHistoryPreview } from "./components/PageHistory";
@@ -197,6 +198,7 @@ export default function HyperionApp() {
   const [pageSearchCount, setPageSearchCount] = useState(0);
   const [vaultMenuOpen, setVaultMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"general" | "updates">("general");
   const [moreOpen, setMoreOpen] = useState(false);
   const [pageContextMenu, setPageContextMenu] =
     useState<PageContextMenuState | null>(null);
@@ -1266,10 +1268,13 @@ export default function HyperionApp() {
             <span>Trash</span>
             {trashedNotes.length > 0 && <em>{trashedNotes.length}</em>}
           </button>
-          <button onClick={() => setSettingsOpen(true)}>
-            <GearSix size={17} />
-            <span>Settings</span>
-          </button>
+          <div className="sidebar-settings-row">
+            <button onClick={() => { setSettingsTab("general"); setSettingsOpen(true); }}>
+              <GearSix size={17} />
+              <span>Settings</span>
+            </button>
+            <UpdateControls compact onOpenDetails={() => { setSettingsTab("updates"); setSettingsOpen(true); }} />
+          </div>
         </div>
         {sidebarOpen && (
           <button
@@ -1806,6 +1811,7 @@ export default function HyperionApp() {
       )}
       {settingsOpen && activeVault && (
         <SettingsDialog
+          initialTab={settingsTab}
           vault={activeVault}
           vaultCount={vaults.length}
           busy={operationBusy}

@@ -207,7 +207,7 @@
 
 .primary-nav button,
 .section-items button,
-.sidebar-footer > button {
+:is(.sidebar-footer > button, .sidebar-settings-row > button:first-child) {
   display: flex;
   width: 100%;
   height: 32px;
@@ -225,21 +225,21 @@
 .primary-nav button.active,
 .section-items button:hover,
 .section-items button.active,
-.sidebar-footer > button:hover,
-.sidebar-footer > button.active {
+:is(.sidebar-footer > button, .sidebar-settings-row > button:first-child):hover,
+:is(.sidebar-footer > button, .sidebar-settings-row > button:first-child).active {
   background: var(--hover);
   color: var(--text);
 }
 
 .primary-nav button.active,
 .section-items button.active,
-.sidebar-footer > button.active {
+:is(.sidebar-footer > button, .sidebar-settings-row > button:first-child).active {
   font-weight: 580;
 }
 
 .primary-nav button span,
 .section-items button > span:not(.page-icon-glyph),
-.sidebar-footer > button span {
+:is(.sidebar-footer > button, .sidebar-settings-row > button:first-child) span {
   min-width: 0;
   flex: 1;
   overflow: hidden;
