@@ -26,6 +26,8 @@ try {
   icnsHeader.writeUInt32BE(8 + chunks.reduce((sum, chunk) => sum + chunk.length, 0), 4);
   writeFileSync(join(root, "build/icon.icns"), Buffer.concat([icnsHeader, ...chunks]));
   resize(1024, join(root, "build/icon.png"));
+  execFileSync("sips", ["-z", "1024", "1024", join(root, "design/brand/hyperion-icon-development-master.png"), "--out", join(root, "build/icon-development.png")], { stdio: "ignore" });
+  execFileSync("sips", ["-z", "128", "128", join(root, "design/brand/hyperion-icon-development-master.png"), "--out", join(root, "public/brand/hyperion-icon-development-128.png")], { stdio: "ignore" });
   resize(128, join(root, "public/brand/hyperion-icon-128.png"));
   resize(64, join(root, "public/favicon.png"));
 

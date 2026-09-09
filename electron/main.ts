@@ -16,9 +16,16 @@ if (updatePreview) {
 }
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 app.setName("Hyperion");
+const applicationName = app.isPackaged ? "Hyperion" : "[Dev] Hyperion";
+if (!app.isPackaged) {
+  // Preserve the existing profile (including preview/test overrides) on rename.
+  const userData = app.getPath("userData");
+  app.setName(applicationName);
+  app.setPath("userData", userData);
+}
 const applicationIcon = app.isPackaged
   ? join(process.resourcesPath, "hyperion-icon.png")
-  : resolve(currentDirectory, "../build/icon.png");
+  : resolve(currentDirectory, "../build/icon-development.png");
 const developmentUrl = "http://127.0.0.1:3000";
 const useBuiltRenderer = app.isPackaged || process.env.HYPERION_TEST_RENDERER === "1";
 const packagedRendererDirectory = resolve(currentDirectory, "../dist");
@@ -201,6 +208,7 @@ function registerDesktopHandlers() {
 }
 
 async function createWindow() {
+  const windowTitle = updatePreview ? `${applicationName} — Update preview (simulated)` : applicationName;
   const window = new BrowserWindow({
     width: 1440,
     height: 940,
@@ -208,7 +216,7 @@ async function createWindow() {
     minHeight: 640,
     show: false,
     backgroundColor: "#f7f6f2",
-    title: updatePreview ? "Hyperion — Update preview (simulated)" : "Hyperion",
+    title: windowTitle,
     icon: applicationIcon,
     webPreferences: {
       preload: join(currentDirectory, "preload.cjs"),
@@ -219,6 +227,12 @@ async function createWindow() {
     },
   });
 
+  if (!app.isPackaged) {
+    window.on("page-title-updated", event => {
+      event.preventDefault();
+      window.setTitle(windowTitle);
+    });
+  }
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
     if (!isTrustedRendererUrl(url)) event.preventDefault();
@@ -249,7 +263,7 @@ app.on("second-instance", () => { if (mainWindow?.isMinimized()) mainWindow.rest
 app.whenReady().then(async () => {
   if (!ownsInstance) return;
   app.dock?.setIcon(applicationIcon);
-  app.setAboutPanelOptions({ applicationName: "Hyperion", iconPath: applicationIcon });
+  app.setAboutPanelOptions({ applicationName, iconPath: applicationIcon });
   const dataDirectoryOverride = process.env.HYPERION_DATA_DIRECTORY?.trim();
   database = new DesktopDatabase(dataDirectoryOverride
     ? { defaultDirectory: dataDirectoryOverride }
