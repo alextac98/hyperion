@@ -56,6 +56,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.name }}
+    environment: release
     timeout-minutes: 40
     needs: [prepare, quality]
     strategy:
@@ -106,7 +107,7 @@ jobs:
           mkdir release-publish
           find release -maxdepth 1 -type f \( \
             -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o \
-            -name '*.AppImage' -o -name '*.yml' -o -name '*.blockmap' \
+            -name '*.AppImage' -o -name 'latest*.yml' -o -name '*.blockmap' \
           \) -exec cp {} release-publish/ \;
           test -n "$(find release-publish -type f -print -quit)"
       - uses: actions/upload-artifact@v4
