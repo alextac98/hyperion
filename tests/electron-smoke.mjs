@@ -32,17 +32,6 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await until(() => js('Boolean(document.querySelector("doc-title")?.doc?.root)'), 'Editor did not load');
     await until(() => js('document.querySelector(".save-status")?.textContent.includes("Saved locally")'), 'Initial save did not finish');
     const identity = await js(`(() => { const store=document.querySelector('doc-title').doc; return { noteId:store.id, vaultId:'hyperion' }; })()`);
-    // Each expanded level draws a non-interactive guide beside its children.
-    assert.ok(await js(`(() => {
-      const groups = Array.from(document.querySelectorAll('.organizer-children'));
-      return groups.length >= 2 && groups.every(group => {
-        const guide = getComputedStyle(group, '::before');
-        const row = group.querySelector('.organizer-page-row');
-        return guide.content !== 'none' && guide.width === '1px' && guide.pointerEvents === 'none' &&
-          parseFloat(guide.left) < parseFloat(row.style.paddingLeft) && group.getBoundingClientRect().height > 0;
-      });
-    })()`));
-    await window.webContents.capturePage().then(image=>writeFileSync('/tmp/hyperion-tree-guides.png',image.toPNG()));
     // Edit through the real editor store and wait for the renderer's save acknowledgement.
     await js(`(() => { const store=document.querySelector('doc-title').doc; store.root.props.title.insert('Smoke ', 0); })()`);
     await until(() => js(`window.hyperionDesktop.repositoryExecute({operation:'listNotes',vaultId:'hyperion'}).then(notes=>notes.some(n=>n.title.startsWith('Smoke ')))`), 'Editor title was not persisted');
@@ -97,6 +86,17 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await until(() => js(`Array.from(document.querySelectorAll('.page-history nav button')).some(b=>b.textContent.includes('Smoke checkpoint'))`), 'Original page history did not return');
     await js(`Array.from(document.querySelectorAll('.page-history nav button')).find(b=>b.textContent.includes('Smoke checkpoint')).click()`);
     await until(() => js('Boolean(document.querySelector(".page-comparison"))'), 'Original comparison did not reopen');
+    // Each expanded level draws a non-interactive guide beside its children.
+    assert.ok(await js(`(() => {
+      const groups = Array.from(document.querySelectorAll('.organizer-children'));
+      return groups.length >= 2 && groups.every(group => {
+        const guide = getComputedStyle(group, '::before');
+        const row = group.querySelector('.organizer-page-row');
+        return guide.content !== 'none' && guide.width === '1px' && guide.pointerEvents === 'none' &&
+          parseFloat(guide.left) < parseFloat(row.style.paddingLeft) && group.getBoundingClientRect().height > 0;
+      });
+    })()`));
+    await window.webContents.capturePage().then(image=>writeFileSync('/tmp/hyperion-tree-guides.png',image.toPNG()));
     // History stays usable at the desktop minimum window width.
     window.setSize(940, 760);
     await wait(250);
