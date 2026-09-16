@@ -36,12 +36,23 @@ test("knowledge persistence has no browser database fallback", async () => {
     readFile(new URL("app/platform/runtime.ts", root), "utf8"),
     readFile(new URL("app/lib/local-database.ts", root), "utf8"),
   ]);
-  assert.match(runtime, /ElectronKnowledgeRepository/);
+  assert.match(runtime, /SqliteKnowledgeRepository/);
   assert.doesNotMatch(
     runtime,
     /IndexedDbKnowledgeRepository|IndexedDBDocSource/,
   );
   assert.doesNotMatch(database, /indexedDB\.open/);
+});
+
+test("production assets exclude the browser development transport", async () => {
+  const html = await readFile(new URL("dist/index.html", root), "utf8");
+  assert.doesNotMatch(html, /hyperionBrowserDevelopment/);
+  const files = await readdir(new URL("dist/assets/", root));
+  assert.ok(!files.some(name => /^browser-development-/.test(name)));
+  for (const name of files.filter(name => name.endsWith(".js"))) {
+    const source = await readFile(new URL(`dist/assets/${name}`, root), "utf8");
+    assert.doesNotMatch(source, /\/__hyperion\//);
+  }
 });
 
 test("keeps brand text readable in both themes and resolves literal editor colors", async () => {

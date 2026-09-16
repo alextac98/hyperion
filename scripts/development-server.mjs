@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 export async function startDevelopmentServer(config = {}) {
   const server = await createServer({
     ...config,
-    server: { host: "127.0.0.1", port: 3000, strictPort: false, open: false },
+    server: { ...config.server, host: "127.0.0.1", port: 3000, strictPort: false, open: false },
   });
   try {
     // Vite binds the first available port; Electron must use the actual result.

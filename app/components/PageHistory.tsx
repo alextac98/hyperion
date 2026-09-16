@@ -1,6 +1,7 @@
+import { uiStorage } from "../lib/ui-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageComparison, PageRevision, PageSnapshot, RevisionCapture } from "../platform/desktop-api";
-import { requireDesktop } from "../platform/runtime";
+import { requireDataService } from "../platform/runtime";
 import { previewRevision, stopEditorWorkspaces } from "../editor/editor-client";
 import { dataOperation } from "../lib/data-operations";
 import { PageDiffViewer } from "./PageDiffViewer";
@@ -20,7 +21,7 @@ export function PageHistory({ vaultId, noteId, selectedId, onSelect }: { vaultId
     const reload = async () => {
       const request = ++generation.current;
       try {
-        const result = await requireDesktop().repositoryExecute<PageRevision[]>({ operation: "listRevisions", vaultId, noteId });
+        const result = await requireDataService().repositoryExecute<PageRevision[]>({ operation: "listRevisions", vaultId, noteId });
         if (mounted.current && request === generation.current) { setVersions(result); setLoading(false); }
       } catch (e) { if (mounted.current) { setError(String(e)); setLoading(false); } }
     };
@@ -35,15 +36,15 @@ export function PageHistory({ vaultId, noteId, selectedId, onSelect }: { vaultId
     finally { if (mounted.current) setWorking(false); }
   };
   const select = async (revisionId: string) => {
-    const comparison = await dataOperation(() => requireDesktop().repositoryExecute<PageComparison>({ operation: "compareRevision", vaultId, noteId, revisionId }));
+    const comparison = await dataOperation(() => requireDataService().repositoryExecute<PageComparison>({ operation: "compareRevision", vaultId, noteId, revisionId }));
     if (mounted.current) onSelect(comparison);
   };
   return <div className="page-history">
     <p className="history-retention">Automatic versions stay for 30 days. Named versions are kept indefinitely.</p>
     <form onSubmit={event => { event.preventDefault(); if (working || !label.trim()) return; void run(async () => {
-      const revision = await dataOperation(() => requireDesktop().repositoryExecute<RevisionCapture>({ operation: "captureRevision", vaultId, noteId, label: label.trim() }));
+      const revision = await dataOperation(() => requireDataService().repositoryExecute<RevisionCapture>({ operation: "captureRevision", vaultId, noteId, label: label.trim() }));
       generation.current++;
-      const result = await requireDesktop().repositoryExecute<PageRevision[]>({ operation: "listRevisions", vaultId, noteId });
+      const result = await requireDataService().repositoryExecute<PageRevision[]>({ operation: "listRevisions", vaultId, noteId });
       if (!mounted.current) return;
       setVersions(result); setLabel("");
       setNotice(revision.captureStatus === "created" ? "Version saved." : revision.captureStatus === "named" ? "Named the existing version. No duplicate was created." : "No changes since the latest version. Using that version instead.");
@@ -92,9 +93,9 @@ export function PageHistoryPreview({ comparison, onClose }: { comparison: PageCo
     setWorking(true); setError("");
     try {
       await dataOperation(async () => {
-        const note = await requireDesktop().repositoryExecute<{ id: string }>({ operation: "restoreRevision", vaultId: revision.vaultId, revisionId: revision.id, asCopy });
+        const note = await requireDataService().repositoryExecute<{ id: string }>({ operation: "restoreRevision", vaultId: revision.vaultId, revisionId: revision.id, asCopy });
         await stopEditorWorkspaces();
-        localStorage.setItem(`hyperion:last-note:${revision.vaultId}`, note.id);
+        uiStorage.setItem(`hyperion:last-note:${revision.vaultId}`, note.id);
         window.location.reload();
       });
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setWorking(false); }

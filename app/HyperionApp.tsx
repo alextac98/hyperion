@@ -1,4 +1,5 @@
 import { useMouseNavigation } from "./hooks/useMouseNavigation";
+import { uiStorage } from "./lib/ui-storage";
 import { UpdateControls } from "./components/UpdateControls";
 import { saves } from "./lib/save-coordinator";
 import { dataBusy, dataOperation, flushAll } from "./lib/data-operations";
@@ -111,7 +112,7 @@ import {
 import {
   knowledgeRepository,
   platformRuntime,
-  requireDesktop,
+  requireDataService,
   type StorageInfo,
 } from "./platform/runtime";
 
@@ -131,7 +132,7 @@ function clampSidebarWidth(width: number) {
 
 function getStoredSidebarWidth() {
   try {
-    const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+    const storedWidth = Number(uiStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
     return Number.isFinite(storedWidth) && storedWidth > 0
       ? clampSidebarWidth(storedWidth)
       : DEFAULT_SIDEBAR_WIDTH;
@@ -228,11 +229,13 @@ export default function HyperionApp() {
 
   const lastAutomaticBackup = useRef(0);
 
+  useEffect(() => platformRuntime.onConnectionError(setDataError), []);
+
   useEffect(
     () =>
-      requireDesktop().onPrepareClose(async () => {
+      platformRuntime.onPrepareClose(async () => {
         await dataOperation(async () => {
-          await requireDesktop().repositoryExecute({
+          await requireDataService().repositoryExecute({
             operation: "captureAutomaticRevisions",
           });
         });
@@ -247,11 +250,11 @@ export default function HyperionApp() {
       if (busy || dataBusy.getSnapshot()) return;
       busy = true;
       void dataOperation(async () => {
-        await requireDesktop().repositoryExecute({
+        await requireDataService().repositoryExecute({
           operation: "captureAutomaticRevisions",
         });
         if (Date.now() - lastAutomaticBackup.current >= 86400000) {
-          await requireDesktop().createBackup(true);
+          await requireDataService().createBackup(true);
           lastAutomaticBackup.current = Date.now();
         }
       })
@@ -361,7 +364,7 @@ export default function HyperionApp() {
       }
       setDetailsOpen(storedPreferences.showDetails);
       if (nextVaults) setVaults(nextVaults);
-      const remembered = localStorage.getItem(
+      const remembered = uiStorage.getItem(
         `hyperion:last-note:${nextVaultId}`,
       );
       const target =
@@ -376,7 +379,7 @@ export default function HyperionApp() {
       setActiveTemplateId("");
       setActiveTag(null);
       setView(target ? "note" : "home");
-      localStorage.setItem("hyperion:current-vault", nextVaultId);
+      uiStorage.setItem("hyperion:current-vault", nextVaultId);
       setVaultMenuOpen(false);
       setEditorStore(null);
       setLoading(false);
@@ -388,7 +391,7 @@ export default function HyperionApp() {
     let cancelled = false;
     void platformRuntime.getStorageInfo().then((info) => {
       if (!cancelled) setStorageInfo(info);
-    });
+    }).catch((error) => { if (!cancelled) setDataError(String(error)); });
     preloadEditor();
     void knowledgeRepository
       .initialize()
@@ -396,7 +399,7 @@ export default function HyperionApp() {
         const storedVaults = await knowledgeRepository.listVaults();
         if (cancelled) return;
         setVaults(storedVaults);
-        const remembered = localStorage.getItem("hyperion:current-vault");
+        const remembered = uiStorage.getItem("hyperion:current-vault");
         const target = storedVaults.some((vault) => vault.id === remembered)
           ? remembered!
           : (storedVaults[0]?.id ?? DEFAULT_VAULT_ID);
@@ -495,7 +498,7 @@ export default function HyperionApp() {
       setPageContextMenu(null);
       setPageSearchOpen(false);
       setPageSearchQuery("");
-      localStorage.setItem(`hyperion:last-note:${vaultId}`, id);
+      uiStorage.setItem(`hyperion:last-note:${vaultId}`, id);
       if (window.innerWidth <= 720) setSidebarOpen(false);
     },
     [vaultId],
@@ -719,7 +722,7 @@ export default function HyperionApp() {
     setSidebarWidth(nextWidth);
     if (persist) {
       try {
-        localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(nextWidth));
+        uiStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(nextWidth));
       } catch {
         // The resize should still work when browser storage is unavailable.
       }
@@ -1045,7 +1048,7 @@ export default function HyperionApp() {
     if (!activeVault) return;
     try {
       const bundle = await dataOperation(() =>
-        requireDesktop().repositoryExecute({
+        requireDataService().repositoryExecute({
           operation: "exportVault",
           vaultId,
         }),
@@ -1063,7 +1066,7 @@ export default function HyperionApp() {
     try {
       const bundle: unknown = JSON.parse(await file.text());
       const result = await dataOperation(() =>
-        requireDesktop().repositoryExecute<{
+        requireDataService().repositoryExecute<{
           vault: VaultRecord;
           warnings: string[];
         }>({ operation: "importVault", bundle }),
@@ -1439,7 +1442,7 @@ export default function HyperionApp() {
                 <span className="saving-spinner" />
               ) : null}
               {saveStatus === "saved"
-                ? "Saved locally"
+                ? (platformRuntime.kind === "browser-development" ? "Saved to development server" : "Saved locally")
                 : saveStatus === "error"
                   ? "Save failed"
                   : "Saving"}

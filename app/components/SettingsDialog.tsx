@@ -1,3 +1,4 @@
+import { platformRuntime } from "../platform/runtime";
 import { UpdateControls } from "./UpdateControls";
 import { DataRecovery } from "./DataRecovery";
 import { dataOperation } from "../lib/data-operations";
@@ -328,7 +329,7 @@ export function SettingsDialog({
               <>
                 <div className="settings-heading">
                   <h2>Data</h2>
-                  <p>Everything remains local unless you export it yourself.</p>
+                  <p>{platformRuntime.kind === "browser-development" ? "Development data is stored on the machine running the server." : "Everything remains local unless you export it yourself."}</p>
                 </div>
                 <DataRecovery onHistory={onHistory} />
                 {storageInfo && (
@@ -343,9 +344,9 @@ export function SettingsDialog({
                         {storageInfo.isDefault ? " · Default" : ""}
                       </small>
                     </span>
-                    <button onClick={() => void onStorageLocation()}>
+                    {platformRuntime.capabilities.configurableStorage && <button onClick={() => void onStorageLocation()}>
                       Choose…
-                    </button>
+                    </button>}
                   </div>
                 )}
                 <div className="data-setting">
@@ -378,7 +379,7 @@ export function SettingsDialog({
                   <span>
                     <strong>No account or cloud sync</strong>
                     <small>
-                      {storageInfo
+                      {platformRuntime.kind === "browser-development" ? "Records, editor documents, and assets are saved to SQLite on the development server." : storageInfo
                         ? "Hyperion stores records, editor documents, and assets in a local SQLite file. Native local-AI services remain on this device."
                         : "Open Hyperion on desktop to access your data."}
                     </small>
@@ -402,8 +403,7 @@ export function SettingsDialog({
         </div>
         <footer>
           <span>
-            Changes save automatically to this{" "}
-            {storageInfo ? "device" : "browser"}.
+            {platformRuntime.kind === "browser-development" ? "Changes save automatically to the development server." : `Changes save automatically to this ${storageInfo ? "device" : "browser"}.`}
           </span>
           <button className="primary-button" onClick={onClose}>
             Done

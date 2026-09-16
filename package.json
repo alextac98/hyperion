@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "pnpm dev:desktop",
     "dev:updates": "pnpm build:web && pnpm build:electron && node scripts/run-update-preview.mjs",
-    "dev:web": "vite",
+    "dev:web": "pnpm build:electron && node scripts/run-browser.mjs",
     "dev:desktop": "pnpm build:electron && node scripts/run-electron.mjs",
     "dev:electron": "pnpm dev:desktop",
     "build": "pnpm build:web",
@@ -22,7 +22,8 @@
     "build:desktop": "pnpm build:web && pnpm build:electron && electron-builder",
     "check:desktop": "tsc -p electron/tsconfig.json --noEmit",
     "preview": "vite preview",
-    "test": "pnpm build:web && pnpm test:app && pnpm test:desktop && node --test tests/static-output.test.mjs tests/save-coordinator.test.mjs tests/page-diff.test.mjs tests/release-version.test.mjs tests/release-signing.test.mjs tests/release-downloads.test.mjs",
+    "test": "pnpm build:web && pnpm test:app && pnpm test:desktop && node --test tests/browser-development.test.mjs tests/static-output.test.mjs tests/save-coordinator.test.mjs tests/page-diff.test.mjs tests/release-version.test.mjs tests/release-signing.test.mjs tests/release-downloads.test.mjs",
+    "test:browser": "pnpm build:electron && node --test tests/browser-development.test.mjs",
     "test:desktop": "pnpm build:electron && node --test tests/development.test.mjs tests/electron-database.test.mjs tests/electron-migrations.test.mjs tests/electron-updates.test.mjs",
     "test:migrations": "pnpm build:electron && node --test tests/electron-migrations.test.mjs",
     "test:development": "pnpm build:electron && node --test tests/development-integration.test.mjs",

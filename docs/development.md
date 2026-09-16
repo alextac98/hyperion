@@ -1,7 +1,8 @@
 # Development
 
-Hyperion is an Electron desktop application using local SQLite. No application
-server, account or remote database is required.
+Hyperion is an Electron desktop application using local SQLite. The installed
+application requires no server, account or remote database. An opt-in browser
+development server is available for UI work.
 
 ## Requirements
 
@@ -58,8 +59,61 @@ browser prototype data.
 
 Changes under `app/` update through Vite. Restart development after changing
 `electron/` so the main process and preload are rebuilt. `pnpm dev:web` starts
-only the renderer server; visiting it in a browser shows a desktop-only message.
-It is not a supported standalone web product.
+the full browser development environment described below. It is not a supported
+standalone web product.
+
+## Browser development
+
+```sh
+pnpm dev:web
+```
+
+Open the loopback URL printed by the launcher. This runs the same React and
+BlockSuite UI with the real SQLite implementation behind a development HTTP API.
+Editing, attachments, search, page history, portable vault import/export and
+server-side backups use the shared data services. Native folder selection,
+opening folders, database-backup restore dialogs, and app updates require Electron.
+This mode is excluded from production builds.
+Restart the command after changing server scripts or code under `electron/`.
+HTTP requests are limited to 32 MiB including JSON/base64 encoding; use desktop
+for larger imports or attachments.
+
+The current branch (or `HYPERION_DEV_BRANCH`) determines the browser data directory:
+`~/.config/hyperion-browser-development/branches/<key>/`. Browser development data
+is separate from desktop data. Set `HYPERION_BROWSER_DATA_DIRECTORY` to an absolute
+directory for disposable fixtures. The server uses that exact directory and does
+not follow desktop storage-location settings. Browser UI preferences are also
+namespaced by branch, even when another branch later reuses the same port.
+Use a dedicated browser directory; do not point it at a running desktop instance's
+database.
+
+Only one editor tab may use an instance at a time. A second tab shows a retry
+screen; closing the first releases its session. A disconnected session can be
+replaced after two minutes, and the old session is then rejected. For simultaneous
+agent and human editing, use separate branch identities and data directories.
+
+Wait for **Saved to development server** before reloading or closing. Pending or
+failed saves trigger the browser's leave-page warning where supported. Network
+failures keep failed writes available for the existing Retry action while the tab
+stays open. A browser cannot guarantee completion of asynchronous saves during
+close, and there is no offline store. After restarting the server, reload the page
+to establish a new session; finish saving before intentionally stopping the server.
+
+The data directory has a `.browser-development.lock` file to prevent two browser
+servers from opening it. Normal shutdown removes it. After a forced kill or crash,
+verify that the recorded PID is no longer running before removing the stale lock.
+
+For a Linux server, run the command in a persistent terminal session on that
+server. Forward its printed port from your laptop, for example:
+
+```sh
+ssh -N -L 4300:127.0.0.1:3001 your-server
+```
+
+Then open `http://127.0.0.1:4300`. Use the actual server port in place of `3001`.
+The server binds only to loopback; the API requires same-origin requests and a
+per-start token. A graphical desktop is not required for the browser server or
+its API tests. Server provisioning and agent process supervision are separate.
 
 ## Checks
 
@@ -75,6 +129,9 @@ It is not a supported standalone web product.
 - `pnpm test:migrations`: runs the frozen-database upgrade, preservation and rollback suite.
 - `pnpm test:desktop`: validates branch identity and renderer URL handling, plus
   SQLite persistence, migration, backup and history behavior.
+- `pnpm test:browser`: tests the development HTTP API with temporary databases,
+  including persistence across restart, editor leases, origin/token validation,
+  operation validation and data-directory locking. Also included in `pnpm test`.
 - `pnpm test:development`: launches three branch instances and verifies separate
   renderer URLs, profiles and data, same-branch single-instance behavior, and
   continued operation after one instance closes, plus launcher shutdown cleanup.

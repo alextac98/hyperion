@@ -2,7 +2,7 @@
 
 Hyperion is a desktop product. React and BlockSuite run in Electron's sandboxed
 renderer; SQLite is the only supported persistence backend and is owned by the
-main process. A standalone browser shows a desktop launch screen. Browser
+main process. A standalone production browser shows a desktop launch screen. Browser
 prototype data is neither migrated nor deleted. There is no IndexedDB adapter.
 
 ## Boundaries and authority
@@ -14,6 +14,17 @@ prototype data is neither migrated nor deleted. There is no IndexedDB adapter.
 - `electron/data-format.ts`: runtime validation, document transformations and hashing.
 - `electron/database.ts`: transactions, migrations, records, documents, assets and revisions.
 - `electron/main.ts`: trusted IPC, dialogs, storage locations and save-aware shutdown.
+
+For UI development, `pnpm dev:web` provides an opt-in Node server using the
+same `DesktopDatabase`. Shared SQLite repository and editor adapters consume
+`HyperionDataApi`; Electron supplies IPC and browser development supplies HTTP.
+Native capabilities remain on `HyperionDesktopApi`. The HTTP transport, token
+injection and session handling are not included in production renderer builds.
+Browser instances have separate branch data directories, one server per directory,
+and one active editor lease. Every data request checks that lease; replacing an
+expired lease prevents the previous editor from writing. This is development
+isolation, not collaborative editing or synchronization. Browser close can warn
+about pending saves but cannot provide Electron's save-aware close guarantee.
 
 Yjs is authoritative for rich page content and the editor title. Note `body` and
 `title` are projections used for search and navigation; initial prototype pages
@@ -134,8 +145,9 @@ vault removes its revision records too. Database backups may still contain it.
 
 ## Future collaboration
 
-The storage boundary remains replaceable, but no sync outbox, server protocol,
-remote backend or browser database is introduced. A future sync design must define
+The storage boundary remains replaceable, but no sync outbox, production server
+protocol, remote product backend or browser database is introduced. The development
+HTTP adapter does not implement synchronization. A future sync design must define
 metadata conflicts, deletion tombstones, permissions, attribution and historical
 restore behavior with concurrent editors. It must not equate a local checkpoint
 with a globally synchronized revision or trust a device ID as authorship.
