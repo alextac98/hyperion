@@ -32,6 +32,26 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await until(() => js('Boolean(document.querySelector("doc-title")?.doc?.root)'), 'Editor did not load');
     await until(() => js('document.querySelector(".save-status")?.textContent.includes("Saved locally")'), 'Initial save did not finish');
     const identity = await js(`(() => { const store=document.querySelector('doc-title').doc; return { noteId:store.id, vaultId:'hyperion' }; })()`);
+    // Home cards keep icons, dates, titles and tags visually separated.
+    await js(`Array.from(document.querySelectorAll('.sidebar button')).find(b=>b.textContent==='Home').click()`);
+    await until(() => js('Boolean(document.querySelector(".note-card"))'), 'Home cards did not load');
+    for (const width of [1440, 940]) {
+      window.setSize(width, 940);
+      await wait(150);
+      assert.ok(await js(`Array.from(document.querySelectorAll('.note-card')).every(card => {
+        const top = card.querySelector('.note-card-top');
+        const icon = top.firstElementChild.getBoundingClientRect();
+        const date = top.lastElementChild.getBoundingClientRect();
+        const title = card.querySelector('strong').getBoundingClientRect();
+        const tags = Array.from(card.querySelectorAll('.note-card-tags i'), tag => tag.getBoundingClientRect());
+        return date.left - icon.right >= 8 && title.top - top.getBoundingClientRect().bottom >= 8 &&
+          tags.every((tag, index) => !index || tag.top >= tags[index-1].bottom || tag.left - tags[index-1].right >= 4);
+      })`), `Home card spacing at ${width}px`);
+    }
+    await window.webContents.capturePage().then(image=>writeFileSync('/tmp/hyperion-home-spacing.png',image.toPNG()));
+    window.setSize(1440, 940);
+    await js(`document.querySelector('[data-page-id="'+${JSON.stringify(identity.noteId)}+'"] .organizer-page-link').click()`);
+    await until(() => js('Boolean(document.querySelector("doc-title")?.doc?.root)'), 'Editor did not return');
     // Edit through the real editor store and wait for the renderer's save acknowledgement.
     await js(`(() => { const store=document.querySelector('doc-title').doc; store.root.props.title.insert('Smoke ', 0); })()`);
     await until(() => js(`window.hyperionDesktop.repositoryExecute({operation:'listNotes',vaultId:'hyperion'}).then(notes=>notes.some(n=>n.title.startsWith('Smoke ')))`), 'Editor title was not persisted');

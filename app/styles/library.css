@@ -150,6 +150,40 @@
   transform: translateY(-2px);
 }
 
+.note-card-top {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.note-card-top > :first-child {
+  flex-shrink: 0;
+}
+
+.note-card-top small {
+  color: var(--text-faint);
+  font-size: var(--font-size-caption);
+  text-align: right;
+}
+
+.note-card-tags {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--text-soft);
+  font-size: var(--font-size-caption);
+}
+
+.note-card-tags i {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-style: normal;
+}
+
 .card-glyph,
 .tag-symbol {
   display: grid;
