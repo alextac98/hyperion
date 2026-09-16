@@ -83,6 +83,13 @@ and safe reopening.
 Do not update historical migration definitions once released. Preserve source
 backups and original historical payloads when introducing document converters.
 
+Version 2 deletes the explicitly retired embeds, frames, mind maps and Kanban views
+from live pages and templates, refreshing affected text projections. Version-1
+upgrades create `backups/migration-1-…sqlite3`; prototype upgrades retain the original
+version-0 backup. Local historical payloads remain intact, while previews and
+restores apply the retirement policy. See [Adding a block](developer/blocks.md)
+for the extension contract and the exact deletion behavior.
+
 ## Save and recovery lifecycle
 
 Editor changes synchronously enqueue metadata projections, including the final edit

@@ -126,6 +126,7 @@ its API tests. Server provisioning and agent process supervision are separate.
   publication (including same-turn history/close barriers), and React interactions in jsdom. Native dialog focus containment
   still requires a browser check; the DOM tests verify the modal API contract.
 - `pnpm check:desktop`: checks the native boundary and data implementation types.
+- `pnpm test:blocks`: checks custom block contracts, migrations, references and retirement.
 - `pnpm test:migrations`: runs the frozen-database upgrade, preservation and rollback suite.
 - `pnpm test:desktop`: validates branch identity and renderer URL handling, plus
   SQLite persistence, migration, backup and history behavior.
@@ -161,6 +162,9 @@ separately and preloads them during startup. UI components should use this share
 loader instead of importing either implementation directly. The emoji catalog also loads only when the icon picker opens.
 
 Use `pnpm format` to format application code, tests, scripts, and documentation.
+
+See [Adding a block](developer/blocks.md) for the bundled extension contract and rating example.
+Changes to shared `blocks/` definitions also require rebuilding Electron.
 
 ## Desktop name and icon
 

@@ -184,6 +184,9 @@ importers:
       emojibase-data:
         specifier: ^17.0.0
         version: 17.0.0(emojibase@17.0.0)
+      lit:
+        specifier: ^3.3.3
+        version: 3.3.3
       react:
         specifier: 19.2.6
         version: 19.2.6
