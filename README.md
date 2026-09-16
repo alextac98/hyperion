@@ -1,4 +1,4 @@
-# Hyperion
+# <img src="public/brand/hyperion-icon-128.png" alt="" width="40" height="40" align="absmiddle"> Hyperion
 
 ![Hyperion desktop app showing the welcome page, note sidebar, and page details in dark mode](docs/assets/hyperion-screenshot.png)
 

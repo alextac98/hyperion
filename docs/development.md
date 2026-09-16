@@ -18,8 +18,13 @@ pnpm dev
 ```
 
 `pnpm dev` and `pnpm dev:desktop` build Electron, start the Vite renderer server,
-and open the desktop app. The default database is
-`~/.config/hyperion/hyperion.sqlite3`. Settings → Data can choose another folder.
+and open the desktop app. Development uses its own Electron profile
+(`Hyperion Development` under the platform's application-data folder) and database
+at `~/.config/hyperion-development/hyperion.sqlite3`, so it can run alongside the
+installed app. The installed app continues to use `~/.config/hyperion/hyperion.sqlite3`.
+Development starts with an empty database; existing installed-app data is not
+copied or moved. Settings → Data can choose another folder independently in each app.
+Keep their data folders separate when running both apps.
 Set `HYPERION_DATA_DIRECTORY` to an isolated absolute directory for development
 with disposable data. The application never auto-imports browser prototype data.
 
