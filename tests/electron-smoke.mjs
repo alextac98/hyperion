@@ -60,6 +60,16 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await until(() => activePage(identity.noteId), 'Native Back did not return to original page');
     window.emit('app-command', {}, 'browser-forward');
     await until(() => activePage(otherId), 'Native Forward did not return to second page');
+    // Logi Options+ on macOS may translate thumb buttons into native swipes.
+    window.emit('swipe', {}, 'left');
+    await until(() => activePage(identity.noteId), 'macOS swipe Back did not return to first page');
+    window.emit('swipe', {}, 'right');
+    await until(() => activePage(otherId), 'macOS swipe Forward did not return to second page');
+    window.emit('swipe', {}, 'up');
+    window.emit('swipe', {}, 'down');
+    await wait(150);
+    assert.ok(await activePage(otherId), 'Vertical swipes must not navigate');
+
     await until(() => js(`document.querySelector('doc-title')?.doc?.id===${JSON.stringify(otherId)}`), 'Second editor did not load');
     await js(`(() => { const title=document.querySelector('doc-title').doc.root.props.title; title.insert(' Navigation saved', title.length); })()`);
     await thumb(3);

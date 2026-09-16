@@ -245,6 +245,13 @@ async function createWindow() {
       window.webContents.send("hyperion:navigate", command === "browser-backward" ? "back" : "forward");
     }
   });
+  // macOS mouse drivers (including Logi Options+) can emit native swipes
+  // instead of DOM thumb-button events or Windows/Linux browser commands.
+  window.on("swipe", (_event, direction) => {
+    if (direction === "left" || direction === "right") {
+      window.webContents.send("hyperion:navigate", direction === "left" ? "back" : "forward");
+    }
+  });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
     if (!isTrustedRendererUrl(url)) event.preventDefault();
