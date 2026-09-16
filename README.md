@@ -40,6 +40,7 @@ bundled Chromium runtime. SQLite stores all knowledge data locally.
 - Vault-scoped page templates with a searchable picker, direct template editing,
   and independently configurable defaults for new pages and journal entries
 - Working vault, editor, appearance, and data settings
+- Mouse Back/Forward buttons revisit pages and views within the current vault.
 - Keyboard shortcuts for global search (`Command/Ctrl + Shift + F`), current-page
   search (`Command/Ctrl + F`), and new notes
 - Responsive light and dark interfaces

@@ -6,7 +6,7 @@ import { NoteDetails } from "../app/components/NoteDetails";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
-import { act, StrictMode } from "react";
+import { act, StrictMode, useState } from "react";
 import { createBlankNote } from "../app/lib/local-database";
 import { movePage, patchPage } from "../app/application/page-operations";
 import { buildNoteSearchIndex, searchNotes } from "../app/lib/note-search";
@@ -21,6 +21,8 @@ import { findTextMatches } from "../app/lib/page-search";
 import { Dialog } from "../app/components/Dialog";
 import { SearchDialog } from "../app/components/SearchDialog";
 import { useRecords } from "../app/hooks/useRecords";
+import { NavigationHistory, type NavigationLocation, type NavigationDirection } from "../app/application/navigation-history";
+import { useMouseNavigation } from "../app/hooks/useMouseNavigation";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost",
@@ -84,6 +86,164 @@ function key(element: Element, value: string) {
     }),
   );
 }
+
+test("navigation history deduplicates visits, respects boundaries and branches after Back", () => {
+  const history = new NavigationHistory();
+  const available = () => true;
+  history.visit({ view: "home" });
+  assert.equal(history.move("back", available), null);
+  history.visit({ view: "note", id: "a" });
+  history.visit({ view: "note", id: "a" });
+  assert.deepEqual(history.move("back", available), { view: "home" });
+  assert.deepEqual(history.move("forward", available), {
+    view: "note",
+    id: "a",
+  });
+  assert.equal(history.move("forward", available), null);
+  history.move("back", available);
+  history.visit({ view: "journal" });
+  assert.equal(history.move("forward", available), null);
+  assert.deepEqual(history.move("back", available), { view: "home" });
+});
+
+test("navigation skips unavailable destinations and restores tag and template context", () => {
+  const history = new NavigationHistory();
+  const locations: NavigationLocation[] = [
+    { view: "tags", tag: "ideas" },
+    { view: "note", id: "deleted" },
+    { view: "template", id: "template" },
+  ];
+  locations.forEach((location) => history.visit(location));
+  const available = (location: NavigationLocation) => location.view !== "note";
+  assert.deepEqual(history.move("back", available), locations[0]);
+  assert.deepEqual(history.move("forward", available), locations[2]);
+  assert.equal(
+    history.move("back", () => false),
+    null,
+  );
+  assert.deepEqual(history.move("back", available), locations[0]);
+});
+
+test("navigation history bounds retained visits", () => {
+  const history = new NavigationHistory();
+  for (let i = 0; i < 150; i++) history.visit({ view: "note", id: String(i) });
+  let count = 0;
+  while (history.move("back", () => true)) count++;
+  assert.equal(count, 99);
+});
+
+test("mouse navigation handles thumb buttons, native commands, blocking, vault resets and cleanup", async () => {
+  let native: ((direction: NavigationDirection) => void) | undefined;
+  let subscriptions = 0;
+  const previous = window.hyperionDesktop;
+  window.hyperionDesktop = {
+    onNavigate: (callback) => {
+      native = callback;
+      subscriptions++;
+      return () => {
+        native = undefined;
+        subscriptions--;
+      };
+    },
+  } as HyperionDesktopApi;
+  let setLocation!: (location: NavigationLocation) => void;
+  let setVault!: (vault: string) => void;
+  let setLoading!: (loading: boolean) => void;
+  let blocked = false;
+  const navigated: NavigationLocation[] = [];
+  function Harness() {
+    const [location, updateLocation] = useState<NavigationLocation>({
+      view: "home",
+    });
+    const [vaultId, updateVault] = useState("one");
+    const [loading, updateLoading] = useState(false);
+    setLocation = updateLocation;
+    setVault = updateVault;
+    setLoading = updateLoading;
+    useMouseNavigation({
+      vaultId,
+      loading,
+      location,
+      isBlocked: () => blocked,
+      isAvailable: () => true,
+      onNavigate: (next) => {
+        navigated.push(next);
+        updateLocation(next);
+      },
+    });
+    return <button>Mouse target</button>;
+  }
+  const ui = await mount(
+    <StrictMode>
+      <Harness />
+    </StrictMode>,
+  );
+  const mouse = async (button: number) => {
+    const events = ["mousedown", "mouseup", "auxclick"].map(
+      (type) =>
+        new dom.window.MouseEvent(type, {
+          button,
+          bubbles: true,
+          cancelable: true,
+        }),
+    );
+    await act(async () => {
+      events.forEach((event) =>
+        ui.host.querySelector("button")!.dispatchEvent(event),
+      );
+    });
+    return events;
+  };
+  try {
+    assert.equal(subscriptions, 1);
+    await act(async () => setLocation({ view: "note", id: "a" }));
+    for (const button of [0, 1, 2])
+      assert.ok(
+        (await mouse(button)).every((event) => !event.defaultPrevented),
+      );
+    assert.equal(navigated.length, 0);
+    assert.ok((await mouse(3)).every((event) => event.defaultPrevented));
+    assert.deepEqual(navigated, [{ view: "home" }]);
+    await mouse(3); // Boundary: still suppress document navigation.
+    assert.equal(navigated.length, 1);
+    await mouse(4);
+    assert.deepEqual(navigated.at(-1), { view: "note", id: "a" });
+    blocked = true;
+    await mouse(3);
+    assert.equal(navigated.length, 2);
+    blocked = false;
+    const dialog = document.createElement("dialog");
+    dialog.setAttribute("open", "");
+    document.body.append(dialog);
+    await act(async () => native!("back"));
+    assert.equal(navigated.length, 2);
+    dialog.remove();
+    await act(async () => native!("back"));
+    assert.deepEqual(navigated.at(-1), { view: "home" });
+    await act(async () => native!("forward"));
+    assert.deepEqual(navigated.at(-1), { view: "note", id: "a" });
+    await act(async () => setVault("two"));
+    await mouse(3);
+    assert.equal(navigated.length, 4);
+    await act(async () => setLocation({ view: "journal" }));
+    await act(async () => setLoading(true));
+    await mouse(3);
+    assert.equal(navigated.length, 4);
+    await act(async () => setLoading(false));
+    await mouse(3);
+    assert.equal(navigated.length, 4);
+  } finally {
+    await ui.unmount();
+    window.hyperionDesktop = previous;
+  }
+  assert.equal(subscriptions, 0);
+  const after = new dom.window.MouseEvent("auxclick", {
+    button: 3,
+    cancelable: true,
+  });
+  window.dispatchEvent(after);
+  assert.equal(after.defaultPrevented, false);
+});
 
 test("renames preserve stable aliases and inline page identities through later edits", () => {
   const target = page("target", "Old title");

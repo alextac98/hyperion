@@ -1,3 +1,4 @@
+import { useMouseNavigation } from "./hooks/useMouseNavigation";
 import { UpdateControls } from "./components/UpdateControls";
 import { saves } from "./lib/save-coordinator";
 import { dataBusy, dataOperation, flushAll } from "./lib/data-operations";
@@ -774,6 +775,41 @@ export default function HyperionApp() {
     setPageContextMenu(null);
     if (window.innerWidth <= 720) setSidebarOpen(false);
   };
+
+  useMouseNavigation({
+    vaultId,
+    loading,
+    location:
+      view === "note"
+        ? { view, id: activeId }
+        : view === "template"
+          ? { view, id: activeTemplateId }
+          : view === "tags"
+            ? { view, tag: activeTag }
+            : { view },
+    isBlocked: () => dataBusy.getSnapshot() || !!pageComparison,
+    isAvailable: (location) => {
+      if (location.view === "note")
+        return readNotes().some(
+          (note) => note.id === location.id && !note.trashed && !note.archived,
+        );
+      if (location.view === "template")
+        return readTemplates().some((template) => template.id === location.id);
+      return true;
+    },
+    onNavigate: (location) => {
+      if (location.view === "note") selectNote(location.id);
+      else if (location.view === "template") selectTemplate(location.id);
+      else {
+        setComparison(null);
+        setEditorStore(null);
+        setPageSearchOpen(false);
+        setPageSearchQuery("");
+        if (location.view === "tags") setActiveTag(location.tag);
+        navigateView(location.view);
+      }
+    },
+  });
 
   const duplicateNote = async (note: NoteRecord) => {
     const now = new Date().toISOString();
