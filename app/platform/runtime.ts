@@ -1,20 +1,74 @@
 import type { KnowledgeRepository } from "../lib/local-database";
-import { createElectronEditorStorage } from "./desktop/electron-editor-storage";
-import { ElectronKnowledgeRepository } from "./desktop/electron-repository";
+import type { HyperionDataApi } from "./desktop-api";
+import { createSqliteEditorStorage } from "./sqlite-editor-storage";
+import { SqliteKnowledgeRepository } from "./sqlite-repository";
 export type { LocalAiStatus, StorageInfo } from "./desktop-api";
 export const desktop = window.hyperionDesktop;
+let data: HyperionDataApi | undefined = desktop;
+let browser:
+  | Awaited<
+      ReturnType<
+        typeof import("./browser-development").connectBrowserDevelopment
+      >
+    >
+  | undefined;
+
 export function requireDesktop() {
-  if (!desktop) throw new Error("Open Hyperion in the desktop app to access your data.");
+  if (!desktop) throw new Error("This operation requires the desktop app.");
   return desktop;
 }
-// Construction does not access storage; the browser displays a desktop-only launch screen.
-export const knowledgeRepository: KnowledgeRepository = new ElectronKnowledgeRepository(desktop!);
+export function requireDataService() {
+  if (!data)
+    throw new Error(
+      "Open Hyperion in the desktop app or start pnpm dev:web.",
+    );
+  return data;
+}
+export let knowledgeRepository: KnowledgeRepository =
+  new SqliteKnowledgeRepository(data!);
+export async function initializeRuntime() {
+  if (!desktop && import.meta.env.DEV && window.hyperionBrowserDevelopment) {
+    const { connectBrowserDevelopment } = await import("./browser-development");
+    browser = await connectBrowserDevelopment(
+      window.hyperionBrowserDevelopment,
+    );
+    data = browser.data;
+    knowledgeRepository = new SqliteKnowledgeRepository(data);
+  }
+}
 export const platformRuntime = {
-  kind: "desktop" as const,
-  capabilities: { configurableStorage: true, nativeLocalAi: true },
-  createEditorStorage(vaultId: string) { return createElectronEditorStorage(requireDesktop(), vaultId); },
-  deleteEditorDocument(vaultId: string, documentId: string) { return requireDesktop().editorDelete(vaultId, documentId); },
-  getStorageInfo() { return requireDesktop().storageInfo(); },
-  chooseStorageLocation() { return requireDesktop().chooseStorageLocation(); },
-  getLocalAiStatus() { return requireDesktop().localAiStatus(); },
+  get kind() {
+    return browser ? ("browser-development" as const) : ("desktop" as const);
+  },
+  capabilities: {
+    configurableStorage: Boolean(desktop),
+    nativeLocalAi: Boolean(desktop),
+  },
+  createEditorStorage(vaultId: string) {
+    return createSqliteEditorStorage(requireDataService(), vaultId);
+  },
+  deleteEditorDocument(vaultId: string, documentId: string) {
+    return requireDataService().editorDelete(vaultId, documentId);
+  },
+  getStorageInfo() {
+    return requireDataService().storageInfo();
+  },
+  chooseStorageLocation() {
+    return requireDesktop().chooseStorageLocation();
+  },
+  getLocalAiStatus() {
+    return desktop
+      ? desktop.localAiStatus()
+      : Promise.resolve({
+          available: false,
+          executionTarget: "browser" as const,
+          reason: "Native local AI is unavailable in browser development.",
+        });
+  },
+  onPrepareClose(callback: () => Promise<void>) {
+    return desktop?.onPrepareClose(callback) ?? (() => {});
+  },
+  onConnectionError(callback: (message: string) => void) {
+    return browser?.onConnectionError(callback) ?? (() => {});
+  },
 };

@@ -1,4 +1,4 @@
-import { saves } from "../../lib/save-coordinator";
+import { saves } from "../lib/save-coordinator";
 import {
   type CollectionRecord,
   DEFAULT_PREFERENCES,
@@ -11,18 +11,20 @@ import {
   type TemplateRecord,
   type VaultPreferences,
   type VaultRecord,
-} from "../../lib/local-database";
-import type { HyperionDesktopApi, RepositoryRequest } from "../desktop-api";
+} from "../lib/local-database";
+import type { HyperionDataApi, RepositoryRequest } from "./desktop-api";
 
 function timestamp() {
   return new Date().toISOString();
 }
 
-export class ElectronKnowledgeRepository implements KnowledgeRepository {
-  constructor(private readonly desktop: HyperionDesktopApi) {}
+export class SqliteKnowledgeRepository implements KnowledgeRepository {
+  constructor(private readonly data: HyperionDataApi) {}
 
   private execute<T>(request: RepositoryRequest) {
-    return /^(list|get)/.test(request.operation) ? this.desktop.repositoryExecute<T>(request) : saves.track(() => this.desktop.repositoryExecute<T>(request));
+    return /^(list|get)/.test(request.operation)
+      ? this.data.repositoryExecute<T>(request)
+      : saves.track(() => this.data.repositoryExecute<T>(request));
   }
 
   async initialize() {
@@ -46,7 +48,9 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
       id: crypto.randomUUID(),
       name: name.trim() || "Untitled vault",
       description: "Personal knowledge base",
-      color: ["#6f63d9", "#4b8f8c", "#b77a42", "#b45f73"][Math.floor(Math.random() * 4)],
+      color: ["#6f63d9", "#4b8f8c", "#b77a42", "#b45f73"][
+        Math.floor(Math.random() * 4)
+      ],
       createdAt: now,
       updatedAt: now,
     };
@@ -59,7 +63,10 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
   }
 
   updateVault(vault: VaultRecord) {
-    return this.execute<void>({ operation: "updateVault", vault: { ...vault, updatedAt: timestamp() } });
+    return this.execute<void>({
+      operation: "updateVault",
+      vault: { ...vault, updatedAt: timestamp() },
+    });
   }
 
   deleteVault(id: string) {
@@ -79,7 +86,10 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
   }
 
   listTemplates(vaultId: string) {
-    return this.execute<TemplateRecord[]>({ operation: "listTemplates", vaultId });
+    return this.execute<TemplateRecord[]>({
+      operation: "listTemplates",
+      vaultId,
+    });
   }
 
   saveTemplate(template: TemplateRecord) {
@@ -91,7 +101,10 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
   }
 
   listCollections(vaultId: string) {
-    return this.execute<CollectionRecord[]>({ operation: "listCollections", vaultId });
+    return this.execute<CollectionRecord[]>({
+      operation: "listCollections",
+      vaultId,
+    });
   }
 
   saveCollection(collection: CollectionRecord) {
@@ -105,7 +118,10 @@ export class ElectronKnowledgeRepository implements KnowledgeRepository {
   async getPreferences(vaultId: string) {
     return normalizeVaultPreferences(
       vaultId,
-      await this.execute<VaultPreferences | null>({ operation: "getPreferences", vaultId }),
+      await this.execute<VaultPreferences | null>({
+        operation: "getPreferences",
+        vaultId,
+      }),
     );
   }
 

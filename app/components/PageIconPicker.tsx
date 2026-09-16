@@ -1,3 +1,4 @@
+import { uiStorage } from "../lib/ui-storage";
 import { MagnifyingGlass, Smiley } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NoteRecord, PageIconRecord } from "../lib/local-database";
@@ -33,7 +34,7 @@ const RECENT_ICON_KEY = "hyperion:recent-page-icons";
 
 function readRecent(key: string) {
   try {
-    const value = JSON.parse(localStorage.getItem(key) ?? "[]");
+    const value = JSON.parse(uiStorage.getItem(key) ?? "[]");
     return Array.isArray(value)
       ? value
           .filter((item): item is string => typeof item === "string")
@@ -49,7 +50,7 @@ function rememberRecent(key: string, value: string, current: string[]) {
     0,
     10,
   );
-  localStorage.setItem(key, JSON.stringify(next));
+  uiStorage.setItem(key, JSON.stringify(next));
   return next;
 }
 

@@ -1,7 +1,7 @@
-import { saves } from "../../lib/save-coordinator";
+import { saves } from "../lib/save-coordinator";
 import type { BlobSource, DocSource } from "@blocksuite/sync";
 import { diffUpdate, encodeStateVectorFromUpdate, mergeUpdates } from "yjs";
-import type { HyperionDesktopApi } from "../desktop-api";
+import type { HyperionDataApi } from "./desktop-api";
 
 function bytesToBase64(bytes: Uint8Array) {
   let binary = "";
@@ -15,20 +15,21 @@ function bytesToBase64(bytes: Uint8Array) {
 function base64ToBytes(value: string) {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  for (let index = 0; index < binary.length; index += 1)
+    bytes[index] = binary.charCodeAt(index);
   return bytes;
 }
 
-class ElectronSqliteDocSource implements DocSource {
+class SqliteDocSource implements DocSource {
   readonly name = "hyperion-sqlite";
 
   constructor(
-    private readonly desktop: HyperionDesktopApi,
+    private readonly data: HyperionDataApi,
     private readonly vaultId: string,
   ) {}
 
   async pull(docId: string, state: Uint8Array) {
-    const encodedUpdates = await this.desktop.editorPull(this.vaultId, docId);
+    const encodedUpdates = await this.data.editorPull(this.vaultId, docId);
     if (!encodedUpdates.length) return null;
     const update = mergeUpdates(encodedUpdates.map(base64ToBytes));
     return {
@@ -38,49 +39,61 @@ class ElectronSqliteDocSource implements DocSource {
   }
 
   push(docId: string, data: Uint8Array) {
-    return saves.track(() => this.desktop.editorPush(this.vaultId, docId, bytesToBase64(data)));
+    return saves.track(() =>
+      this.data.editorPush(this.vaultId, docId, bytesToBase64(data)),
+    );
   }
 
   subscribe() {
-    // The desktop target currently has one application window. This boundary
+    // Each runtime currently has one active editor session. This boundary
     // can add a main-process broadcast if multi-window editing is introduced.
     return () => {};
   }
 }
 
-class ElectronSqliteBlobSource implements BlobSource {
+class SqliteBlobSource implements BlobSource {
   readonly name = "hyperion-sqlite-assets";
   readonly readonly = false;
 
   constructor(
-    private readonly desktop: HyperionDesktopApi,
+    private readonly data: HyperionDataApi,
     private readonly vaultId: string,
   ) {}
 
   async get(key: string) {
-    const asset = await this.desktop.assetGet(this.vaultId, key);
-    return asset ? new Blob([base64ToBytes(asset.data)], { type: asset.mimeType }) : null;
+    const asset = await this.data.assetGet(this.vaultId, key);
+    return asset
+      ? new Blob([base64ToBytes(asset.data)], { type: asset.mimeType })
+      : null;
   }
 
   async set(key: string, value: Blob) {
     return saves.track(async () => {
-      await this.desktop.assetSet(this.vaultId, key, value.type, bytesToBase64(new Uint8Array(await value.arrayBuffer())));
+      await this.data.assetSet(
+        this.vaultId,
+        key,
+        value.type,
+        bytesToBase64(new Uint8Array(await value.arrayBuffer())),
+      );
       return key;
     });
   }
 
   delete(key: string) {
-    return this.desktop.assetDelete(this.vaultId, key);
+    return this.data.assetDelete(this.vaultId, key);
   }
 
   list() {
-    return this.desktop.assetList(this.vaultId);
+    return this.data.assetList(this.vaultId);
   }
 }
 
-export function createElectronEditorStorage(desktop: HyperionDesktopApi, vaultId: string) {
+export function createSqliteEditorStorage(
+  data: HyperionDataApi,
+  vaultId: string,
+) {
   return {
-    doc: new ElectronSqliteDocSource(desktop, vaultId),
-    blobs: new ElectronSqliteBlobSource(desktop, vaultId),
+    doc: new SqliteDocSource(data, vaultId),
+    blobs: new SqliteBlobSource(data, vaultId),
   };
 }
