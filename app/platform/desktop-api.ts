@@ -31,6 +31,7 @@ export type StoredAsset = {
 };
 
 export interface HyperionDesktopApi {
+  onNavigate(callback: (direction: "back" | "forward") => void): () => void;
   updateState(): Promise<UpdateState>;
   checkForUpdates(): Promise<UpdateState>;
   downloadUpdate(): Promise<UpdateState>;

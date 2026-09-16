@@ -239,6 +239,12 @@ async function createWindow() {
       window.setTitle(windowTitle);
     });
   }
+  // Windows/Linux mouse thumb buttons arrive as native browser commands.
+  window.on("app-command", (_event, command) => {
+    if (command === "browser-backward" || command === "browser-forward") {
+      window.webContents.send("hyperion:navigate", command === "browser-backward" ? "back" : "forward");
+    }
+  });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, url) => {
     if (!isTrustedRendererUrl(url)) event.preventDefault();

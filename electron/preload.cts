@@ -22,6 +22,13 @@ const channels = {
 } as const;
 
 contextBridge.exposeInMainWorld("hyperionDesktop", Object.freeze({
+  onNavigate: (callback: (direction: "back" | "forward") => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, direction: unknown) => {
+      if (direction === "back" || direction === "forward") callback(direction);
+    };
+    ipcRenderer.on("hyperion:navigate", listener);
+    return () => ipcRenderer.removeListener("hyperion:navigate", listener);
+  },
   updateState: () => ipcRenderer.invoke("hyperion:update-state"),
   checkForUpdates: () => ipcRenderer.invoke("hyperion:update-check"),
   downloadUpdate: () => ipcRenderer.invoke("hyperion:update-download"),
