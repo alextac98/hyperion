@@ -5,6 +5,13 @@ renderer; SQLite is the only supported persistence backend and is owned by the
 main process. A standalone production browser shows a desktop launch screen. Browser
 prototype data is neither migrated nor deleted. There is no IndexedDB adapter.
 
+The editor uses the block implementations provided by `@blocksuite/affine`.
+Hyperion provides its own application shell, theme, and Electron/SQLite backend;
+it does not use AFFiNE's backend or hosted service. Upstream package names,
+`affine:*` block identifiers, and editor CSS variables remain compatibility
+contracts. The legacy `affine-icon` storage discriminator represents Phosphor
+interface icons and is retained for existing records and backups.
+
 ## Boundaries and authority
 
 - `app/lib/local-database.ts`: domain types, defaults, seed records and repository contract.
@@ -75,6 +82,17 @@ version-1 databases through the real startup path, including preservation, rollb
 and safe reopening.
 Do not update historical migration definitions once released. Preserve source
 backups and original historical payloads when introducing document converters.
+
+Version 2 deletes the explicitly retired embeds, frames, mind maps and Kanban views
+from live pages and templates, refreshing affected text projections. Version-1
+upgrades create `backups/migration-1-…sqlite3`; prototype upgrades retain the original
+version-0 backup. Local historical payloads remain intact, while previews and
+restores apply the retirement policy. See [Adding a block](developer/blocks.md)
+for the extension contract and the exact deletion behavior. Version 3 retires
+Rating blocks, with a version-2 backup for databases upgrading from that version.
+Version 4 converts standalone Date blocks to inline dates inside paragraphs,
+preserving block IDs, child order and visible date text. Databases upgrading from
+version 3 receive a verified version-3 backup; historical snapshots stay intact.
 
 ## Save and recovery lifecycle
 

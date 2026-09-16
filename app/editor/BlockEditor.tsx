@@ -11,7 +11,7 @@ type Props = {
   onStoreReady?: (store: EditorStore) => void;
 };
 
-export function AffineEditor({
+export function BlockEditor({
   document: editorDocument,
   preferences,
   onChange,

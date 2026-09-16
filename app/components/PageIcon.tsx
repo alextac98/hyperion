@@ -26,7 +26,7 @@ export function PageIcon({
     if (definition)
       return (
         <definition.Icon
-          className="page-icon-affine"
+          className="page-icon-interface"
           size={size}
           weight={weight}
           color={note.icon.color}

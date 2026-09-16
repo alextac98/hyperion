@@ -1,18 +1,29 @@
+import { configureInlineDates, inlineDateMenu, inlineDateSpec, installInlineDates } from "./inline-date";
+import { MindmapViewExtension } from "@blocksuite/affine/gfx/mindmap/view";
+import { supportedExtensions } from "./blocks/extensions";
+import { retiredBlockFlavours } from "../../blocks/retired";
 import { ViewExtensionManager } from "@blocksuite/affine/ext-loader";
 import { getInternalViewExtensions } from "@blocksuite/affine/extensions/view";
 import { BlockStdScope, TextSelection } from "@blocksuite/affine/std";
 import type { Store } from "@blocksuite/affine/store";
 import { PageDraggingAreaViewExtension } from "@blocksuite/affine/widgets/page-dragging-area/view";
 
+import { customBlockViews, customBlockInsertion, applyInsertionPolicy } from "./blocks/views";
+import { literal } from "lit/static-html.js";
+
 const viewManager = new ViewExtensionManager(
   getInternalViewExtensions().filter(
-    (extension) => extension !== PageDraggingAreaViewExtension,
+    (extension) => extension !== PageDraggingAreaViewExtension && extension !== MindmapViewExtension,
   ),
 );
 const pageExtensions = viewManager.get("page");
 
 export function renderPageEditor(store: Store) {
-  const scope = new BlockStdScope({ store, extensions: pageExtensions });
+  const scope = new BlockStdScope({ store, extensions: [...supportedExtensions(pageExtensions), ...customBlockViews(store), ...customBlockInsertion(), inlineDateSpec, inlineDateMenu] });
+  configureInlineDates(scope);
+  const getView = scope.getView.bind(scope);
+  scope.getView = flavour => retiredBlockFlavours.has(flavour) ? null : getView(flavour) ?? literal`hyperion-unavailable-block`;
+  applyInsertionPolicy(scope);
   const viewport = document.createElement("div");
   viewport.className = "affine-page-viewport hyperion-blocksuite-viewport";
   viewport.dataset.theme =
@@ -25,6 +36,7 @@ export function renderPageEditor(store: Store) {
   const editorContainer = document.createElement("div");
   editorContainer.className = "page-editor hyperion-blocksuite-page";
   editorContainer.append(scope.render());
+  installInlineDates(editorContainer, scope);
 
   // BlockSuite progressively changes repeated Select All presses from text
   // selection into paragraph-block selection. Hyperion keeps Select All

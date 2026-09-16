@@ -1,6 +1,7 @@
 /**
  * Hyperion-owned compatibility tokens for the MIT BlockSuite editor modules.
  * This module intentionally replaces the differently licensed AFFiNE theme package.
+ * Exported type names and CSS variables retain the names BlockSuite imports.
  */
 import { themeToken } from "./palette";
 

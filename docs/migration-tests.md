@@ -96,9 +96,13 @@ folder is required.
 
 ## Current limits
 
-Today the actual startup path supports the prototype-to-version-1 migration. The
-suite exercises `0 → 1` and `1 → 1`; it does not add a migration runner or pretend
-to test a chain of migrations that does not yet exist. It also does not simulate
-power loss, a full disk, concurrent processes or a packaged-app upgrade. Those
+The startup path now runs `0 → 1 → 2 → 3 → 4` and `1 → 2 → 3 → 4`, then reopens at version 4.
+A derived version-2 case also checks Rating deletion, Date preservation and a
+complete version-2 backup. Version-3 cases check conversion of date cards to inline
+text, the complete backup, and rollback when a later document is corrupt.
+Additional cases inject retired blocks into copies of the version-1 fixture and
+check deletion in pages/templates, backup preservation and rollback after a corrupt
+document. The original frozen files remain unchanged.
+The suite does not simulate power loss, a full disk, concurrent processes or a packaged-app upgrade. Those
 require separate failure-injection and desktop integration coverage. The fixtures
 cover representative rich content, not every BlockSuite block type.

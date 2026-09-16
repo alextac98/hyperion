@@ -1,4 +1,6 @@
 import * as Y from "yjs";
+import { readBlock } from "../../blocks/document";
+import { describeBlock } from "../../blocks/registry";
 import type { PageSnapshot } from "../platform/desktop-api";
 
 export type PageChange = { key: string; label: string; before: string; after: string; detail?: string };
@@ -23,12 +25,12 @@ function blocks(snapshot: PageSnapshot) {
       if (visited.has(id)) return;
       visited.add(id);
       const block = source.get(id); if (!block) return;
-      const flavour = String(block.get("sys:flavour") ?? "block");
+      const description = describeBlock(readBlock(id, block));
       const children = block.get("sys:children");
       const properties = Object.fromEntries([...block.entries()].filter(([key]) => key !== "sys:id" && key !== "sys:children"));
       result.set(id, {
-        label: flavour.replace("affine:", ""),
-        text: String(block.get("prop:title") ?? block.get("prop:text") ?? block.get("prop:caption") ?? block.get("prop:name") ?? ""),
+        label: description.label,
+        text: description.text,
         properties: serialize(properties), children: serialize(children ?? []),
       });
       if (children instanceof Y.Array) children.toArray().forEach(child => visit(String(child)));

@@ -29,7 +29,7 @@ bundled Chromium runtime. SQLite stores all knowledge data locally.
   contain child pages, with drag-and-drop nesting, persistent sibling order,
   and right-click actions for renaming, duplicating, favoriting, archiving,
   and removing pages
-- AFFiNE-style page icons with the complete Unicode Emoji 17 catalog used by
+- Page icons with the complete Unicode Emoji 17 catalog used by
   current macOS, searchable names and keywords, recent choices, categories,
   skin-tone variants, and a colored interface-icon picker; icons follow pages
   through the tree, links, search, and every other view without affecting identity
@@ -66,7 +66,7 @@ can also review the [release process](docs/developer/release.md).
 
 Thank you to the wonderful projects that make this project possible:
 
-- [AFFiNE](https://affine.pro/) - the original inspiration of the project
+- [AFFiNE](https://affine.pro/) - project inspiration and the BlockSuite editor components used by Hyperion
 - [BlockSuite](https://blocksuite.io/)
 - [Phosphor Icons](https://phosphoricons.com/)
 - [Emojibase](https://emojibase.dev/)

@@ -1,5 +1,6 @@
 import { themeToken } from "./palette";
 
+// Compatibility export imported by BlockSuite's theme helpers.
 export type AffineThemeKeyV2 = string;
 
 const token = (name: string) => `var(--hyperion-bs-${name})`;

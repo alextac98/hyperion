@@ -1,3 +1,4 @@
+import * as Y from "yjs";
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { copyFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -142,4 +143,148 @@ test('a frozen named version restores rich content and deleted attachments after
     assert.deepEqual(execute(db, 'getRevision', { revisionId: historical.id }), originalRevision);
     assert.ok(documentState(originalRevision.document).p['prop:text'].text.some(part => part.attributes?.bold));
   } finally { db.close(); }
+});
+
+function addRetiredDocuments(path, corrupt = false) {
+  const db = new DatabaseSync(path);
+  try {
+    const rows = db.prepare("SELECT DISTINCT document_id FROM editor_updates WHERE vault_id='fixture-vault' AND document_id != 'hyperion:vault' ORDER BY document_id").all();
+    for (const {document_id: documentId} of rows) {
+      const doc=new Y.Doc();
+      for (const row of db.prepare("SELECT data FROM editor_updates WHERE vault_id='fixture-vault' AND document_id=? ORDER BY sequence").all(documentId)) Y.applyUpdate(doc,row.data);
+      const blocks=doc.getMap('blocks');
+      const root=[...blocks.values()].find(block=>block.get('sys:flavour')==='affine:page');
+      if (root) {
+        blocks.set('retired-youtube',new Y.Map([['sys:id','retired-youtube'],['sys:flavour','affine:embed-youtube'],['sys:version',1],['prop:caption','Remove this video']]));
+        root.get('sys:children').push(['retired-youtube']);
+        db.prepare("INSERT INTO editor_updates(vault_id,document_id,data) VALUES ('fixture-vault',?,?)").run(documentId,Y.encodeStateAsUpdate(doc));
+      }
+      doc.destroy();
+    }
+    if(corrupt) db.prepare("INSERT INTO editor_updates(vault_id,document_id,data) VALUES ('fixture-vault','zz-corrupt',?)").run(new Uint8Array([255]));
+  } finally {db.close();}
+}
+
+test('v2 removes retired page/template content, updates metadata and keeps a complete pre-migration backup', async context => {
+  const {directory,path}=await fixture(context,'desktop-v1');
+  addRetiredDocuments(path);
+  const original=rawState(path);
+  const db=new DesktopDatabase({defaultDirectory:directory});
+  try {
+    assertVersions(path);
+    const backups=migrationBackups(directory); assert.equal(backups.length,1); assert.deepEqual(rawState(backups[0]),original);
+    const exported=execute(db,'exportVault');
+    for (const encoded of [...Object.values(exported.editorDocuments),...Object.values(exported.templateDocuments)]) {
+      const doc=new Y.Doc();Y.applyUpdate(doc,Buffer.from(encoded,'base64'));
+      assert.equal(doc.getMap('blocks').has('retired-youtube'),false);
+      for(const block of doc.getMap('blocks').values()) assert.ok(!block.get('sys:children')?.toArray().includes('retired-youtube'));
+      doc.destroy();
+    }
+    assert.ok(exported.notes.every(note=>!note.body.includes('Remove this video')));
+    // Existing revision payloads remain archival originals; restoring runs the retirement policy.
+    assert.deepEqual(inspect(path,sql=>sql.prepare('SELECT * FROM revisions').all()),inspect(backups[0],sql=>sql.prepare('SELECT * FROM revisions').all()));
+  } finally {db.close();}
+  const after=rawState(path);const reopened=new DesktopDatabase({defaultDirectory:directory});reopened.close();
+  assert.deepEqual(rawState(path),after);assert.equal(migrationBackups(directory).length,1);
+});
+
+test('v2 migration rolls all documents and the version back if any document is corrupt', async context => {
+  const {directory,path}=await fixture(context,'desktop-v1');addRetiredDocuments(path,true);
+  const before=rawState(path);
+  assert.throws(()=>new DesktopDatabase({defaultDirectory:directory}));
+  assert.deepEqual(rawState(path),before);
+  assert.deepEqual(rawState(migrationBackups(directory)[0]),before);
+});
+
+test('import and restore refresh search metadata when retired blocks are removed', async context => {
+  const {directory}=await fixture(context,'desktop-v1');
+  const db=new DesktopDatabase({defaultDirectory:directory});context.after(()=>db.close());
+  const doc=new Y.Doc();const blocks=doc.getMap('blocks');
+  blocks.set('root',new Y.Map([['sys:flavour','affine:page'],['prop:title',new Y.Text('Retired content test')],['sys:children',Y.Array.from(['keep','video'])]]));
+  blocks.set('keep',new Y.Map([['sys:flavour','affine:paragraph'],['prop:text',new Y.Text('Keep this text')]]));
+  blocks.set('video',new Y.Map([['sys:flavour','affine:embed-youtube'],['prop:caption','Remove this video']]));
+  const old=Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');doc.destroy();
+  const bundle=execute(db,'exportVault');
+  bundle.editorDocuments.parent=old;bundle.notes.find(note=>note.id==='parent').body='Remove this video';
+  const templateId=bundle.templates[0].id;bundle.templateDocuments[templateId]=old;bundle.templates[0].body='Remove this video';
+  const payload={...bundle};delete payload.checksum;
+  bundle.checksum=createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  const {vault}=execute(db,'importVault',{bundle});
+  const imported=db.repositoryExecute({operation:'exportVault',vaultId:vault.id});
+  const page=imported.notes.find(note=>note.title==='Retired content test');
+  assert.equal(page.body,'Keep this text');assert.equal(imported.templates.find(template=>template.title==='Retired content test').body,'Keep this text');
+  // Seed an archival payload through the storage boundary, as an older app would.
+  db.editorDelete(vault.id,page.id);db.editorPush(vault.id,page.id,old);
+  const revision=db.repositoryExecute({operation:'captureRevision',vaultId:vault.id,noteId:page.id,label:'Older content'});
+  assert.ok(revision.note.body.includes('Remove this video'));
+  const restored=db.repositoryExecute({operation:'restoreRevision',vaultId:vault.id,revisionId:revision.id,asCopy:true});
+  assert.equal(restored.body,'Keep this text');
+  const after=db.repositoryExecute({operation:'exportVault',vaultId:vault.id});
+  assert.equal(after.notes.find(note=>note.id===restored.id).body,'Keep this text');
+  assert.equal(after.revisions.find(item=>item.id===revision.id).document,old);
+});
+
+test('v3 removes rating blocks with a version-2 backup and preserves date blocks', async context => {
+  const {directory,path}=await fixture(context,'desktop-v1');
+  const prepared=new DesktopDatabase({defaultDirectory:directory});prepared.close();
+  const db=new DatabaseSync(path);
+  const doc=new Y.Doc();
+  try {
+    db.exec('DELETE FROM migrations WHERE version>=3; PRAGMA user_version=2');
+    for (const row of db.prepare("SELECT data FROM editor_updates WHERE document_id='parent' ORDER BY sequence").all()) Y.applyUpdate(doc,row.data);
+    const blocks=doc.getMap('blocks');
+    const root=[...blocks.values()].find(block=>block.get('sys:flavour')==='affine:page');
+    blocks.set('rating',new Y.Map([['sys:flavour','hyperion:rating'],['prop:label','Remove rating'],['prop:value',4]]));
+    blocks.set('date',new Y.Map([['sys:flavour','hyperion:date'],['sys:version',1],['prop:date','2030-06-15']]));
+    root.get('sys:children').push(['rating','date']);
+    db.prepare("INSERT INTO editor_updates(vault_id,document_id,data) VALUES ('fixture-vault','parent',?)").run(Y.encodeStateAsUpdate(doc));
+  } finally {db.close();doc.destroy();}
+  const before=rawState(path);
+  const upgraded=new DesktopDatabase({defaultDirectory:directory});
+  try {
+    assertVersions(path);
+    const backup=migrationBackups(directory).find(path=>path.includes('migration-2-'));
+    assert.ok(backup);assert.deepEqual(rawState(backup),before);
+    const exported=execute(upgraded,'exportVault');
+    const current=new Y.Doc();Y.applyUpdate(current,Buffer.from(exported.editorDocuments.parent,'base64'));
+    assert.equal(current.getMap('blocks').has('rating'),false);
+    assert.equal(current.getMap('blocks').get('date').get('sys:flavour'),'affine:paragraph');
+    assert.deepEqual(current.getMap('blocks').get('date').get('prop:text').toDelta(),[{insert:' ',attributes:{hyperionDate:'2030-06-15'}}]);current.destroy();
+    assert.ok(exported.notes.find(note=>note.id==='parent').body.includes('2030-06-15'));
+  } finally {upgraded.close();}
+});
+
+for (const corrupt of [false, true]) test(`v4 inline date migration ${corrupt ? 'rolls back all writes on corrupt documents' : 'backs up and preserves date content'}`, async context => {
+  const {directory,path}=await fixture(context,'desktop-v1');
+  const prepared=new DesktopDatabase({defaultDirectory:directory});prepared.close();
+  const db=new DatabaseSync(path); const doc=new Y.Doc();
+  try {
+    db.exec('DELETE FROM migrations WHERE version>=4; PRAGMA user_version=3');
+    for (const row of db.prepare("SELECT data FROM editor_updates WHERE document_id='parent' ORDER BY sequence").all()) Y.applyUpdate(doc,row.data);
+    const blocks=doc.getMap('blocks');
+    const root=[...blocks.values()].find(block=>block.get('sys:flavour')==='affine:page');
+    blocks.set('date',new Y.Map([['sys:id','date'],['sys:flavour','hyperion:date'],['sys:version',1],['sys:children',new Y.Array()],['prop:date','2030-06-15']]));
+    root.get('sys:children').push(['date']);
+    db.prepare("INSERT INTO editor_updates(vault_id,document_id,data) VALUES ('fixture-vault','parent',?)").run(Y.encodeStateAsUpdate(doc));
+    if(corrupt) db.prepare("INSERT INTO editor_updates(vault_id,document_id,data) VALUES ('fixture-vault','zz-corrupt',?)").run(new Uint8Array([255]));
+  } finally {db.close();doc.destroy();}
+  const before=rawState(path);
+  if(corrupt) {
+    assert.throws(()=>new DesktopDatabase({defaultDirectory:directory}));
+    assert.deepEqual(rawState(path),before);
+  } else {
+    const upgraded=new DesktopDatabase({defaultDirectory:directory});
+    try {
+      assertVersions(path);
+      const exported=execute(upgraded,'exportVault');
+      const current=new Y.Doc();Y.applyUpdate(current,Buffer.from(exported.editorDocuments.parent,'base64'));
+      const date=current.getMap('blocks').get('date');
+      assert.equal(date.get('sys:flavour'),'affine:paragraph');
+      assert.deepEqual(date.get('prop:text').toDelta(),[{insert:' ',attributes:{hyperionDate:'2030-06-15'}}]);
+      assert.ok(exported.notes.find(note=>note.id==='parent').body.includes('2030-06-15'));
+      current.destroy();
+    } finally {upgraded.close();}
+  }
+  const backup=migrationBackups(directory).find(path=>path.includes('migration-3-'));
+  assert.ok(backup);assert.deepEqual(rawState(backup),before);
 });

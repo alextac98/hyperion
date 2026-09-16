@@ -29,6 +29,7 @@ export type PageLinkRecord = {
 
 export type PageIconRecord =
   | { type: "emoji"; unicode: string }
+  // Legacy storage discriminator for Phosphor interface icons; keep existing data compatible.
   | { type: "affine-icon"; name: string; color: string };
 
 export function normalizePageIcon(value: unknown): PageIconRecord | null {

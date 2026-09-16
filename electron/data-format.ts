@@ -1,5 +1,8 @@
+import { migrateInlineDates } from "../blocks/date/inline.js";
+import { removeRetiredBlocks } from "../blocks/retired.js";
 import { createHash } from "node:crypto";
 import * as Y from "yjs";
+import { readDocumentMetadata, readReferences } from "../blocks/document.js";
 
 export type RecordValue = Record<string, unknown>;
 export const DOCUMENT_VERSION = 1;
@@ -116,7 +119,26 @@ export function remapDocument(encoded: string, ids: Map<string, string>): string
     Y.applyUpdate(source, documentBytes(encoded));
     if ([...source.share.keys()].some(key => key !== "blocks")) throw new Error("Unsupported document fields; original data has been preserved");
     // BlockSuite's page content is a map named blocks. Root workspace state is rebuilt locally.
-    for (const [key, value] of source.getMap("blocks")) target.getMap("blocks").set(key, cloneValue(value, ids));
+    for (const [key, value] of source.getMap("blocks")) {
+      // Legacy upstream formats retain their existing remapping behavior. Custom
+      // blocks reserve references.pages for IDs; arbitrary property strings stay intact.
+      const upstream = value instanceof Y.Map && String(value.get("sys:flavour")).startsWith("affine:");
+      const cloned = cloneValue(value, upstream ? ids : undefined);
+      target.getMap("blocks").set(key, cloned);
+      if (!upstream && cloned instanceof Y.Map) {
+        const raw = cloned.get("prop:references");
+        const pages = raw instanceof Y.Map ? raw.get("pages") : raw && typeof raw === "object" ? (raw as Record<string, unknown>).pages : undefined;
+        if (pages instanceof Y.Map) {
+          for (const [slot, value] of pages) if (typeof value === "string" && ids.has(value)) pages.set(slot, ids.get(value));
+        } else if (pages && typeof pages === "object" && !Array.isArray(pages)) {
+          const mapped = Object.fromEntries(Object.entries(pages).map(([slot, value]) => [slot, typeof value === "string" ? ids.get(value) ?? value : value]));
+          if (raw instanceof Y.Map) raw.set("pages", mapped);
+          else cloned.set("prop:references", { ...(raw as Record<string, unknown>), pages: mapped });
+        }
+      }
+    }
+    removeRetiredBlocks(target.getMap<Y.Map<unknown>>("blocks"));
+    migrateInlineDates(target.getMap<Y.Map<unknown>>("blocks"));
     return Buffer.from(Y.encodeStateAsUpdate(target)).toString("base64");
   } finally { source.destroy(); target.destroy(); }
 }
@@ -132,6 +154,8 @@ export function restoreDocument(current: Uint8Array, historical: Uint8Array, tit
         if (value instanceof Y.Map && value.get("sys:flavour") === "affine:page") value.set("prop:title", new Y.Text(title));
       }
     });
+    removeRetiredBlocks(target.getMap<Y.Map<unknown>>("blocks"));
+    migrateInlineDates(target.getMap<Y.Map<unknown>>("blocks"));
     return Y.encodeStateAsUpdate(target);
   } finally { target.destroy(); source.destroy(); }
 }
@@ -149,7 +173,15 @@ export function assetReferences(encoded: Uint8Array): string[] {
       visit(item);
     }
   };
-  try { Y.applyUpdate(doc, encoded); visit(doc.getMap("blocks")); return [...keys]; }
+  try {
+    Y.applyUpdate(doc, encoded);
+    const blocks = doc.getMap<Y.Map<unknown>>("blocks");
+    visit(blocks);
+    for (const value of blocks.values()) {
+      for (const key of Object.values(readReferences(value.get("prop:references")).assets ?? {})) if (key) keys.add(key);
+    }
+    return [...keys];
+  }
   finally { doc.destroy(); }
 }
 
@@ -157,19 +189,19 @@ export function documentMetadata(encoded: Uint8Array): { title: string; body: st
   const doc = new Y.Doc();
   try {
     Y.applyUpdate(doc, encoded);
+    return readDocumentMetadata(doc.getMap<Y.Map<unknown>>("blocks"));
+  } finally { doc.destroy(); }
+}
+
+/** Refresh metadata when content is retired or converted; preserve other imported metadata. */
+export function retiredDocumentMetadata(encoded: Uint8Array) {
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, encoded);
     const blocks = doc.getMap<Y.Map<unknown>>("blocks");
-    const root = [...blocks.values()].find(block => block instanceof Y.Map && block.get("sys:flavour") === "affine:page");
-    if (!root) return null;
-    const text = root.get("prop:title"); const lines: string[] = []; const visited = new Set<unknown>();
-    const visit = (block: Y.Map<unknown>) => {
-      if (visited.has(block)) return; visited.add(block);
-      const flavour = String(block.get("sys:flavour")); const value = block.get("prop:text");
-      if (!["affine:page", "affine:note", "affine:surface"].includes(flavour) && value instanceof Y.Text && value.toString().trim()) lines.push(value.toString().trim());
-      const children = block.get("sys:children");
-      if (children instanceof Y.Array) for (const key of children.toArray()) { const child = blocks.get(String(key)); if (child instanceof Y.Map) visit(child); }
-    };
-    visit(root);
-    return { title: text instanceof Y.Text ? text.toString() || "Untitled" : "Untitled", body: lines.join("\n") };
+    const retired = removeRetiredBlocks(blocks);
+    const dates = migrateInlineDates(blocks);
+    return retired || dates ? readDocumentMetadata(blocks) : null;
   } finally { doc.destroy(); }
 }
 

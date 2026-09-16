@@ -1,3 +1,5 @@
+import { MindmapStoreExtension } from "@blocksuite/affine/gfx/mindmap/store";
+import { supportedExtensions } from "./blocks/extensions";
 import { saves } from "../lib/save-coordinator";
 import { StoreExtensionManager } from "@blocksuite/affine/ext-loader";
 import { getInternalStoreExtensions } from "@blocksuite/affine/extensions/store";
@@ -8,7 +10,10 @@ import * as Y from "yjs";
 import type { NoteRecord } from "../lib/local-database";
 import { platformRuntime } from "../platform/runtime";
 
-const storeManager = new StoreExtensionManager(getInternalStoreExtensions());
+import { blockStoreExtensions, openBlockStore } from "./blocks/store";
+import { readDocumentMetadata } from "../../blocks/document";
+
+const storeManager = new StoreExtensionManager(getInternalStoreExtensions().filter(extension => extension !== MindmapStoreExtension));
 const workspacePromises = new Map<string, Promise<TestWorkspace>>();
 const storePromises = new Map<string, Promise<Store>>();
 
@@ -46,7 +51,7 @@ async function createWorkspace(vaultId: string) {
     docSources: { main: storage.doc },
     blobSources: { main: storage.blobs },
   });
-  workspace.storeExtensions = storeManager.get("store");
+  workspace.storeExtensions = [...supportedExtensions(storeManager.get("store")), ...blockStoreExtensions()];
   const setBlob = workspace.blobSync.set.bind(workspace.blobSync);
   workspace.blobSync.set = ((valueOrKey: string | Blob, value?: Blob) =>
     saves.track(() =>
@@ -132,7 +137,7 @@ async function initializeEditorStore(
   const doc = workspace.getDoc(noteId) ?? workspace.createDoc(noteId);
   doc.spaceDoc.load();
   await workspace.docSync.waitForSynced(AbortSignal.timeout(15000));
-  const store = doc.getStore();
+  const store = openBlockStore(doc);
   store.load(() => {
     if (!store.root) addInitialBlocks(store, title, legacyBody);
     repairDuplicateRoots(store);
@@ -161,32 +166,7 @@ export function getOrCreateEditorStore(
 }
 
 export function readEditorMetadata(store: Store) {
-  type TreeModel = {
-    flavour: string;
-    text?: { toString(): string };
-    children?: TreeModel[];
-    props?: { title?: { toString(): string } };
-  };
-
-  const root = store.root as TreeModel | null;
-  const title = root?.props?.title?.toString() || "Untitled";
-  const models: TreeModel[] = [];
-  const visit = (model: TreeModel) => {
-    models.push(model);
-    model.children?.forEach(visit);
-  };
-  if (root) visit(root);
-  const body = models
-    .filter(
-      (model) =>
-        !["affine:page", "affine:surface", "affine:note"].includes(
-          model.flavour,
-        ),
-    )
-    .map((model) => model.text?.toString().trim() ?? "")
-    .filter(Boolean)
-    .join("\n");
-  return { title, body };
+  return readDocumentMetadata(store.doc.yBlocks) ?? { title: "Untitled", body: "" };
 }
 
 export { templateDocumentId } from "./document-id";
@@ -205,7 +185,7 @@ export async function duplicateEditorDocument(
   const target = workspace.createDoc(targetId);
   target.spaceDoc.load();
   Y.applyUpdate(target.spaceDoc, Y.encodeStateAsUpdate(source.spaceDoc));
-  const store = target.getStore();
+  const store = openBlockStore(target);
   store.load();
   if (options.title && store.root) {
     store.updateBlock(store.root, { title: new Text(options.title) });
@@ -254,7 +234,8 @@ export async function importEditorDocuments(
     const doc = workspace.getDoc(noteId) ?? workspace.createDoc(noteId);
     doc.spaceDoc.load();
     Y.applyUpdate(doc.spaceDoc, base64ToBytes(value));
-    doc.getStore().load();
+    const store = openBlockStore(doc);
+    store.load();
   });
 }
 
@@ -302,12 +283,12 @@ export async function previewRevision(
       },
     },
   });
-  workspace.storeExtensions = storeManager.get("store");
+  workspace.storeExtensions = [...supportedExtensions(storeManager.get("store")), ...blockStoreExtensions()];
   workspace.meta.initialize();
   const doc = workspace.createDoc();
   doc.spaceDoc.load();
   if (encoded) Y.applyUpdate(doc.spaceDoc, base64ToBytes(encoded));
-  const store = doc.getStore();
+  const store = openBlockStore(doc);
   store.load();
   if (!store.root) addInitialBlocks(store, note.title, note.body);
   store.readonly = true;

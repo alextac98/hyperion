@@ -1,13 +1,16 @@
+import { migrateInlineDates } from "../blocks/date/inline.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, openSync, fsyncSync, closeSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import * as Y from "yjs";
-import { assetReferences, array, bytes, documentBytes, documentMetadata, revisionContentHash, hash, id, object, record, remapDocument, restoreDocument, string, BUNDLE_VERSION, DOCUMENT_VERSION, type RecordValue } from "./data-format.js";
+import { assetReferences, array, bytes, documentBytes, documentMetadata, retiredDocumentMetadata, revisionContentHash, hash, id, object, record, remapDocument, restoreDocument, string, BUNDLE_VERSION, DOCUMENT_VERSION, type RecordValue } from "./data-format.js";
+
+import { removeRetiredBlocks, retiredBlockFlavoursV2, retiredBlockFlavours } from "../blocks/retired.js";
 
 const DATABASE_FILE = "hyperion.sqlite3";
-export const DATABASE_VERSION = 1;
+export const DATABASE_VERSION = 4;
 const HISTORY_DAYS = 30;
 export type RepositoryRequest = { operation: string; [key: string]: unknown };
 export type StorageInfo = { directory: string; databasePath: string; isDefault: boolean };
@@ -71,6 +74,9 @@ export class DesktopDatabase {
       if (version > 0 && Number(db.prepare("SELECT value FROM storage_metadata WHERE key='document_version'").get()?.value) !== DOCUMENT_VERSION) throw new Error("Unsupported live document format; update Hyperion before opening this database");
       db.exec("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;");
       if (version === 0) this.migratePrototype();
+      if (version < 2) this.migrateRetiredBlocks(version === 1);
+      if (version < 3) this.migrateRetiredBlocks(version === 2, 3);
+      if (version < 4) this.migrateRetiredBlocks(version === 3, 4);
       this.checkIntegrity();
     } catch (error) { db.close(); throw error; }
   }
@@ -97,6 +103,35 @@ export class DesktopDatabase {
       this.validateRelationships();
       db.prepare("INSERT INTO migrations VALUES (1,?,?)").run("Desktop integrity, portable backups and page revisions", now());
       db.exec("PRAGMA user_version=1");
+    });
+  }
+  private migrateRetiredBlocks(backup: boolean, version: 2 | 3 | 4 = 2) {
+    if (backup) {
+      mkdirSync(join(this.directory, "backups"), { recursive: true });
+      this.snapshotFile(join(this.directory, "backups", `migration-${version - 1}-${Date.now()}-${randomUUID()}.sqlite3`));
+    }
+    transaction(this.database, () => {
+      const documents = this.database.prepare("SELECT DISTINCT vault_id,document_id FROM editor_updates").all();
+      for (const row of documents) {
+        const vaultId = String(row.vault_id), documentId = String(row.document_id);
+        const doc = new Y.Doc();
+        try {
+          Y.applyUpdate(doc, this.fullDocument(vaultId, documentId)!);
+          const blocks = doc.getMap<Y.Map<unknown>>("blocks");
+          const changed = version === 4 ? migrateInlineDates(blocks) : removeRetiredBlocks(blocks, version === 2 ? retiredBlockFlavoursV2 : retiredBlockFlavours);
+          if (!changed) continue;
+          const data = Y.encodeStateAsUpdate(doc);
+          this.replaceDocument(vaultId, documentId, data);
+          const template = documentId.startsWith("template:");
+          const recordId = template ? documentId.slice(9) : documentId;
+          const saved = this.database.prepare(`SELECT record FROM ${template ? "templates" : "notes"} WHERE vault_id=? AND id=?`).get(vaultId, recordId);
+          const metadata = documentMetadata(data);
+          if (saved && metadata) this.put(template ? "template" : "note", { ...sqlRecord(saved), ...metadata });
+        } finally { doc.destroy(); }
+      }
+      this.checkIntegrity();
+      this.database.prepare("INSERT INTO migrations VALUES (?,?,?)").run(version, version === 2 ? "Remove retired embeds, frames, mind maps and Kanban views" : version === 3 ? "Remove rating blocks" : "Convert date blocks to inline dates", now());
+      this.database.exec(`PRAGMA user_version=${version}`);
     });
   }
   private ensureOpen() { if (this.closed) throw new Error("The Hyperion database is closed"); }
@@ -398,7 +433,12 @@ export class DesktopDatabase {
     this.put("note", note);
     if (revision.document) {
       const current = this.fullDocument(vaultId, noteId) ?? Y.encodeStateAsUpdate(new Y.Doc());
-      this.replaceDocument(vaultId, noteId, restoreDocument(current, documentBytes(revision.document), asCopy ? String(note.title) : undefined));
+      const restored = restoreDocument(current, documentBytes(revision.document), asCopy ? String(note.title) : undefined);
+      this.replaceDocument(vaultId, noteId, restored);
+      if (retiredDocumentMetadata(documentBytes(revision.document))) {
+        Object.assign(note, documentMetadata(restored));
+        this.put("note", note);
+      }
     } else this.editorDelete(vaultId, noteId);
     for (const [key, digest] of Object.entries(revision.assets)) this.database.prepare("INSERT INTO assets(vault_id,asset_key,hash) VALUES (?,?,?) ON CONFLICT(vault_id,asset_key) DO UPDATE SET deleted=0").run(vaultId, key, digest);
     this.validateRelationships(); this.captureRevision(vaultId, noteId, "Restored version", "restore");
@@ -457,13 +497,19 @@ export class DesktopDatabase {
       for (const [field, prefix, records] of [["editorDocuments", "", notes], ["templateDocuments", "template:", templates]] as const) {
         for (const [key, encoded] of Object.entries(object(bundle[field] ?? {}))) {
           if (!records.some(r => r.id === key)) throw new Error("Document has no owning record");
-          this.replaceDocument(vaultId, `${prefix}${mapped(key)}`, documentBytes(remapDocument(string(encoded), ids)));
+          const data = documentBytes(remapDocument(string(encoded), ids));
+          this.replaceDocument(vaultId, `${prefix}${mapped(key)}`, data);
+          if (retiredDocumentMetadata(documentBytes(string(encoded)))) {
+            const table = prefix ? "templates" : "notes";
+            const saved = this.database.prepare(`SELECT record FROM ${table} WHERE vault_id=? AND id=?`).get(vaultId, String(mapped(key)))!;
+            this.put(prefix ? "template" : "note", { ...sqlRecord(saved), ...documentMetadata(data) });
+          }
         }
       }
       for (const r of revisions) {
         const original = record(r.note, "note");
         if (original.id !== r.noteId || original.vaultId !== sourceVault.id || r.vaultId !== sourceVault.id) throw new Error("Invalid history ownership");
-        const note = { ...original, id: mapped(original.id), vaultId, parentId: original.parentId ? ids.get(String(original.parentId)) ?? null : null, collectionIds: (original.collectionIds as string[]).flatMap(key => ids.has(key) ? [ids.get(key)!] : []), links: (original.links as RecordValue[]).map(link => ({ ...link, targetId: ids.get(String(link.targetId)) ?? link.targetId })) };
+        const note = { ...original, ...(r.document ? retiredDocumentMetadata(documentBytes(string(r.document))) : null), id: mapped(original.id), vaultId, parentId: original.parentId ? ids.get(String(original.parentId)) ?? null : null, collectionIds: (original.collectionIds as string[]).flatMap(key => ids.has(key) ? [ids.get(key)!] : []), links: (original.links as RecordValue[]).map(link => ({ ...link, targetId: ids.get(String(link.targetId)) ?? link.targetId })) };
         const revision: Revision = { id: randomUUID(), vaultId, noteId: String(mapped(r.noteId)), createdAt: string(r.createdAt), label: r.label === null ? null : string(r.label), reason: string(r.reason), documentVersion: Number(r.documentVersion), note, document: r.document === null ? null : remapDocument(string(r.document), ids), assets: object(r.assets) as Record<string,string>, contentHash: "" };
         if (!Number.isFinite(Date.parse(revision.createdAt))) throw new Error("Invalid revision date");
         revision.contentHash = revisionContentHash(note, revision.document);
