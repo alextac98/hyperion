@@ -1,3 +1,4 @@
+import { SidebarOrganizer } from "../app/components/SidebarOrganizer";
 import { UpdateControls } from "../app/components/UpdateControls";
 import type { UpdateState } from "../electron/updates";
 import type { HyperionDesktopApi } from "../app/platform/desktop-api";
@@ -539,5 +540,54 @@ test("sidebar update icon is hidden until a version is available", async () => {
   } finally {
     await view.unmount();
     window.hyperionDesktop = previous;
+  }
+});
+
+test("nested note groups follow expand and collapse without changing page selection", async () => {
+  const selected: string[] = [];
+  const ui = await mount(
+    <SidebarOrganizer
+      notes={[
+        page("root"),
+        page("child", "Child", "root"),
+        page("grandchild", "Grandchild", "child"),
+        page("sibling"),
+      ]}
+      view="note"
+      activeNoteId="grandchild"
+      onCreatePage={() => {}}
+      onMoveNote={() => {}}
+      onOpenNote={(id) => selected.push(id)}
+      onContextMenu={() => {}}
+    />,
+  );
+  try {
+    const groups = () => ui.host.querySelectorAll('[role="group"]');
+    assert.equal(groups().length, 2);
+    assert.ok(groups()[0].contains(groups()[1]));
+    await act(async () =>
+      ui.host
+        .querySelector<HTMLButtonElement>('[aria-label="Collapse root"]')!
+        .click(),
+    );
+    assert.equal(groups().length, 0);
+    assert.equal(ui.host.querySelector('[data-page-id="grandchild"]'), null);
+    await act(async () =>
+      ui.host
+        .querySelector<HTMLButtonElement>('[aria-label="Expand root"]')!
+        .click(),
+    );
+    assert.equal(groups().length, 2);
+    await act(async () =>
+      ui.host
+        .querySelector<HTMLButtonElement>(
+          '[data-page-id="grandchild"] .organizer-page-link',
+        )!
+        .click(),
+    );
+    assert.deepEqual(selected, ["grandchild"]);
+    assert.ok(ui.host.querySelector('[data-page-id="sibling"]'));
+  } finally {
+    await ui.unmount();
   }
 });

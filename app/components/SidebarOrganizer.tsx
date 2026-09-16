@@ -245,6 +245,11 @@ export function SidebarOrganizer({
         {isExpanded && children.length > 0 && (
           <div
             className="organizer-children"
+            style={
+              {
+                "--organizer-guide-inset": `${depth * 14 + 15}px`,
+              } as React.CSSProperties
+            }
             role="group"
             aria-label={`${note.title} child pages`}
           >
