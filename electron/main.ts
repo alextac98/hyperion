@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import updater from "electron-updater";
@@ -18,10 +19,15 @@ const currentDirectory = dirname(fileURLToPath(import.meta.url));
 app.setName("Hyperion");
 const applicationName = app.isPackaged ? "Hyperion" : "[Dev] Hyperion";
 if (!app.isPackaged) {
-  // Preserve the existing profile (including preview/test overrides) on rename.
+  // Separate the development lock and browser storage from the installed app,
+  // while preserving explicit preview/test profiles.
   const userData = app.getPath("userData");
   app.setName(applicationName);
-  app.setPath("userData", userData);
+  const profile = !updatePreview && userData === join(app.getPath("appData"), "Hyperion")
+    ? join(app.getPath("appData"), "Hyperion Development")
+    : userData;
+  mkdirSync(profile, { recursive: true });
+  app.setPath("userData", profile);
 }
 const applicationIcon = app.isPackaged
   ? join(process.resourcesPath, "hyperion-icon.png")
@@ -258,16 +264,21 @@ async function createWindow() {
 }
 
 const ownsInstance = app.requestSingleInstanceLock();
-if (!ownsInstance) app.quit();
+if (!ownsInstance) {
+  console.log(`${applicationName} is already running; focusing the existing instance.`);
+  app.quit();
+}
 app.on("second-instance", () => { if (mainWindow?.isMinimized()) mainWindow.restore(); mainWindow?.focus(); });
 app.whenReady().then(async () => {
   if (!ownsInstance) return;
   app.dock?.setIcon(applicationIcon);
   app.setAboutPanelOptions({ applicationName, iconPath: applicationIcon });
   const dataDirectoryOverride = process.env.HYPERION_DATA_DIRECTORY?.trim();
-  database = new DesktopDatabase(dataDirectoryOverride
-    ? { defaultDirectory: dataDirectoryOverride }
-    : undefined);
+  database = new DesktopDatabase({
+    defaultDirectory: dataDirectoryOverride || (app.isPackaged
+      ? undefined
+      : join(homedir(), ".config", "hyperion-development")),
+  });
   database.repositoryExecute({ operation: "captureAutomaticRevisions" });
   database.createBackup(true);
   registerDesktopHandlers();
