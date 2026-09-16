@@ -8,8 +8,13 @@ import updater from "electron-updater";
 import { createUpdates } from "./updates.js";
 import { createUpdatePreview } from "./update-preview.js";
 import { DesktopDatabase, type RepositoryRequest } from "./database.js";
+import { developmentInstance, developmentRendererUrl } from "./development.js";
 
 const updatePreview = !app.isPackaged && Boolean(process.env.HYPERION_UPDATE_PREVIEW);
+const useBuiltRenderer = app.isPackaged || process.env.HYPERION_TEST_RENDERER === "1";
+const development = !useBuiltRenderer && !updatePreview
+  ? developmentInstance(app.getAppPath(), process.env.HYPERION_DEV_BRANCH)
+  : null;
 if (updatePreview) {
   const profile = process.env.HYPERION_UPDATE_PREVIEW_PROFILE;
   if (!profile) throw new Error("Use pnpm dev:updates to launch the isolated preview.");
@@ -17,13 +22,16 @@ if (updatePreview) {
 }
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 app.setName("Hyperion");
-const applicationName = app.isPackaged ? "Hyperion" : "[Dev] Hyperion";
+const applicationName = app.isPackaged ? "Hyperion"
+  : development ? `[Dev] Hyperion — ${development.branch}` : "[Dev] Hyperion";
 if (!app.isPackaged) {
   // Separate the development lock and browser storage from the installed app,
   // while preserving explicit preview/test profiles.
   const userData = app.getPath("userData");
   app.setName(applicationName);
-  const profile = !updatePreview && userData === join(app.getPath("appData"), "Hyperion")
+  const profile = development
+    ? join(app.getPath("appData"), "Hyperion Development", "branches", development.key)
+    : !updatePreview && userData === join(app.getPath("appData"), "Hyperion")
     ? join(app.getPath("appData"), "Hyperion Development")
     : userData;
   mkdirSync(profile, { recursive: true });
@@ -32,8 +40,7 @@ if (!app.isPackaged) {
 const applicationIcon = app.isPackaged
   ? join(process.resourcesPath, "hyperion-icon.png")
   : resolve(currentDirectory, "../build/icon-development.png");
-const developmentUrl = "http://127.0.0.1:3000";
-const useBuiltRenderer = app.isPackaged || process.env.HYPERION_TEST_RENDERER === "1";
+const developmentUrl = useBuiltRenderer ? "" : developmentRendererUrl(process.env.HYPERION_DEV_URL);
 const packagedRendererDirectory = resolve(currentDirectory, "../dist");
 const { autoUpdater } = updater;
 
@@ -287,11 +294,17 @@ app.whenReady().then(async () => {
   app.dock?.setIcon(applicationIcon);
   app.setAboutPanelOptions({ applicationName, iconPath: applicationIcon });
   const dataDirectoryOverride = process.env.HYPERION_DATA_DIRECTORY?.trim();
+  if (development && dataDirectoryOverride && !isAbsolute(dataDirectoryOverride)) {
+    throw new Error("HYPERION_DATA_DIRECTORY must be an absolute directory.");
+  }
   database = new DesktopDatabase({
     defaultDirectory: dataDirectoryOverride || (app.isPackaged
       ? undefined
-      : join(homedir(), ".config", "hyperion-development")),
+      : development
+        ? join(homedir(), ".config", "hyperion-development", "branches", development.key)
+        : join(homedir(), ".config", "hyperion-development")),
   });
+  if (development) console.log(`Development branch: ${development.branch}\nProfile: ${app.getPath("userData")}\nData: ${database.storageInfo().directory}`);
   database.repositoryExecute({ operation: "captureAutomaticRevisions" });
   database.createBackup(true);
   registerDesktopHandlers();

@@ -17,16 +17,44 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` and `pnpm dev:desktop` build Electron, start the Vite renderer server,
-and open the desktop app. Development uses its own Electron profile
-(`Hyperion Development` under the platform's application-data folder) and database
-at `~/.config/hyperion-development/hyperion.sqlite3`, so it can run alongside the
-installed app. The installed app continues to use `~/.config/hyperion/hyperion.sqlite3`.
-Development starts with an empty database; existing installed-app data is not
-copied or moved. Settings → Data can choose another folder independently in each app.
-Keep their data folders separate when running both apps.
-Set `HYPERION_DATA_DIRECTORY` to an isolated absolute directory for development
-with disposable data. The application never auto-imports browser prototype data.
+`pnpm dev`, `pnpm dev:desktop`, and `pnpm dev:electron` build Electron, start a
+dedicated Vite renderer server, and open the desktop app. The current Git branch
+determines the development instance. Different branches can run at the same time
+in separate worktrees or checkouts; launching the same branch again focuses its
+existing instance. The window title includes the branch name.
+
+Each branch gets a filesystem-safe key containing a readable name and a short
+hash, so names such as `feature/search` and `feature-search` remain distinct:
+
+- Electron profile: `Hyperion Development/branches/<key>` under the platform's
+  application-data folder.
+- SQLite and storage-location settings:
+  `~/.config/hyperion-development/branches/<key>/`.
+- Renderer: the first available loopback port starting at 3000. The launcher
+  passes the actual URL to Electron and prints it, along with the branch identity;
+  Electron prints the profile and active data directory.
+
+The identity follows the branch name, independent of checkout location. Switching
+back to a branch restores its development data. Stop development before switching
+branches in the same checkout, then restart; a running instance keeps its original
+identity. A renamed branch gets a new identity. Detached HEAD uses the commit ID.
+Set `HYPERION_DEV_BRANCH` to override the identity, including outside Git or when
+you deliberately need another instance of the same branch:
+
+```sh
+HYPERION_DEV_BRANCH=feature/search-review pnpm dev
+```
+
+Each new branch starts with fresh development data. The installed app continues
+to use `~/.config/hyperion/hyperion.sqlite3`. Existing installed-app data and the
+old shared development database are not copied, moved, or deleted. Explicit test
+and update-preview profiles remain isolated from branch development.
+
+Settings → Data can choose another folder independently in each instance.
+Set `HYPERION_DATA_DIRECTORY` to an isolated absolute directory for disposable
+data. Keep these overrides and chosen folders separate across running instances;
+they bypass the default branch data location. The application never auto-imports
+browser prototype data.
 
 Changes under `app/` update through Vite. Restart development after changing
 `electron/` so the main process and preload are rebuilt. `pnpm dev:web` starts
@@ -45,7 +73,13 @@ It is not a supported standalone web product.
   still requires a browser check; the DOM tests verify the modal API contract.
 - `pnpm check:desktop`: checks the native boundary and data implementation types.
 - `pnpm test:migrations`: runs the frozen-database upgrade, preservation and rollback suite.
-- `pnpm test:desktop`: validates SQLite persistence, migration, backup and history behavior.
+- `pnpm test:desktop`: validates branch identity and renderer URL handling, plus
+  SQLite persistence, migration, backup and history behavior.
+- `pnpm test:development`: launches three branch instances and verifies separate
+  renderer URLs, profiles and data, same-branch single-instance behavior, and
+  continued operation after one instance closes, plus launcher shutdown cleanup.
+  Requires a graphical desktop
+  session (or Xvfb on Linux).
 - `pnpm test`: builds the renderer and runs application behavior, database, semantic page diff, save coordinator and configuration tests.
 - `pnpm lint`: checks TypeScript and React code.
 - `pnpm test:integration`: builds both processes and runs the native Electron smoke test
