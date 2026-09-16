@@ -53,6 +53,20 @@ export function customBlockViews(store: Store) {
   );
 }
 
+export function activateInsertedBlock(scope: BlockStdScope, id: string) {
+  void scope.host.updateComplete.then(() =>
+    requestAnimationFrame(() => {
+      const element = scope.view.getBlock(id) as
+        | (HTMLElement & { onInsert?: () => void })
+        | null;
+      if (!element?.isConnected) return;
+      element.scrollIntoView({ block: "nearest" });
+      if (element.onInsert) element.onInsert();
+      else element.querySelector<HTMLInputElement>("input")?.focus();
+    }),
+  );
+}
+
 export function customBlockInsertion() {
   return [...blockRegistry.values()]
     .filter(
@@ -100,11 +114,7 @@ export function customBlockInsertion() {
                 parent.children.indexOf(model) + 1,
               );
               store.captureSync();
-              void std.host.updateComplete.then(() => {
-                const element = std.view.getBlock(id);
-                element?.scrollIntoView({ block: "nearest" });
-                element?.querySelector<HTMLInputElement>("input")?.focus();
-              });
+              activateInsertedBlock(std, id);
             },
           },
         ],

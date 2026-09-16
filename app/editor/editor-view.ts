@@ -1,3 +1,4 @@
+import { configureInlineDates, inlineDateMenu, inlineDateSpec, installInlineDates } from "./inline-date";
 import { MindmapViewExtension } from "@blocksuite/affine/gfx/mindmap/view";
 import { supportedExtensions } from "./blocks/extensions";
 import { retiredBlockFlavours } from "../../blocks/retired";
@@ -18,7 +19,8 @@ const viewManager = new ViewExtensionManager(
 const pageExtensions = viewManager.get("page");
 
 export function renderPageEditor(store: Store) {
-  const scope = new BlockStdScope({ store, extensions: [...supportedExtensions(pageExtensions), ...customBlockViews(store), ...customBlockInsertion()] });
+  const scope = new BlockStdScope({ store, extensions: [...supportedExtensions(pageExtensions), ...customBlockViews(store), ...customBlockInsertion(), inlineDateSpec, inlineDateMenu] });
+  configureInlineDates(scope);
   const getView = scope.getView.bind(scope);
   scope.getView = flavour => retiredBlockFlavours.has(flavour) ? null : getView(flavour) ?? literal`hyperion-unavailable-block`;
   applyInsertionPolicy(scope);
@@ -34,6 +36,7 @@ export function renderPageEditor(store: Store) {
   const editorContainer = document.createElement("div");
   editorContainer.className = "page-editor hyperion-blocksuite-page";
   editorContainer.append(scope.render());
+  installInlineDates(editorContainer, scope);
 
   // BlockSuite progressively changes repeated Select All presses from text
   // selection into paragraph-block selection. Hyperion keeps Select All

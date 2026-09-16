@@ -1,3 +1,5 @@
+import { inlineDateAdapters } from "../inline-date-adapters";
+import { migrateInlineDates } from "../../../blocks/date/inline";
 import {
   BlockSchemaExtension,
   defineBlockSchema,
@@ -12,24 +14,27 @@ import {
 import { migrateBlocks } from "../../../blocks/document";
 
 export function blockStoreExtensions() {
-  return [...blockRegistry.values()].map((definition) =>
-    BlockSchemaExtension(
-      defineBlockSchema({
-        flavour: definition.flavour,
-        metadata: {
-          role: "content",
-          version: definition.version,
-          parent: definition.parents ?? [
-            "@content",
-            "affine:note",
-            "affine:callout",
-          ],
-          children: definition.children ?? [],
-        },
-        props: definition.defaults,
-      }),
+  return [
+    ...inlineDateAdapters,
+    ...[...blockRegistry.values()].map((definition) =>
+      BlockSchemaExtension(
+        defineBlockSchema({
+          flavour: definition.flavour,
+          metadata: {
+            role: "content",
+            version: definition.version,
+            parent: definition.parents ?? [
+              "@content",
+              "affine:note",
+              "affine:callout",
+            ],
+            children: definition.children ?? [],
+          },
+          props: definition.defaults,
+        }),
+      ),
     ),
-  );
+  ];
 }
 
 const knownFlavours = new Set([
@@ -47,6 +52,7 @@ function unavailableSchema(flavour: string, version: number) {
 /** Supply opaque schemas before the Store constructor creates its initial models. */
 export function openBlockStore(doc: Doc) {
   removeRetiredBlocks(doc.yBlocks);
+  migrateInlineDates(doc.yBlocks);
   migrateBlocks(doc.yBlocks);
   const unknown = new Map<string, number>();
   for (const value of doc.yBlocks.values()) {

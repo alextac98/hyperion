@@ -88,7 +88,11 @@ from live pages and templates, refreshing affected text projections. Version-1
 upgrades create `backups/migration-1-…sqlite3`; prototype upgrades retain the original
 version-0 backup. Local historical payloads remain intact, while previews and
 restores apply the retirement policy. See [Adding a block](developer/blocks.md)
-for the extension contract and the exact deletion behavior.
+for the extension contract and the exact deletion behavior. Version 3 retires
+Rating blocks, with a version-2 backup for databases upgrading from that version.
+Version 4 converts standalone Date blocks to inline dates inside paragraphs,
+preserving block IDs, child order and visible date text. Databases upgrading from
+version 3 receive a verified version-3 backup; historical snapshots stay intact.
 
 ## Save and recovery lifecycle
 

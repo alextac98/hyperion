@@ -163,7 +163,7 @@ loader instead of importing either implementation directly. The emoji catalog al
 
 Use `pnpm format` to format application code, tests, scripts, and documentation.
 
-See [Adding a block](developer/blocks.md) for the bundled extension contract and rating example.
+See [Adding a block](developer/blocks.md) for the bundled block contract and inline date implementation.
 Changes to shared `blocks/` definitions also require rebuilding Electron.
 
 ## Desktop name and icon

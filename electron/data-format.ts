@@ -1,3 +1,4 @@
+import { migrateInlineDates } from "../blocks/date/inline.js";
 import { removeRetiredBlocks } from "../blocks/retired.js";
 import { createHash } from "node:crypto";
 import * as Y from "yjs";
@@ -137,6 +138,7 @@ export function remapDocument(encoded: string, ids: Map<string, string>): string
       }
     }
     removeRetiredBlocks(target.getMap<Y.Map<unknown>>("blocks"));
+    migrateInlineDates(target.getMap<Y.Map<unknown>>("blocks"));
     return Buffer.from(Y.encodeStateAsUpdate(target)).toString("base64");
   } finally { source.destroy(); target.destroy(); }
 }
@@ -153,6 +155,7 @@ export function restoreDocument(current: Uint8Array, historical: Uint8Array, tit
       }
     });
     removeRetiredBlocks(target.getMap<Y.Map<unknown>>("blocks"));
+    migrateInlineDates(target.getMap<Y.Map<unknown>>("blocks"));
     return Y.encodeStateAsUpdate(target);
   } finally { target.destroy(); source.destroy(); }
 }
@@ -190,13 +193,15 @@ export function documentMetadata(encoded: Uint8Array): { title: string; body: st
   } finally { doc.destroy(); }
 }
 
-/** Metadata changes are necessary only when retiring content; preserve all other imported metadata. */
+/** Refresh metadata when content is retired or converted; preserve other imported metadata. */
 export function retiredDocumentMetadata(encoded: Uint8Array) {
   const doc = new Y.Doc();
   try {
     Y.applyUpdate(doc, encoded);
     const blocks = doc.getMap<Y.Map<unknown>>("blocks");
-    return removeRetiredBlocks(blocks) ? readDocumentMetadata(blocks) : null;
+    const retired = removeRetiredBlocks(blocks);
+    const dates = migrateInlineDates(blocks);
+    return retired || dates ? readDocumentMetadata(blocks) : null;
   } finally { doc.destroy(); }
 }
 

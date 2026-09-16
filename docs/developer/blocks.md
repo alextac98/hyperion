@@ -1,8 +1,8 @@
 # Adding a block
 
 Hyperion's bundled custom blocks have one data registry and separate browser views.
-The first example is `hyperion:rating`: an editable label and a score from zero
-(unrated) to five, available through `/rating`.
+Dates are inline text extensions, with their own specification and slash command;
+they do not require a standalone block or interrupt a paragraph.
 
 ## Files and responsibilities
 
@@ -21,7 +21,7 @@ They do not need to be rewritten to adopt this contract for new blocks.
 
 ## Block contract
 
-Use a stable namespaced ID such as `hyperion:rating` or `my-extension:diagram`.
+Use a stable namespaced ID such as `hyperion:date` or `my-extension:diagram`.
 Duplicate IDs, invalid defaults and invalid versions fail registration. Do not
 rename an ID once documents contain it. The upstream namespace is reserved.
 
@@ -37,7 +37,36 @@ A definition provides:
 Views use `store.updateBlock` so editing participates in Yjs persistence and undo.
 Respect `store.readonly` for history previews. Group a discrete action with
 `captureSync()` before and after it; group label typing at focus/blur boundaries.
-Use accessible labels and keyboard-operable controls. See the rating view for an example.
+Use accessible labels and keyboard-operable controls. Views can implement
+`onInsert()` to focus or open their controls.
+
+## Date interaction
+
+Typing `//` at the start of a paragraph/list item or after whitespace searches
+for Date in the existing slash picker, just like `/date`. Select Date with Enter
+or a click to open the calendar. Nothing is inserted until a date is chosen.
+The shortcut ignores URLs, code blocks, selected ranges, composition input and
+read-only previews. The chip occupies one text position within its paragraph;
+Backspace after it or Delete before it removes it in one keystroke. Surrounding
+text and formatting remain in the same paragraph.
+
+`app/editor/inline-date.ts` registers the inline spec and slash item;
+`app/editor/date-picker.ts` supplies the compact popover. The Y.Text attribute
+`hyperionDate` stores an ISO date on a single space. `blocks/date/inline.ts`
+provides its text projection and converts legacy date cards to paragraphs.
+Migration 4 applies this conversion to current pages and templates, with a
+verified backup before upgrade. Import, restore and history previews apply the
+same conversion; historical source payloads remain unchanged. Text/HTML/Markdown
+clipboard adapters emit ISO date text for other applications. The legacy data
+definition remains for compatibility with unavailable or future versions.
+
+Choose a day, navigate months, or type `YYYY-MM-DD` or `M/D/YYYY` and press Enter
+(or Apply). With an empty field, Enter confirms the selected date: today for a
+new chip, or the saved date when editing one. Invalid dates stay in the field
+with an error. Arrow keys move between
+calendar days; Escape and Cancel dismiss the picker without changing the saved
+date. Click a saved date to edit it. Dates are stored as calendar dates without a
+time zone; the displayed label follows the device locale and search uses ISO text.
 
 ## References and assets
 
@@ -84,6 +113,10 @@ owned row blocks are deleted. Mind-map node elements and connectors targeting
 removed elements are deleted; unrelated shapes inside a frame remain. Parent lists,
 surface references and group membership are repaired.
 
+Migration 3 removes the former Rating block from current pages/templates. Its
+definition and view have been removed. Existing historical snapshots and the
+pre-migration backup remain intact.
+
 Before upgrading an existing database, Hyperion writes a verified migration backup.
 The changes and version marker commit together. Existing local historical payloads
 remain archival originals; previews, restores and portable imports apply the same
@@ -95,7 +128,9 @@ Their commands are removed; existing date prose is unchanged.
 
 Retired schemas/views are excluded at the preset registration boundary, mind-map
 providers are excluded, and the Vite compatibility adapter removes mind-map model
-registration and Kanban database view registration. Shared upstream infrastructure
+registration and Kanban database view registration. The `//` alias also refreshes
+the existing slash menu through its current search hook after updating Y.Text;
+keep the native picker test when upgrading BlockSuite. Shared upstream infrastructure
 remains in the dependency. Check this adapter when upgrading BlockSuite.
 
 ## Validation
@@ -105,4 +140,5 @@ unknown data preservation, text/history projections, references and retirement.
 `pnpm test:migrations` checks real SQLite upgrades, backups and rollback.
 `pnpm test:integration` also runs the custom-block Electron test: slash insertion,
 editing, undo/redo, indexing, reopen, read-only history, unknown children, portable
-import and the supported database view list.
+import, `//` typing without interfering with URLs, manual date validation, calendar
+selection, inline deletion and the supported database view list.

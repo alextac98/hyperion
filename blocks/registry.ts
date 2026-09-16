@@ -1,9 +1,10 @@
+import { dateText } from "./date/inline.js";
 import type {
   BlockData,
   BlockDefinition,
   BlockProjection,
 } from "./contract.js";
-import { ratingDefinition } from "./rating/definition.js";
+import { dateDefinition } from "./date/definition.js";
 
 export function createBlockRegistry(definitions: readonly BlockDefinition[]) {
   const registry = new Map<string, BlockDefinition>();
@@ -24,10 +25,11 @@ export function createBlockRegistry(definitions: readonly BlockDefinition[]) {
 }
 
 /** Add bundled data definitions here; views are loaded separately by the editor. */
-export const blockRegistry = createBlockRegistry([ratingDefinition]);
+export const blockRegistry = createBlockRegistry([dateDefinition]);
 
 export function blockText(value: unknown): string {
   if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "toDelta" in value && typeof value.toDelta === "function") return dateText(value as Parameters<typeof dateText>[0]);
   if (
     value &&
     typeof value === "object" &&

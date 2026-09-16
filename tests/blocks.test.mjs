@@ -8,7 +8,8 @@ const result = await build({
   export * from './blocks/registry.ts';
   export * from './blocks/document.ts';
   export * from './blocks/retired.ts';
-  export * from './blocks/rating/definition.ts';
+  export * from './blocks/date/definition.ts';
+  export * from './blocks/date/inline.ts';
   export { remapDocument, restoreDocument, documentMetadata, assetReferences } from './electron/data-format.ts';
   export { pageChanges } from './app/lib/page-diff.ts';
   export * as Y from 'yjs';
@@ -21,11 +22,15 @@ const result = await build({
   write: false,
 });
 const {
+  migrateInlineDates,
   removeRetiredBlocks,
   retiredBlockFlavours,
   Y,
   createBlockRegistry,
-  ratingDefinition,
+  dateDefinition,
+  isCalendarDate,
+  parseCalendarDate,
+  localToday,
   blockRegistry,
   projectBlock,
   readBlock,
@@ -42,7 +47,7 @@ const {
 );
 const encoded = (doc) =>
   Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
-function fixture(flavour = "hyperion:rating", version = 1) {
+function fixture(flavour = "hyperion:date", version = 1) {
   const doc = new Y.Doc();
   const blocks = doc.getMap("blocks");
   blocks.set(
@@ -50,17 +55,18 @@ function fixture(flavour = "hyperion:rating", version = 1) {
     new Y.Map([
       ["sys:flavour", "affine:page"],
       ["prop:title", new Y.Text("Review")],
-      ["sys:children", Y.Array.from(["rating"])],
+      ["sys:children", Y.Array.from(["date"])],
     ]),
   );
   blocks.set(
-    "rating",
+    "date",
     new Y.Map([
-      ["sys:id", "rating"],
+      ["sys:id", "date"],
       ["sys:flavour", flavour],
       ["sys:version", version],
       ["sys:children", Y.Array.from([])],
       ["prop:label", "Book"],
+      ["prop:date", "2030-06-15"],
       ["prop:value", 4],
     ]),
   );
@@ -69,45 +75,45 @@ function fixture(flavour = "hyperion:rating", version = 1) {
 
 test("registry rejects collisions, malformed IDs, versions and defaults", () => {
   assert.throws(
-    () => createBlockRegistry([ratingDefinition, ratingDefinition]),
+    () => createBlockRegistry([dateDefinition, dateDefinition]),
     /Duplicate/,
   );
   assert.throws(
-    () => createBlockRegistry([{ ...ratingDefinition, flavour: "rating" }]),
+    () => createBlockRegistry([{ ...dateDefinition, flavour: "date" }]),
     /Invalid block ID/,
   );
   assert.throws(
-    () => createBlockRegistry([{ ...ratingDefinition, version: 0 }]),
+    () => createBlockRegistry([{ ...dateDefinition, version: 0 }]),
     /version/,
   );
   assert.throws(
     () =>
       createBlockRegistry([
-        { ...ratingDefinition, defaults: () => ({ value: 8 }) },
+        { ...dateDefinition, defaults: () => ({ value: 8 }) },
       ]),
     /defaults/,
   );
 });
 
-test("rating projects identically for live metadata, persisted history and diffs", () => {
+test("date projects identically for live metadata, persisted history and diffs", () => {
   const doc = fixture();
   const note = { title: "Review", body: "", tags: [], icon: null };
   const before = { note, document: encoded(doc) };
   assert.deepEqual(readDocumentMetadata(doc.getMap("blocks")), {
     title: "Review",
-    body: "Book: 4/5",
+    body: "2030-06-15",
   });
   assert.deepEqual(
     documentMetadata(Y.encodeStateAsUpdate(doc)),
     readDocumentMetadata(doc.getMap("blocks")),
   );
-  doc.getMap("blocks").get("rating").set("prop:value", 2);
+  doc.getMap("blocks").get("date").set("prop:date", "2030-06-16");
   assert.ok(
     pageChanges(before, { note, document: encoded(doc) }).some(
       (change) =>
-        change.label === "Rating" &&
-        change.before === "Book: 4/5" &&
-        change.after === "Book: 2/5",
+        change.label === "Date" &&
+        change.before === "2030-06-15" &&
+        change.after === "2030-06-16",
     ),
   );
   doc.destroy();
@@ -116,7 +122,7 @@ test("rating projects identically for live metadata, persisted history and diffs
 test("unavailable and future blocks are not migrated, coerced or dropped", () => {
   for (const [flavour, version] of [
     ["other:widget", 1],
-    ["hyperion:rating", 99],
+    ["hyperion:date", 99],
   ]) {
     const doc = fixture(flavour, version);
     const blocks = doc.getMap("blocks");
@@ -124,11 +130,11 @@ test("unavailable and future blocks are not migrated, coerced or dropped", () =>
     migrateBlocks(blocks);
     assert.equal(encoded(doc), before);
     assert.equal(
-      isBlockAvailable(readBlock("rating", blocks.get("rating"))),
+      isBlockAvailable(readBlock("date", blocks.get("date"))),
       false,
     );
     assert.equal(
-      isBlockAvailable(readBlock("rating", blocks.get("rating")), new Map()),
+      isBlockAvailable(readBlock("date", blocks.get("date")), new Map()),
       false,
     );
     doc.destroy();
@@ -138,10 +144,10 @@ test("unavailable and future blocks are not migrated, coerced or dropped", () =>
 test("ordered migrations are atomic, idempotent and preserve extra properties", () => {
   const doc = fixture();
   const blocks = doc.getMap("blocks");
-  const rating = blocks.get("rating");
-  rating.set("prop:extra", { keep: true });
+  const date = blocks.get("date");
+  date.set("prop:extra", { keep: true });
   const upgraded = {
-    ...ratingDefinition,
+    ...dateDefinition,
     version: 3,
     migrations: {
       1: (props) => ({ ...props, value: props.value + 1 }),
@@ -150,9 +156,9 @@ test("ordered migrations are atomic, idempotent and preserve extra properties", 
   };
   const registry = createBlockRegistry([upgraded]);
   migrateBlocks(blocks, registry);
-  assert.equal(rating.get("sys:version"), 3);
-  assert.equal(rating.get("prop:value"), 5);
-  assert.deepEqual(rating.get("prop:extra"), { keep: true });
+  assert.equal(date.get("sys:version"), 3);
+  assert.equal(date.get("prop:value"), 5);
+  assert.deepEqual(date.get("prop:extra"), { keep: true });
   const before = encoded(doc);
   migrateBlocks(blocks, registry);
   assert.equal(encoded(doc), before);
@@ -165,7 +171,7 @@ test("ordered migrations are atomic, idempotent and preserve extra properties", 
   const failingRegistry = createBlockRegistry([
     upgraded,
     {
-      ...ratingDefinition,
+      ...dateDefinition,
       flavour: "other:bad",
       version: 2,
       migrations: {
@@ -188,11 +194,11 @@ test("ordered migrations are atomic, idempotent and preserve extra properties", 
 test("missing migrations and unsupported rich values leave original data intact", () => {
   const doc = fixture();
   const blocks = doc.getMap("blocks");
-  const registry = createBlockRegistry([{ ...ratingDefinition, version: 2 }]);
+  const registry = createBlockRegistry([{ ...dateDefinition, version: 2 }]);
   const before = encoded(doc);
   assert.throws(() => migrateBlocks(blocks, registry), /Missing migration/);
   assert.equal(encoded(doc), before);
-  blocks.get("rating").set("prop:rich", new Y.Text("Keep formatting"));
+  blocks.get("date").set("prop:rich", new Y.Text("Keep formatting"));
   const richBefore = encoded(doc);
   assert.throws(
     () => migrateBlocks(blocks, registry),
@@ -203,11 +209,11 @@ test("missing migrations and unsupported rich values leave original data intact"
 });
 
 test("custom and unavailable blocks remap explicit references without changing ordinary strings", () => {
-  for (const flavour of ["hyperion:rating", "third-party:widget"]) {
+  for (const flavour of ["hyperion:date", "third-party:widget"]) {
     const doc = fixture(flavour);
-    const rating = doc.getMap("blocks").get("rating");
-    rating.set("prop:label", "old-page");
-    rating.set("prop:references", {
+    const date = doc.getMap("blocks").get("date");
+    date.set("prop:label", "old-page");
+    date.set("prop:references", {
       pages: { related: "old-page" },
       assets: { cover: "asset-key" },
       future: { keep: true },
@@ -220,7 +226,7 @@ test("custom and unavailable blocks remap explicit references without changing o
         "base64",
       ),
     );
-    const props = target.getMap("blocks").get("rating");
+    const props = target.getMap("blocks").get("date");
     assert.equal(props.get("prop:label"), "old-page");
     assert.deepEqual(props.get("prop:references"), {
       pages: { related: "new-page" },
@@ -241,12 +247,12 @@ test("restore preserves unknown properties, formatting and children", () => {
   const text = new Y.Text();
   text.insert(0, "Nested text", { bold: true });
   blocks
-    .get("rating")
+    .get("date")
     .set(
       "prop:opaque",
       new Y.Map([["details", Y.Array.from([text, { future: true }])]]),
     );
-  blocks.get("rating").get("sys:children").insert(0, ["child"]);
+  blocks.get("date").get("sys:children").insert(0, ["child"]);
   blocks.set(
     "child",
     new Y.Map([
@@ -256,7 +262,7 @@ test("restore preserves unknown properties, formatting and children", () => {
   );
   const historical = Y.encodeStateAsUpdate(doc);
   const expected = blocks.toJSON();
-  blocks.get("rating").set("prop:value", 1);
+  blocks.get("date").set("prop:value", 1);
   const restored = new Y.Doc();
   Y.applyUpdate(
     restored,
@@ -266,7 +272,7 @@ test("restore preserves unknown properties, formatting and children", () => {
   assert.deepEqual(
     restored
       .getMap("blocks")
-      .get("rating")
+      .get("date")
       .get("prop:opaque")
       .get("details")
       .get(0)
@@ -277,7 +283,7 @@ test("restore preserves unknown properties, formatting and children", () => {
   restored.destroy();
 });
 
-test("projection keeps standard outline behavior and invalid ratings unavailable", () => {
+test("projection keeps standard outline behavior and invalid dates unavailable", () => {
   assert.deepEqual(
     projectBlock({
       id: "heading",
@@ -289,9 +295,7 @@ test("projection keeps standard outline behavior and invalid ratings unavailable
     { title: "Heading", level: 2 },
   );
   assert.equal(
-    blockRegistry
-      .get("hyperion:rating")
-      .validate({ label: "Rating", value: 6 }),
+    blockRegistry.get("hyperion:date").validate({ label: "Date", value: 6 }),
     false,
   );
 });
@@ -401,7 +405,7 @@ function retiredFixture() {
 test("retirement deletes only selected blocks, Kanban-only rows and owned mindmap elements", () => {
   const doc = retiredFixture();
   const blocks = doc.getMap("blocks");
-  const unknown = blocks.get("rating").toJSON();
+  const unknown = blocks.get("date").toJSON();
   assert.equal(removeRetiredBlocks(blocks), true);
   for (const id of [
     ...retiredBlockFlavours,
@@ -415,7 +419,7 @@ test("retirement deletes only selected blocks, Kanban-only rows and owned mindma
     { mode: "table" },
   ]);
   assert.equal(blocks.get("row").get("prop:text").toString(), "Keep row");
-  assert.deepEqual(blocks.get("rating").toJSON(), unknown);
+  assert.deepEqual(blocks.get("date").toJSON(), unknown);
   const elements = blocks.get("surface").get("prop:elements").get("value");
   assert.deepEqual([...elements.keys()], ["unrelated", "group"]);
   assert.deepEqual(elements.get("group").get("children").toJSON(), {
@@ -462,7 +466,7 @@ test("reference remapping preserves opaque slots and shared types in unknown blo
       ]),
     ],
   ]);
-  doc.getMap("blocks").get("rating").set("prop:references", refs);
+  doc.getMap("blocks").get("date").set("prop:references", refs);
   const restored = new Y.Doc();
   Y.applyUpdate(
     restored,
@@ -473,7 +477,7 @@ test("reference remapping preserves opaque slots and shared types in unknown blo
   );
   const pages = restored
     .getMap("blocks")
-    .get("rating")
+    .get("date")
     .get("prop:references")
     .get("pages");
   assert.equal(pages.get("related"), "new-page");
@@ -481,4 +485,104 @@ test("reference remapping preserves opaque slots and shared types in unknown blo
   assert.equal(pages.get("future").toString(), "opaque");
   doc.destroy();
   restored.destroy();
+});
+
+test("date parsing validates leap years and preserves calendar dates without UTC conversion", () => {
+  for (const date of ["2024-02-29", "2000-02-29", "2030-12-31", "0001-01-01"])
+    assert.ok(isCalendarDate(date), date);
+  for (const date of [
+    "2025-02-29",
+    "1900-02-29",
+    "2030-04-31",
+    "0000-01-01",
+    "2030-13-01",
+    "2030-00-01",
+    "2030-01-00",
+  ])
+    assert.equal(isCalendarDate(date), false, date);
+  assert.equal(parseCalendarDate(" 6/5/2030 "), "2030-06-05");
+  assert.equal(parseCalendarDate("2030-06-05"), "2030-06-05");
+  assert.equal(parseCalendarDate("2/30/2030"), null);
+  assert.equal(localToday(new Date(2030, 5, 5, 23, 59)), "2030-06-05");
+  assert.deepEqual(dateDefinition.defaults(), { date: "" });
+});
+
+test("legacy dates become inline text without changing identity, children or visible metadata", () => {
+  const doc = fixture();
+  const blocks = doc.getMap("blocks");
+  blocks.get("date").get("sys:children").push(["child"]);
+  const before = documentMetadata(Y.encodeStateAsUpdate(doc));
+  assert.equal(migrateInlineDates(blocks), true);
+  const date = blocks.get("date");
+  assert.equal(date.get("sys:id"), "date");
+  assert.equal(date.get("sys:flavour"), "affine:paragraph");
+  assert.deepEqual(date.get("sys:children").toArray(), ["child"]);
+  assert.deepEqual(date.get("prop:text").toDelta(), [
+    { insert: " ", attributes: { hyperionDate: "2030-06-15" } },
+  ]);
+  assert.equal(date.has("prop:date"), false);
+  assert.deepEqual(documentMetadata(Y.encodeStateAsUpdate(doc)), before);
+  assert.equal(migrateInlineDates(blocks), false);
+  const text = date.get("prop:text");
+  text.insert(0, "Due ");
+  text.insert(text.length, " tomorrow", { bold: true });
+  assert.ok(
+    documentMetadata(Y.encodeStateAsUpdate(doc)).body.includes(
+      "Due 2030-06-15 tomorrow",
+    ),
+  );
+  doc.destroy();
+});
+
+test("empty legacy dates become editable paragraphs; invalid and future dates remain intact", () => {
+  for (const [version, value, changes] of [
+    [1, "", true],
+    [1, "bad date", false],
+    [2, "2030-06-15", false],
+  ]) {
+    const doc = fixture("hyperion:date", version);
+    const blocks = doc.getMap("blocks");
+    blocks.get("date").set("prop:date", value);
+    const before = blocks.toJSON();
+    assert.equal(migrateInlineDates(blocks), changes);
+    if (changes) assert.equal(blocks.get("date").get("prop:text").length, 0);
+    else assert.deepEqual(blocks.toJSON(), before);
+    doc.destroy();
+  }
+});
+
+test("import and restore convert legacy dates and preserve adjacent inline dates", () => {
+  const doc = fixture();
+  for (const bytes of [
+    Buffer.from(remapDocument(encoded(doc), new Map()), "base64"),
+    restoreDocument(
+      Y.encodeStateAsUpdate(new Y.Doc()),
+      Y.encodeStateAsUpdate(doc),
+    ),
+  ]) {
+    const restored = new Y.Doc();
+    Y.applyUpdate(restored, bytes);
+    const text = restored.getMap("blocks").get("date").get("prop:text");
+    assert.deepEqual(text.toDelta(), [
+      { insert: " ", attributes: { hyperionDate: "2030-06-15" } },
+    ]);
+    text.insert(1, " ", { hyperionDate: "2030-06-15" });
+    assert.ok(
+      documentMetadata(Y.encodeStateAsUpdate(restored)).body.includes(
+        "2030-06-152030-06-15",
+      ),
+    );
+    const copy = new Y.Doc();
+    Y.applyUpdate(
+      copy,
+      Buffer.from(remapDocument(encoded(restored), new Map()), "base64"),
+    );
+    assert.deepEqual(
+      copy.getMap("blocks").get("date").get("prop:text").toDelta(),
+      text.toDelta(),
+    );
+    copy.destroy();
+    restored.destroy();
+  }
+  doc.destroy();
 });

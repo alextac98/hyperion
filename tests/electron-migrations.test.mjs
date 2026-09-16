@@ -223,3 +223,68 @@ test('import and restore refresh search metadata when retired blocks are removed
   assert.equal(after.notes.find(note=>note.id===restored.id).body,'Keep this text');
   assert.equal(after.revisions.find(item=>item.id===revision.id).document,old);
 });
+
+test('v3 removes rating blocks with a version-2 backup and preserves date blocks', async context => {
+  const {directory,path}=await fixture(context,'desktop-v1');
+  const prepared=new DesktopDatabase({defaultDirectory:directory});prepared.close();
+  const db=new DatabaseSync(path);
+  const doc=new Y.Doc();
+  try {
+    db.exec('DELETE FROM migrations WHERE version>=3; PRAGMA user_version=2');
+    for (const row of db.prepare("SELECT data FROM editor_updates WHERE document_id='parent' ORDER BY sequence").all()) Y.applyUpdate(doc,row.data);
+    const blocks=doc.getMap('blocks');
+    const root=[...blocks.values()].find(block=>block.get('sys:flavour')==='affine:page');
+    blocks.set('rating',new Y.Map([['sys:flavour','hyperion:rating'],['prop:label','Remove rating'],['prop:value',4]]));
+    blocks.set('date',new Y.Map([['sys:flavour','hyperion:date'],['sys:version',1],['prop:date','2030-06-15']]));
+    root.get('sys:children').push(['rating','date']);
+    db.prepare("INSERT INTO editor_updates(vault_id,document_id,data) VALUES ('fixture-vault','parent',?)").run(Y.encodeStateAsUpdate(doc));
+  } finally {db.close();doc.destroy();}
+  const before=rawState(path);
+  const upgraded=new DesktopDatabase({defaultDirectory:directory});
+  try {
+    assertVersions(path);
+    const backup=migrationBackups(directory).find(path=>path.includes('migration-2-'));
+    assert.ok(backup);assert.deepEqual(rawState(backup),before);
+    const exported=execute(upgraded,'exportVault');
+    const current=new Y.Doc();Y.applyUpdate(current,Buffer.from(exported.editorDocuments.parent,'base64'));
+    assert.equal(current.getMap('blocks').has('rating'),false);
+    assert.equal(current.getMap('blocks').get('date').get('sys:flavour'),'affine:paragraph');
+    assert.deepEqual(current.getMap('blocks').get('date').get('prop:text').toDelta(),[{insert:' ',attributes:{hyperionDate:'2030-06-15'}}]);current.destroy();
+    assert.ok(exported.notes.find(note=>note.id==='parent').body.includes('2030-06-15'));
+  } finally {upgraded.close();}
+});
+
+for (const corrupt of [false, true]) test(`v4 inline date migration ${corrupt ? 'rolls back all writes on corrupt documents' : 'backs up and preserves date content'}`, async context => {
+  const {directory,path}=await fixture(context,'desktop-v1');
+  const prepared=new DesktopDatabase({defaultDirectory:directory});prepared.close();
+  const db=new DatabaseSync(path); const doc=new Y.Doc();
+  try {
+    db.exec('DELETE FROM migrations WHERE version>=4; PRAGMA user_version=3');
+    for (const row of db.prepare("SELECT data FROM editor_updates WHERE document_id='parent' ORDER BY sequence").all()) Y.applyUpdate(doc,row.data);
+    const blocks=doc.getMap('blocks');
+    const root=[...blocks.values()].find(block=>block.get('sys:flavour')==='affine:page');
+    blocks.set('date',new Y.Map([['sys:id','date'],['sys:flavour','hyperion:date'],['sys:version',1],['sys:children',new Y.Array()],['prop:date','2030-06-15']]));
+    root.get('sys:children').push(['date']);
+    db.prepare("INSERT INTO editor_updates(vault_id,document_id,data) VALUES ('fixture-vault','parent',?)").run(Y.encodeStateAsUpdate(doc));
+    if(corrupt) db.prepare("INSERT INTO editor_updates(vault_id,document_id,data) VALUES ('fixture-vault','zz-corrupt',?)").run(new Uint8Array([255]));
+  } finally {db.close();doc.destroy();}
+  const before=rawState(path);
+  if(corrupt) {
+    assert.throws(()=>new DesktopDatabase({defaultDirectory:directory}));
+    assert.deepEqual(rawState(path),before);
+  } else {
+    const upgraded=new DesktopDatabase({defaultDirectory:directory});
+    try {
+      assertVersions(path);
+      const exported=execute(upgraded,'exportVault');
+      const current=new Y.Doc();Y.applyUpdate(current,Buffer.from(exported.editorDocuments.parent,'base64'));
+      const date=current.getMap('blocks').get('date');
+      assert.equal(date.get('sys:flavour'),'affine:paragraph');
+      assert.deepEqual(date.get('prop:text').toDelta(),[{insert:' ',attributes:{hyperionDate:'2030-06-15'}}]);
+      assert.ok(exported.notes.find(note=>note.id==='parent').body.includes('2030-06-15'));
+      current.destroy();
+    } finally {upgraded.close();}
+  }
+  const backup=migrationBackups(directory).find(path=>path.includes('migration-3-'));
+  assert.ok(backup);assert.deepEqual(rawState(backup),before);
+});

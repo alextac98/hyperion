@@ -1,12 +1,17 @@
 import * as Y from "yjs";
 
 /** Permanently removed from the current document format, not missing plugins. */
-export const retiredBlockFlavours: ReadonlySet<string> = new Set([
+export const retiredBlockFlavoursV2: ReadonlySet<string> = new Set([
   "affine:embed-youtube",
   "affine:embed-github",
   "affine:embed-figma",
   "affine:embed-loom",
   "affine:frame",
+]);
+
+export const retiredBlockFlavours: ReadonlySet<string> = new Set([
+  ...retiredBlockFlavoursV2,
+  "hyperion:rating",
 ]);
 
 const field = (value: unknown, key: string): unknown =>
@@ -25,6 +30,7 @@ const keys = (value: unknown): string[] =>
 /** Idempotent retirement migration. Unknown plugin payloads are deliberately untouched. */
 export function removeRetiredBlocks<T extends Y.Map<unknown>>(
   blocks: Y.Map<T>,
+  flavours: ReadonlySet<string> = retiredBlockFlavours,
 ): boolean {
   let changed = false;
   const apply = () => {
@@ -32,7 +38,7 @@ export function removeRetiredBlocks<T extends Y.Map<unknown>>(
     const surfaces: Y.Map<unknown>[] = [];
     for (const [id, block] of blocks) {
       const flavour = block.get("sys:flavour");
-      if (retiredBlockFlavours.has(String(flavour))) removed.add(id);
+      if (flavours.has(String(flavour))) removed.add(id);
       if (flavour === "affine:database" || flavour === "affine:data-view") {
         const views = block.get("prop:views");
         const list =

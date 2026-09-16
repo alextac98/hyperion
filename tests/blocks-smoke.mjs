@@ -53,53 +53,489 @@ void (async () => {
     await js(`(() => {
     const widget=document.querySelector('affine-slash-menu-widget');
     const store=widget.std.store;
-    for(const flavour of ['affine:embed-youtube','affine:embed-github','affine:embed-figma','affine:embed-loom','affine:frame']) {
+    for(const flavour of ['affine:embed-youtube','affine:embed-github','affine:embed-figma','affine:embed-loom','affine:frame','hyperion:rating']) {
       if(store.schema.get(flavour))throw new Error('Retired schema still registered: '+flavour);
       if(widget.std.getView(flavour))throw new Error('Retired view still registered: '+flavour);
     }
     const context={std:widget.std,model:store.getModelsByFlavour('affine:paragraph')[0]};
     const items=typeof widget.config.items==='function'?widget.config.items(context):widget.config.items;
-    const disabled=['YouTube','GitHub','Figma','Loom','Mind Map','Frame','Today','Tomorrow','Yesterday','Now','Kanban View'];
+    const disabled=['YouTube','GitHub','Figma','Loom','Mind Map','Frame','Today','Tomorrow','Yesterday','Now','Kanban View','Rating'];
     if(items.some(item=>disabled.includes(item.name)))throw new Error('Disabled slash item still present');
     if(!items.some(item=>item.name==='Table View'))throw new Error('Table View was removed');
-    const item=items.find(item=>item.name==='Rating');
-    if(!item || !item.when(context))throw new Error('Rating slash command is unavailable');
+    const item=items.find(item=>item.name==='Date');
+    if(!item || !item.when(context))throw new Error('Date slash command is unavailable');
+    context.std.selection.fromJSON([{type:"text",from:{blockId:context.model.id,index:0,length:0},to:null}]);
     item.action(context);
   })()`);
     await until(
-      () =>
-        js(`Boolean(document.querySelector('hyperion-rating .rating-label'))`),
-      "Rating did not render",
+      () => js(`Boolean(document.querySelector('hyperion-date-picker'))`),
+      "Date picker did not open",
     );
     await js(
-      `(() => {const input=document.querySelector('.rating-label');input.value='Book review';input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[aria-label="Rate 4 out of 5"]').click();})()`,
+      `(() => {const input=document.querySelector('hyperion-date-picker').shadowRoot.querySelector('input');input.value='2/30/2030';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()`,
     );
     await until(
       () =>
-        js(`document.querySelector('.rating-summary')?.textContent==='4/5'`),
-      "Rating interaction failed",
+        js(
+          `Boolean(document.querySelector('hyperion-date-picker')?.shadowRoot.querySelector('.error'))`,
+        ),
+      "Invalid date was accepted",
+    );
+    await js(
+      `(() => {const input=document.querySelector('hyperion-date-picker').shadowRoot.querySelector('input');input.value='6/15/2030';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()`,
+    );
+    await until(
+      () =>
+        js(
+          `document.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15' && !document.querySelector('hyperion-date-picker')`,
+        ),
+      "Manual date entry failed",
     );
     await saved();
     await until(
       () =>
         js(
-          `window.hyperionDesktop.repositoryExecute({operation:'listNotes',vaultId:'hyperion'}).then(notes=>notes.find(note=>note.id===${JSON.stringify(identity.noteId)})?.body.includes('Book review: 4/5'))`,
+          `window.hyperionDesktop.repositoryExecute({operation:'listNotes',vaultId:'hyperion'}).then(notes=>notes.find(note=>note.id===${JSON.stringify(identity.noteId)})?.body.includes('2030-06-15'))`,
         ),
-      "Rating was not indexed",
+      "Date was not indexed",
+    );
+    await js(`document.querySelector('doc-title').doc.undo()`);
+    await until(
+      () => js(`!document.querySelector('.hyperion-inline-date')`),
+      "Undo did not clear date",
+    );
+    await js(`document.querySelector('doc-title').doc.redo()`);
+    await until(
+      () =>
+        js(
+          `document.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15'`,
+        ),
+      "Redo did not restore date",
+    );
+    await js(`document.querySelector('.hyperion-inline-date').click()`);
+    await until(
+      () =>
+        js(
+          `Boolean(document.querySelector('hyperion-date-picker').shadowRoot.querySelector('[data-date="2030-06-16"]'))`,
+        ),
+      "Calendar did not reopen at saved month",
+    );
+    await js(
+      `document.querySelector('hyperion-date-picker').shadowRoot.querySelector('[data-date="2030-06-16"]').click()`,
+    );
+    await until(
+      () =>
+        js(
+          `document.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-16'`,
+        ),
+      "Calendar selection failed",
     );
     await js(`document.querySelector('doc-title').doc.undo()`);
     await until(
       () =>
         js(
-          `document.querySelector('.rating-summary')?.textContent==='Not rated'`,
+          `document.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15'`,
         ),
-      "Undo did not restore score",
+      "Calendar selection undo failed",
     );
-    await js(`document.querySelector('doc-title').doc.redo()`);
+    const addParagraph = async (value = "") => {
+      const id = await js(
+        `(() => {const store=document.querySelector('doc-title').doc;const TextType=store.getModelsByFlavour('affine:paragraph')[0].props.text.constructor;return store.addBlock('affine:paragraph',{type:'text',text:new TextType(${JSON.stringify(value)})},store.getModelsByFlavour('affine:note')[0]);})()`,
+      );
+      await until(
+        () =>
+          js(
+            `Boolean(document.querySelector('[data-block-id="${id}"] rich-text')?.inlineEditor)`,
+          ),
+        "Paragraph did not render",
+      );
+      return id;
+    };
+    const focus = async (id, index) => {
+      await js(
+        `(async () => {const editor=document.querySelector('[data-block-id="${id}"] rich-text').inlineEditor;await editor.waitForUpdate();await new Promise(requestAnimationFrame);document.querySelector("affine-page-root").focus({preventScroll:true});editor.focusIndex(${index});await editor.waitForUpdate();editor.syncInlineRange({index:${index},length:0});await new Promise(requestAnimationFrame);})()`,
+      );
+      await until(
+        () =>
+          js(
+            `document.querySelector('affine-slash-menu-widget').std.selection.value.some(s=>s.from?.blockId==='${id}' && s.from.index===${index}) && document.activeElement.isContentEditable && document.getSelection()?.anchorNode?.parentElement?.closest('[data-block-id]')?.dataset.blockId==='${id}'`,
+          ),
+        "Caret not positioned",
+      );
+    };
+    const key = (keyCode, character = false) => {
+      window.webContents.sendInputEvent({ type: "keyDown", keyCode });
+      if (character)
+        window.webContents.sendInputEvent({ type: "char", keyCode });
+      window.webContents.sendInputEvent({ type: "keyUp", keyCode });
+    };
+    const choose = async (date) => {
+      await until(
+        () =>
+          js(
+            `Boolean(document.querySelector('hyperion-date-picker')?.shadowRoot.querySelector('input'))`,
+          ),
+        "Date picker did not open",
+      );
+      await js(
+        `(() => {const input=document.querySelector('hyperion-date-picker').shadowRoot.querySelector('input');input.value=${JSON.stringify(date)};input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()`,
+      );
+      await until(
+        () => js(`!document.querySelector('hyperion-date-picker')`),
+        "Date picker did not close",
+      );
+    };
+    console.log("PASS: date picker, manual entry, index, undo and editing");
+    // Native // opens the existing slash picker, filtered to Date, without inserting.
+    const shortcutId = await addParagraph();
+    await focus(shortcutId, 0);
+    key("/", true);
     await until(
       () =>
-        js(`document.querySelector('.rating-summary')?.textContent==='4/5'`),
-      "Redo did not restore score",
+        js(
+          `document.querySelector('doc-title').doc.getModelById('${shortcutId}').props.text.toString()==='/'`,
+        ),
+      "First slash was not typed",
+    );
+    key("/");
+    await until(
+      () =>
+        js(
+          `document.querySelector('doc-title').doc.getModelById('${shortcutId}').props.text.toString()==='/date'`,
+        ),
+      "Double slash did not search for date",
+    );
+    assert.equal(
+      await js(`Boolean(document.querySelector('hyperion-date-picker'))`),
+      false,
+    );
+    assert.equal(
+      await js(`document.querySelectorAll('.hyperion-inline-date').length`),
+      1,
+    );
+    await until(
+      () =>
+        js(
+          `document.querySelector('affine-slash-menu')?.shadowRoot.querySelector('inner-slash-menu')?.menu[0]?.name==='Date'`,
+        ),
+      "Slash picker did not filter to Date",
+    );
+    await writeFile(
+      "/tmp/hyperion-date-search.png",
+      (await window.webContents.capturePage()).toPNG(),
+    );
+    key("Enter");
+    await until(
+      () => js(`Boolean(document.querySelector('hyperion-date-picker'))`),
+      "Enter did not select Date from the slash picker",
+    );
+    const selectedDate = await js(
+      `document.querySelector('hyperion-date-picker').value`,
+    );
+    const today = await js(
+      `(() => { const date=new Date(); return [date.getFullYear(),String(date.getMonth()+1).padStart(2,'0'),String(date.getDate()).padStart(2,'0')].join('-'); })()`,
+    );
+    assert.equal(selectedDate, today);
+    const paragraphCount = await js(
+      `document.querySelector('doc-title').doc.getModelsByFlavour('affine:paragraph').length`,
+    );
+    // Use the focus supplied by opening the picker; do not repair it in the test.
+    key("Enter");
+    await until(
+      () =>
+        js(
+          `!document.querySelector('hyperion-date-picker') && document.querySelector('[data-block-id="${shortcutId}"] time')?.dateTime===${JSON.stringify(today)}`,
+        ),
+      "Enter did not confirm the default date",
+    );
+    await js(
+      `document.querySelector('[data-block-id="${shortcutId}"] .hyperion-inline-date').click()`,
+    );
+    assert.equal(
+      await js(
+        `document.querySelector('doc-title').doc.getModelsByFlavour('affine:paragraph').length`,
+      ),
+      paragraphCount,
+      "Confirming a date created a new paragraph",
+    );
+    const monthBefore = await js(
+      `document.querySelector('hyperion-date-picker').shadowRoot.querySelector('.month strong').textContent`,
+    );
+    await js(
+      `document.querySelector('hyperion-date-picker').shadowRoot.querySelector('[aria-label="Next month"]').click()`,
+    );
+    await until(
+      () =>
+        js(
+          `document.querySelector('hyperion-date-picker').shadowRoot.querySelector('.month strong').textContent!==${JSON.stringify(monthBefore)}`,
+        ),
+      "Month navigation failed",
+    );
+    await wait(200); // Allow the compositor to paint the updated calendar.
+    await writeFile(
+      "/tmp/hyperion-date-picker.png",
+      (await window.webContents.capturePage()).toPNG(),
+    );
+    assert.equal(
+      await js(
+        `document.activeElement===document.querySelector('hyperion-date-picker') && document.activeElement.shadowRoot.activeElement?.tagName==='INPUT'`,
+      ),
+      true,
+      "Picker did not retain input focus",
+    );
+    await js(
+      `document.querySelector('hyperion-date-picker').shadowRoot.querySelector('input').select()`,
+    );
+    for (const character of "2031-01-02") key(character, true);
+    key("Enter");
+    await until(
+      () =>
+        js(
+          `!document.querySelector('hyperion-date-picker') && document.querySelector('[data-block-id="${shortcutId}"] time')?.dateTime==='2031-01-02'`,
+        ),
+      "Native date typing and Enter failed",
+    );
+    await until(
+      () => js(`document.querySelectorAll('.hyperion-inline-date').length===2`),
+      "Shortcut did not insert inline date",
+    );
+    assert.equal(
+      await js(
+        `document.querySelector('doc-title').doc.getModelById('${shortcutId}').props.text.length`,
+      ),
+      1,
+    );
+
+    await until(
+      () =>
+        js(
+          `document.activeElement?.isContentEditable && document.querySelector('[data-block-id="${shortcutId}"] rich-text').inlineEditor.getInlineRange()?.index===1`,
+        ),
+      "Choosing a date did not restore text focus",
+    );
+    key("x", true);
+    await until(
+      () =>
+        js(
+          `document.querySelector('doc-title').doc.getModelById('${shortcutId}').props.text.toString()===' x'`,
+        ),
+      "Typing after a date failed",
+    );
+    assert.deepEqual(
+      await js(
+        `document.querySelector('doc-title').doc.getModelById('${shortcutId}').props.text.yText.toDelta()`,
+      ),
+      [
+        { insert: " ", attributes: { hyperionDate: "2031-01-02" } },
+        { insert: "x" },
+      ],
+    );
+    key("Backspace");
+    await until(
+      () =>
+        js(
+          `document.querySelector('doc-title').doc.getModelById('${shortcutId}').props.text.length===1`,
+        ),
+      "Deleting text after the date failed",
+    );
+    console.log("PASS: native // search, Enter selection and continued typing");
+    await js(
+      `document.querySelector('[data-block-id="${shortcutId}"] .hyperion-inline-date').click()`,
+    );
+    await until(
+      () =>
+        js(
+          `Boolean(document.querySelector('hyperion-date-picker')?.shadowRoot.querySelector('input'))`,
+        ),
+      "Date did not reopen",
+    );
+    await js(
+      `(() => {const input=document.querySelector('hyperion-date-picker').shadowRoot.querySelector('input');input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    key("Enter");
+    await until(
+      () =>
+        js(
+          `!document.querySelector('hyperion-date-picker') && document.querySelector('[data-block-id="${shortcutId}"] time')?.dateTime==='2031-01-02'`,
+        ),
+      "Enter did not confirm the existing selected date with an empty field",
+    );
+    await js(
+      `document.querySelector('[data-block-id="${shortcutId}"] .hyperion-inline-date').click()`,
+    );
+    await until(
+      () =>
+        js(
+          `Boolean(document.querySelector('hyperion-date-picker')?.shadowRoot.querySelector('input'))`,
+        ),
+      "Date did not reopen after Enter",
+    );
+    key("Escape");
+    await until(
+      () =>
+        js(
+          `!document.querySelector('hyperion-date-picker') && document.activeElement.isContentEditable`,
+        ),
+      "Escape did not return focus to the editor",
+    );
+    assert.equal(
+      await js(
+        `document.querySelector('[data-block-id="${shortcutId}"] time').dateTime`,
+      ),
+      "2031-01-02",
+    );
+    // Inline insertion keeps surrounding prose, formatting, and the same paragraph.
+    const proseId = await addParagraph("Before after");
+    await js(
+      `document.querySelector('doc-title').doc.getModelById('${proseId}').props.text.format(7,5,{bold:true})`,
+    );
+    await focus(proseId, 7);
+    key("/", true);
+    await until(
+      () =>
+        js(
+          `document.querySelector('doc-title').doc.getModelById('${proseId}').props.text.toString()==='Before /after'`,
+        ),
+      "Slash in prose was not typed",
+    );
+    key("/");
+    await until(
+      () =>
+        js(
+          `document.querySelector('doc-title').doc.getModelById('${proseId}').props.text.toString()==='Before /dateafter'`,
+        ),
+      "Prose search failed",
+    );
+    await until(
+      () =>
+        js(
+          `document.querySelector('affine-slash-menu')?.shadowRoot.querySelector('inner-slash-menu')?.menu[0]?.name==='Date'`,
+        ),
+      "Prose picker did not filter",
+    );
+    key("Enter");
+    await choose("2032-04-05");
+    await until(
+      () =>
+        js(
+          `Boolean(document.querySelector('[data-block-id="${proseId}"] .hyperion-inline-date'))`,
+        ),
+      "Inline date did not render in prose",
+    );
+    assert.deepEqual(
+      await js(
+        `document.querySelector('doc-title').doc.getModelById('${proseId}').props.text.yText.toDelta()`,
+      ),
+      [
+        { insert: "Before " },
+        { insert: " ", attributes: { hyperionDate: "2032-04-05" } },
+        { insert: "after", attributes: { bold: true } },
+      ],
+    );
+    await wait(200); // Capture the committed inline rendering.
+    await writeFile(
+      "/tmp/hyperion-inline-date.png",
+      (await window.webContents.capturePage()).toPNG(),
+    );
+    await focus(proseId, 8);
+    key("Backspace");
+    await until(
+      () =>
+        js(
+          `document.querySelector('doc-title').doc.getModelById('${proseId}').props.text.toString()==='Before after'`,
+        ),
+      "Backspace did not delete the date",
+    );
+    await js(`document.querySelector('doc-title').doc.undo()`);
+    await until(
+      () =>
+        js(
+          `Boolean(document.querySelector('[data-block-id="${proseId}"] .hyperion-inline-date'))`,
+        ),
+      "Undo did not restore deleted date",
+    );
+    await focus(proseId, 7);
+    key("Delete");
+    await until(
+      () =>
+        js(
+          `!document.querySelector('[data-block-id="${proseId}"] .hyperion-inline-date')`,
+        ),
+      "Delete did not remove the date",
+    );
+    await js(`document.querySelector('doc-title').doc.undo()`);
+    await until(
+      () =>
+        js(
+          `Boolean(document.querySelector('[data-block-id="${proseId}"] .hyperion-inline-date'))`,
+        ),
+      "Undo did not restore date after Delete",
+    );
+    await js(
+      `document.querySelector('[data-block-id="${proseId}"] .hyperion-inline-date').focus()`,
+    );
+    key("Backspace");
+    await until(
+      () =>
+        js(
+          `!document.querySelector('[data-block-id="${proseId}"] .hyperion-inline-date')`,
+        ),
+      "Focused chip was not deletable",
+    );
+    await js(
+      `document.querySelector('doc-title').doc.deleteBlock(document.querySelector('doc-title').doc.getModelById('${proseId}'))`,
+    );
+    console.log("PASS: surrounding formatting, Backspace, Delete and undo");
+    // The second slash in a URL must remain ordinary text.
+    const urlId = await js(
+      `(() => {const store=document.querySelector('doc-title').doc;const TextType=store.getModelsByFlavour('affine:paragraph')[0].props.text.constructor;return store.addBlock('affine:paragraph',{type:'text',text:new TextType('https:/')},store.getModelsByFlavour('affine:note')[0]);})()`,
+    );
+    await until(
+      () =>
+        js(
+          `Boolean(document.querySelector('[data-block-id="${urlId}"] rich-text')?.inlineEditor)`,
+        ),
+      "URL paragraph did not render",
+    );
+    await js(
+      `document.querySelector('[data-block-id="${urlId}"] rich-text').inlineEditor.focusEnd()`,
+    );
+    window.webContents.sendInputEvent({ type: "keyDown", keyCode: "/" });
+    window.webContents.sendInputEvent({ type: "char", keyCode: "/" });
+    window.webContents.sendInputEvent({ type: "keyUp", keyCode: "/" });
+    await until(
+      () =>
+        js(
+          `document.querySelector('doc-title').doc.getModelById('${urlId}')?.props.text.toString()==='https://'`,
+        ),
+      "URL was intercepted by the shortcut",
+    );
+    assert.equal(
+      await js(`document.querySelectorAll('.hyperion-inline-date').length`),
+      2,
+    );
+    await js(
+      `(() => {const text=document.querySelector('doc-title').doc.getModelById('${urlId}').props.text;text.delete(0,text.length);text.insert('/',0,{code:true});})()`,
+    );
+    await js(
+      `document.querySelector('[data-block-id="${urlId}"] rich-text').inlineEditor.focusEnd()`,
+    );
+    window.webContents.sendInputEvent({ type: "keyDown", keyCode: "/" });
+    window.webContents.sendInputEvent({ type: "char", keyCode: "/" });
+    window.webContents.sendInputEvent({ type: "keyUp", keyCode: "/" });
+    await until(
+      () =>
+        js(
+          `document.querySelector('doc-title').doc.getModelById('${urlId}')?.props.text.toString()==='//'`,
+        ),
+      "Inline code was intercepted by the shortcut",
+    );
+    assert.equal(
+      await js(`document.querySelectorAll('.hyperion-inline-date').length`),
+      2,
+    );
+    await js(
+      `document.querySelector('doc-title').doc.deleteBlock(document.querySelector('doc-title').doc.getModelById('${urlId}'))`,
     );
     // Introduce an unknown block with nested content through real Yjs operations.
     await js(`(() => {
@@ -141,7 +577,7 @@ void (async () => {
     await until(
       () =>
         js(
-          `document.querySelector('.rating-summary')?.textContent==='4/5' && Boolean(document.querySelector('hyperion-unavailable-block'))`,
+          `document.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15' && Boolean(document.querySelector('hyperion-unavailable-block'))`,
         ),
       "Custom blocks did not survive reopening",
     );
@@ -179,21 +615,21 @@ void (async () => {
     await until(
       () =>
         js(
-          `Boolean(document.querySelector('.history-preview hyperion-rating'))`,
+          `Boolean(document.querySelector('.history-preview .hyperion-inline-date'))`,
         ),
       "History did not render custom block",
     );
     assert.equal(
       await js(
-        `document.querySelector('.history-preview .rating-star').disabled`,
+        `document.querySelector('.history-preview .hyperion-inline-date time')?.dateTime`,
       ),
-      true,
+      "2030-06-15",
     );
     assert.equal(
       await js(
-        `document.querySelector('.history-preview .rating-label').readOnly`,
+        `document.querySelectorAll('.history-preview .hyperion-inline-date[role="button"]').length`,
       ),
-      true,
+      0,
     );
     assert.ok(
       await js(
@@ -253,7 +689,7 @@ void (async () => {
     await until(
       () =>
         js(
-          `document.querySelector('doc-title')?.doc.id!==${JSON.stringify(identity.noteId)} && document.querySelector('.rating-summary')?.textContent==='4/5'`,
+          `document.querySelector('doc-title')?.doc.id!==${JSON.stringify(identity.noteId)} && document.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15'`,
         ),
       "Duplicated custom block did not render",
     );
@@ -273,7 +709,7 @@ void (async () => {
     await until(
       () =>
         js(
-          `document.querySelector('doc-title')?.doc.id===${JSON.stringify(restored.id)} && document.querySelector('.rating-summary')?.textContent==='4/5'`,
+          `document.querySelector('doc-title')?.doc.id===${JSON.stringify(restored.id)} && document.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15'`,
         ),
       "Restored custom block did not render",
     );
@@ -291,13 +727,13 @@ void (async () => {
       `window.hyperionDesktop.repositoryExecute({operation:'importVault',bundle:${JSON.stringify(exported)}})`,
     );
     const importedPage = imported.notes?.find((note) =>
-      note.body.includes("Book review"),
+      note.body.includes("2030-06-15"),
     );
     const notes = await js(
       `window.hyperionDesktop.repositoryExecute({operation:'listNotes',vaultId:${JSON.stringify(imported.vault.id)}})`,
     );
     const page =
-      importedPage ?? notes.find((note) => note.body.includes("Book review"));
+      importedPage ?? notes.find((note) => note.body.includes("2030-06-15"));
     assert.ok(page);
     await js(
       `localStorage.setItem('hyperion:current-vault',${JSON.stringify(imported.vault.id)});localStorage.setItem('hyperion:last-note:'+${JSON.stringify(imported.vault.id)},${JSON.stringify(page.id)});location.reload();`,
@@ -305,7 +741,7 @@ void (async () => {
     await until(
       () =>
         js(
-          `document.querySelector('.rating-summary')?.textContent==='4/5' && Boolean(document.querySelector('hyperion-unavailable-block'))`,
+          `document.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15' && Boolean(document.querySelector('hyperion-unavailable-block'))`,
         ),
       "Imported blocks did not render",
     );
@@ -320,13 +756,18 @@ void (async () => {
     assert.deepEqual(rendererErrors, [], "Renderer errors");
     window.destroy();
     console.log(
-      "PASS: rating insertion, editing, metadata, undo/redo, unavailable-block children, reopen, read-only history, duplicate, restore, table-only views and portable import",
+      "PASS: date insertion, // shortcut, URL preservation, calendar and manual entry, metadata, undo/redo, unavailable-block children, reopen, read-only history, duplicate, restore, table-only views and portable import",
     );
     await rm(directory, { recursive: true, force: true });
     app.exit(0);
   } catch (error) {
     console.error(error);
     if (window && !window.isDestroyed()) {
+      console.error(
+        await js(
+          `JSON.stringify({selection:document.querySelector('affine-slash-menu-widget')?.std.selection.value, paragraphs:document.querySelector('doc-title')?.doc.getModelsByFlavour('affine:paragraph').map(m=>({id:m.id,text:m.props.text.toString()})),active:document.activeElement?.tagName})`,
+        ).catch(() => ""),
+      );
       console.error(await js("document.body.innerText").catch(() => ""));
       await writeFile(
         "/tmp/hyperion-blocks-failure.png",

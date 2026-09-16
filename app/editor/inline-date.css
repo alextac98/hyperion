@@ -1,0 +1,25 @@
+.hyperion-date-node {
+  display: inline;
+  white-space: nowrap;
+}
+.hyperion-inline-date {
+  display: inline;
+  padding: 1px 4px;
+  margin: 0 1px;
+  border-radius: 3px;
+  background: var(--selected-bg);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 0.9em;
+  line-height: inherit;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.hyperion-inline-date[data-selected="true"],
+.hyperion-inline-date:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.hyperion-inline-date[role="text"] {
+  cursor: default;
+}

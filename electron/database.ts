@@ -1,3 +1,4 @@
+import { migrateInlineDates } from "../blocks/date/inline.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, unlinkSync, openSync, fsyncSync, closeSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -6,10 +7,10 @@ import { DatabaseSync } from "node:sqlite";
 import * as Y from "yjs";
 import { assetReferences, array, bytes, documentBytes, documentMetadata, retiredDocumentMetadata, revisionContentHash, hash, id, object, record, remapDocument, restoreDocument, string, BUNDLE_VERSION, DOCUMENT_VERSION, type RecordValue } from "./data-format.js";
 
-import { removeRetiredBlocks } from "../blocks/retired.js";
+import { removeRetiredBlocks, retiredBlockFlavoursV2, retiredBlockFlavours } from "../blocks/retired.js";
 
 const DATABASE_FILE = "hyperion.sqlite3";
-export const DATABASE_VERSION = 2;
+export const DATABASE_VERSION = 4;
 const HISTORY_DAYS = 30;
 export type RepositoryRequest = { operation: string; [key: string]: unknown };
 export type StorageInfo = { directory: string; databasePath: string; isDefault: boolean };
@@ -74,6 +75,8 @@ export class DesktopDatabase {
       db.exec("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;");
       if (version === 0) this.migratePrototype();
       if (version < 2) this.migrateRetiredBlocks(version === 1);
+      if (version < 3) this.migrateRetiredBlocks(version === 2, 3);
+      if (version < 4) this.migrateRetiredBlocks(version === 3, 4);
       this.checkIntegrity();
     } catch (error) { db.close(); throw error; }
   }
@@ -102,10 +105,10 @@ export class DesktopDatabase {
       db.exec("PRAGMA user_version=1");
     });
   }
-  private migrateRetiredBlocks(backup: boolean) {
+  private migrateRetiredBlocks(backup: boolean, version: 2 | 3 | 4 = 2) {
     if (backup) {
       mkdirSync(join(this.directory, "backups"), { recursive: true });
-      this.snapshotFile(join(this.directory, "backups", `migration-1-${Date.now()}-${randomUUID()}.sqlite3`));
+      this.snapshotFile(join(this.directory, "backups", `migration-${version - 1}-${Date.now()}-${randomUUID()}.sqlite3`));
     }
     transaction(this.database, () => {
       const documents = this.database.prepare("SELECT DISTINCT vault_id,document_id FROM editor_updates").all();
@@ -114,7 +117,9 @@ export class DesktopDatabase {
         const doc = new Y.Doc();
         try {
           Y.applyUpdate(doc, this.fullDocument(vaultId, documentId)!);
-          if (!removeRetiredBlocks(doc.getMap<Y.Map<unknown>>("blocks"))) continue;
+          const blocks = doc.getMap<Y.Map<unknown>>("blocks");
+          const changed = version === 4 ? migrateInlineDates(blocks) : removeRetiredBlocks(blocks, version === 2 ? retiredBlockFlavoursV2 : retiredBlockFlavours);
+          if (!changed) continue;
           const data = Y.encodeStateAsUpdate(doc);
           this.replaceDocument(vaultId, documentId, data);
           const template = documentId.startsWith("template:");
@@ -125,8 +130,8 @@ export class DesktopDatabase {
         } finally { doc.destroy(); }
       }
       this.checkIntegrity();
-      this.database.prepare("INSERT INTO migrations VALUES (2,?,?)").run("Remove retired embeds, frames, mind maps and Kanban views", now());
-      this.database.exec("PRAGMA user_version=2");
+      this.database.prepare("INSERT INTO migrations VALUES (?,?,?)").run(version, version === 2 ? "Remove retired embeds, frames, mind maps and Kanban views" : version === 3 ? "Remove rating blocks" : "Convert date blocks to inline dates", now());
+      this.database.exec(`PRAGMA user_version=${version}`);
     });
   }
   private ensureOpen() { if (this.closed) throw new Error("The Hyperion database is closed"); }
