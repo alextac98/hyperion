@@ -333,6 +333,22 @@
   gap: 1px;
 }
 
+.organizer-children {
+  position: relative;
+}
+
+.organizer-children::before {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: var(--organizer-guide-inset);
+  width: 1px;
+  background: var(--line-strong);
+  content: "";
+  pointer-events: none;
+}
+
 .organizer-page-row {
   position: relative;
   display: flex;
