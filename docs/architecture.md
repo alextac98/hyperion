@@ -5,6 +5,13 @@ renderer; SQLite is the only supported persistence backend and is owned by the
 main process. A standalone production browser shows a desktop launch screen. Browser
 prototype data is neither migrated nor deleted. There is no IndexedDB adapter.
 
+The editor uses the block implementations provided by `@blocksuite/affine`.
+Hyperion provides its own application shell, theme, and Electron/SQLite backend;
+it does not use AFFiNE's backend or hosted service. Upstream package names,
+`affine:*` block identifiers, and editor CSS variables remain compatibility
+contracts. The legacy `affine-icon` storage discriminator represents Phosphor
+interface icons and is retained for existing records and backups.
+
 ## Boundaries and authority
 
 - `app/lib/local-database.ts`: domain types, defaults, seed records and repository contract.

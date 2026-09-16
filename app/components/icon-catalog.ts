@@ -55,7 +55,7 @@ import {
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
-export const AFFINE_ICONS: readonly {
+export const INTERFACE_ICONS: readonly {
   name: string;
   label: string;
   keywords: string;
@@ -337,5 +337,5 @@ export const AFFINE_ICONS: readonly {
 ];
 
 export function iconDefinition(name: string) {
-  return AFFINE_ICONS.find((icon) => icon.name === name);
+  return INTERFACE_ICONS.find((icon) => icon.name === name);
 }

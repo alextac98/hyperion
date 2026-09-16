@@ -67,7 +67,7 @@ import {
   SidebarSectionHeading,
 } from "./components/SidebarOrganizer";
 import { TemplatePickerDialog } from "./components/TemplatePickerDialog";
-import { AffineEditor } from "./editor/AffineEditor";
+import { BlockEditor } from "./editor/BlockEditor";
 import {
   duplicateEditorDocument,
   flushEditorDocuments,
@@ -1571,7 +1571,7 @@ export default function HyperionApp() {
                     />
                   </div>
 
-                  <AffineEditor
+                  <BlockEditor
                     key={`${vaultId}:${activeNote.id}`}
                     document={activeNote}
                     preferences={preferences}
@@ -1642,7 +1642,7 @@ export default function HyperionApp() {
                     }
                   />
                 </div>
-                <AffineEditor
+                <BlockEditor
                   key={`${vaultId}:${templateDocumentId(activeTemplate.id)}`}
                   document={{
                     ...activeTemplatePage,

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { NoteRecord, PageIconRecord } from "../lib/local-database";
 import { PageIcon } from "./PageIcon";
 import type { EmojiEntry, EmojiGroup } from "./emoji-catalog";
-import { AFFINE_ICONS, iconDefinition } from "./icon-catalog";
+import { INTERFACE_ICONS, iconDefinition } from "./icon-catalog";
 
 const ICON_COLORS = [
   "#ef5c5c",
@@ -154,7 +154,7 @@ export function PageIconPicker({
   );
   const filteredIcons = useMemo(
     () =>
-      AFFINE_ICONS.filter(
+      INTERFACE_ICONS.filter(
         (icon) =>
           !normalizedQuery ||
           `${icon.label} ${icon.keywords}`
@@ -171,7 +171,7 @@ export function PageIconPicker({
     onChange({ type: "emoji", unicode });
     setOpen(false);
   };
-  const chooseAffineIcon = (name: string) => {
+  const chooseInterfaceIcon = (name: string) => {
     setRecentIcons((current) => rememberRecent(RECENT_ICON_KEY, name, current));
     onChange({ type: "affine-icon", name, color });
     setOpen(false);
@@ -420,7 +420,7 @@ export function PageIconPicker({
               {!normalizedQuery && recentIcons.length > 0 && (
                 <div className="page-icon-group">
                   <strong>Recent</strong>
-                  <div className="page-icon-grid affine-icons">
+                  <div className="page-icon-grid interface-icons">
                     {recentIcons.flatMap((name) => {
                       const item = iconDefinition(name);
                       if (!item) return [];
@@ -429,7 +429,7 @@ export function PageIconPicker({
                           type="button"
                           key={name}
                           aria-label={`Use ${item.label} icon`}
-                          onClick={() => chooseAffineIcon(name)}
+                          onClick={() => chooseInterfaceIcon(name)}
                         >
                           <item.Icon size={24} color={color} />
                         </button>,
@@ -440,7 +440,7 @@ export function PageIconPicker({
               )}
               <div className="page-icon-group">
                 <strong>Icons</strong>
-                <div className="page-icon-grid affine-icons">
+                <div className="page-icon-grid interface-icons">
                   {filteredIcons.map((item) => (
                     <button
                       type="button"
@@ -453,7 +453,7 @@ export function PageIconPicker({
                           ? "selected"
                           : ""
                       }
-                      onClick={() => chooseAffineIcon(item.name)}
+                      onClick={() => chooseInterfaceIcon(item.name)}
                     >
                       <item.Icon size={24} color={color} />
                     </button>
