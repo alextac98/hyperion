@@ -18,6 +18,15 @@
       "expected": "desktop-v1.expected.json",
       "schemaVersion": 1,
       "sha256": "18be0edb5d451dcfe7c6adc7b6d1a2612946ec98968a3dbadf638bda64cb3d82"
+    },
+    {
+      "name": "desktop-v4",
+      "file": "desktop-v4.sqlite3",
+      "expected": "desktop-v4.expected.json",
+      "schemaVersion": 4,
+      "sha256": "12faf1c851d0c8e6e2deda78187b96a54d1f69352e76ca32959d87dd90dc0c01",
+      "sourceCommit": "06e675f8c0c4ec595fcf204df96ef4f07343dff4",
+      "provenance": "Synthetic desktop-v1 fixture upgraded once through DesktopDatabase at the source commit and closed/checkpointed. Decoded exported state independently compared equal to the frozen v1 contract before capture. Pre-release schema-4 baseline; not captured from a published release."
     }
   ]
 }
