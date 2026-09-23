@@ -115,7 +115,11 @@ test(
           developmentInstance(root, branch).key,
         ),
       );
-      assert.equal(result.data.directory, join(root, "data"));
+      // Before first-run setup, storageInfo reports the branch's vault parent;
+      // no active vault database exists yet.
+      assert.equal(result.data.directory, join(root, "data", "vaults"));
+      assert.equal(result.data.databasePath, "");
+      assert.equal(result.data.isDefault, true);
       running.push({ ...instance, result });
     }
     assert.equal(new Set(running.map(({ result }) => result.url)).size, 3);

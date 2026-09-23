@@ -1,0 +1,555 @@
+{
+  "vault": {
+    "id": "fixture-vault",
+    "name": "Migration fixture",
+    "createdAt": "2026-01-02T03:04:05.000Z",
+    "updatedAt": "2026-01-02T03:04:05.000Z",
+    "color": "#6f63d9",
+    "description": ""
+  },
+  "notes": [
+    {
+      "id": "child",
+      "vaultId": "fixture-vault",
+      "title": "Nested page",
+      "updatedAt": "2026-01-02T03:04:05.000Z",
+      "body": "Legacy fallback text",
+      "tags": [
+        "ideas"
+      ],
+      "parentId": "parent",
+      "createdAt": "2026-01-02T03:04:05.000Z",
+      "kind": "note",
+      "journalDate": null,
+      "icon": null,
+      "aliases": [],
+      "links": [],
+      "sortOrder": 0,
+      "collectionIds": [],
+      "favorite": false,
+      "archived": false,
+      "trashed": false
+    },
+    {
+      "id": "journal",
+      "vaultId": "fixture-vault",
+      "title": "Daily entry",
+      "updatedAt": "2026-01-02T03:04:05.000Z",
+      "body": "Legacy fallback text",
+      "tags": [
+        "work"
+      ],
+      "createdAt": "2026-01-02T03:04:05.000Z",
+      "kind": "journal",
+      "journalDate": "2026-01-02",
+      "icon": null,
+      "aliases": [],
+      "links": [],
+      "parentId": null,
+      "sortOrder": 0,
+      "collectionIds": [],
+      "favorite": false,
+      "archived": false,
+      "trashed": false
+    },
+    {
+      "id": "parent",
+      "vaultId": "fixture-vault",
+      "title": "Research",
+      "updatedAt": "2026-01-02T03:04:05.000Z",
+      "body": "Legacy fallback text",
+      "tags": [
+        "research"
+      ],
+      "icon": {
+        "type": "emoji",
+        "unicode": "📚"
+      },
+      "collectionIds": [
+        "collection"
+      ],
+      "links": [
+        {
+          "targetId": "child",
+          "label": "Nested page",
+          "kind": "manual"
+        }
+      ],
+      "createdAt": "2026-01-02T03:04:05.000Z",
+      "kind": "note",
+      "journalDate": null,
+      "aliases": [],
+      "parentId": null,
+      "sortOrder": 0,
+      "favorite": false,
+      "archived": false,
+      "trashed": false
+    }
+  ],
+  "collections": [
+    {
+      "id": "collection",
+      "vaultId": "fixture-vault",
+      "name": "Projects",
+      "updatedAt": "2026-01-02T03:04:05.000Z",
+      "createdAt": "2026-01-02T03:04:05.000Z",
+      "color": "#6f63d9"
+    }
+  ],
+  "templates": [
+    {
+      "id": "meeting",
+      "vaultId": "fixture-vault",
+      "name": "Meeting",
+      "updatedAt": "2026-01-02T03:04:05.000Z",
+      "defaultTitle": "Meeting notes",
+      "body": "Agenda",
+      "tags": [
+        "meeting"
+      ],
+      "createdAt": "2026-01-02T03:04:05.000Z",
+      "target": "page",
+      "description": "",
+      "icon": null
+    }
+  ],
+  "preferences": {
+    "vaultId": "fixture-vault",
+    "theme": "dark",
+    "defaultTemplateIds": {
+      "note": "meeting",
+      "journal": null
+    },
+    "editorFontSize": 17,
+    "editorWidth": "comfortable",
+    "spellcheck": true,
+    "showDetails": true,
+    "notesView": "table"
+  },
+  "documents": {
+    "parent": {
+      "file": {
+        "prop:name": "research.txt",
+        "prop:sourceId": "attachment",
+        "sys:flavour": "affine:attachment"
+      },
+      "p": {
+        "prop:text": {
+          "text": [
+            {
+              "insert": "Current "
+            },
+            {
+              "insert": "Original research",
+              "attributes": {
+                "bold": true
+              }
+            },
+            {
+              "insert": " — café 🌱",
+              "attributes": {
+                "italic": true
+              }
+            }
+          ]
+        },
+        "prop:type": "h2",
+        "sys:flavour": "affine:paragraph"
+      },
+      "root": {
+        "prop:title": {
+          "text": [
+            {
+              "insert": "Research"
+            }
+          ]
+        },
+        "sys:children": [
+          "p",
+          "file"
+        ],
+        "sys:flavour": "affine:page"
+      }
+    },
+    "child": {
+      "p": {
+        "prop:text": {
+          "text": [
+            {
+              "insert": "Updated "
+            },
+            {
+              "insert": "Child text",
+              "attributes": {
+                "bold": true
+              }
+            },
+            {
+              "insert": " — café 🌱",
+              "attributes": {
+                "italic": true
+              }
+            }
+          ]
+        },
+        "prop:type": "h2",
+        "sys:flavour": "affine:paragraph"
+      },
+      "root": {
+        "prop:title": {
+          "text": [
+            {
+              "insert": "Nested page"
+            }
+          ]
+        },
+        "sys:children": [
+          "p"
+        ],
+        "sys:flavour": "affine:page"
+      }
+    }
+  },
+  "templateDocuments": {
+    "meeting": {
+      "p": {
+        "prop:text": {
+          "text": [
+            {
+              "insert": "Agenda",
+              "attributes": {
+                "bold": true
+              }
+            },
+            {
+              "insert": " — café 🌱",
+              "attributes": {
+                "italic": true
+              }
+            }
+          ]
+        },
+        "prop:type": "h2",
+        "sys:flavour": "affine:paragraph"
+      },
+      "root": {
+        "prop:title": {
+          "text": [
+            {
+              "insert": "Meeting notes"
+            }
+          ]
+        },
+        "sys:children": [
+          "p"
+        ],
+        "sys:flavour": "affine:page"
+      }
+    }
+  },
+  "assets": [
+    {
+      "key": "attachment",
+      "hash": "6fadc379196f8507a7559a96e8694ac94ec2506a19eb1edc6aac5612bbab5201",
+      "deleted": true
+    }
+  ],
+  "blobs": {
+    "6fadc379196f8507a7559a96e8694ac94ec2506a19eb1edc6aac5612bbab5201": {
+      "mimeType": "text/plain",
+      "data": "RnJvemVuIHN5bnRoZXRpYyBhdHRhY2htZW50IOKAlCBub3QgdXNlciBkYXRhLgo="
+    }
+  },
+  "revisions": [
+    {
+      "id": "02536945-26ec-4cf9-a005-1407d64832be",
+      "vaultId": "fixture-vault",
+      "noteId": "parent",
+      "createdAt": "2026-09-07T07:46:59.428Z",
+      "label": null,
+      "reason": "automatic",
+      "documentVersion": 1,
+      "note": {
+        "id": "parent",
+        "vaultId": "fixture-vault",
+        "title": "Research",
+        "updatedAt": "2026-01-02T03:04:05.000Z",
+        "body": "Current Original research — café 🌱",
+        "tags": [
+          "research"
+        ],
+        "icon": {
+          "type": "emoji",
+          "unicode": "📚"
+        },
+        "collectionIds": [
+          "collection"
+        ],
+        "links": [
+          {
+            "targetId": "child",
+            "label": "Nested page",
+            "kind": "manual"
+          }
+        ],
+        "createdAt": "2026-01-02T03:04:05.000Z",
+        "kind": "note",
+        "journalDate": null,
+        "aliases": [],
+        "parentId": null,
+        "sortOrder": 0,
+        "favorite": false,
+        "archived": false,
+        "trashed": false
+      },
+      "document": "ARXqp7r1DQAnAQZibG9ja3MEcm9vdAEoAOqnuvUNAAtzeXM6Zmxhdm91cgF3C2FmZmluZTpwYWdlJwDqp7r1DQAKcHJvcDp0aXRsZQIEAOqnuvUNAghSZXNlYXJjaCcA6qe69Q0ADHN5czpjaGlsZHJlbgAIAOqnuvUNCwJ3AXB3BGZpbGUnAQZibG9ja3MBcAEoAOqnuvUNDgtzeXM6Zmxhdm91cgF3EGFmZmluZTpwYXJhZ3JhcGgoAOqnuvUNDglwcm9wOnR5cGUBdwJoMicA6qe69Q0OCXByb3A6dGV4dAIGAOqnuvUNEQRib2xkBHRydWWE6qe69Q0SEU9yaWdpbmFsIHJlc2VhcmNohuqnuvUNIwRib2xkBG51bGyG6qe69Q0kBml0YWxpYwR0cnVlhOqnuvUNJQ8g4oCUIGNhZsOpIPCfjLGG6qe69Q0vBml0YWxpYwRudWxsJwEGYmxvY2tzBGZpbGUBKADqp7r1DTELc3lzOmZsYXZvdXIBdxFhZmZpbmU6YXR0YWNobWVudCgA6qe69Q0xDXByb3A6c291cmNlSWQBdwphdHRhY2htZW50KADqp7r1DTEJcHJvcDpuYW1lAXcMcmVzZWFyY2gudHh0ROqnuvUNEghDdXJyZW50IAA=",
+      "assets": {
+        "attachment": "6fadc379196f8507a7559a96e8694ac94ec2506a19eb1edc6aac5612bbab5201"
+      },
+      "contentHash": "713047777ed030027d0328183e577bc68147e295057caad9d7518779d66a2630",
+      "decodedDocument": {
+        "file": {
+          "prop:name": "research.txt",
+          "prop:sourceId": "attachment",
+          "sys:flavour": "affine:attachment"
+        },
+        "p": {
+          "prop:text": {
+            "text": [
+              {
+                "insert": "Current "
+              },
+              {
+                "insert": "Original research",
+                "attributes": {
+                  "bold": true
+                }
+              },
+              {
+                "insert": " — café 🌱",
+                "attributes": {
+                  "italic": true
+                }
+              }
+            ]
+          },
+          "prop:type": "h2",
+          "sys:flavour": "affine:paragraph"
+        },
+        "root": {
+          "prop:title": {
+            "text": [
+              {
+                "insert": "Research"
+              }
+            ]
+          },
+          "sys:children": [
+            "p",
+            "file"
+          ],
+          "sys:flavour": "affine:page"
+        }
+      }
+    },
+    {
+      "id": "162dafe1-e230-420a-bda0-9b111821fec7",
+      "vaultId": "fixture-vault",
+      "noteId": "journal",
+      "createdAt": "2026-09-07T07:46:59.429Z",
+      "label": null,
+      "reason": "automatic",
+      "documentVersion": 1,
+      "note": {
+        "id": "journal",
+        "vaultId": "fixture-vault",
+        "title": "Daily entry",
+        "updatedAt": "2026-01-02T03:04:05.000Z",
+        "body": "Legacy fallback text",
+        "tags": [
+          "work"
+        ],
+        "createdAt": "2026-01-02T03:04:05.000Z",
+        "kind": "journal",
+        "journalDate": "2026-01-02",
+        "icon": null,
+        "aliases": [],
+        "links": [],
+        "parentId": null,
+        "sortOrder": 0,
+        "collectionIds": [],
+        "favorite": false,
+        "archived": false,
+        "trashed": false
+      },
+      "document": null,
+      "assets": {
+        "attachment": "6fadc379196f8507a7559a96e8694ac94ec2506a19eb1edc6aac5612bbab5201"
+      },
+      "contentHash": "375ebe147b877e6abc3252a85cf243f1931fd3ffac307eba432d25e5575fee93",
+      "decodedDocument": null
+    },
+    {
+      "id": "3025eced-ac9c-4445-bb34-6305dabf4f57",
+      "vaultId": "fixture-vault",
+      "noteId": "child",
+      "createdAt": "2026-09-07T07:46:59.429Z",
+      "label": null,
+      "reason": "automatic",
+      "documentVersion": 1,
+      "note": {
+        "id": "child",
+        "vaultId": "fixture-vault",
+        "title": "Nested page",
+        "updatedAt": "2026-01-02T03:04:05.000Z",
+        "body": "Updated Child text — café 🌱",
+        "tags": [
+          "ideas"
+        ],
+        "parentId": "parent",
+        "createdAt": "2026-01-02T03:04:05.000Z",
+        "kind": "note",
+        "journalDate": null,
+        "icon": null,
+        "aliases": [],
+        "links": [],
+        "sortOrder": 0,
+        "collectionIds": [],
+        "favorite": false,
+        "archived": false,
+        "trashed": false
+      },
+      "document": "ARGwkbixCAAnAQZibG9ja3MEcm9vdAEoALCRuLEIAAtzeXM6Zmxhdm91cgF3C2FmZmluZTpwYWdlJwCwkbixCAAKcHJvcDp0aXRsZQIEALCRuLEIAgtOZXN0ZWQgcGFnZScAsJG4sQgADHN5czpjaGlsZHJlbgAIALCRuLEIDgF3AXAnAQZibG9ja3MBcAEoALCRuLEIEAtzeXM6Zmxhdm91cgF3EGFmZmluZTpwYXJhZ3JhcGgoALCRuLEIEAlwcm9wOnR5cGUBdwJoMicAsJG4sQgQCXByb3A6dGV4dAIGALCRuLEIEwRib2xkBHRydWWEsJG4sQgUCkNoaWxkIHRleHSGsJG4sQgeBGJvbGQEbnVsbIawkbixCB8GaXRhbGljBHRydWWEsJG4sQggDyDigJQgY2Fmw6kg8J+MsYawkbixCCoGaXRhbGljBG51bGxEsJG4sQgUCFVwZGF0ZWQgAA==",
+      "assets": {
+        "attachment": "6fadc379196f8507a7559a96e8694ac94ec2506a19eb1edc6aac5612bbab5201"
+      },
+      "contentHash": "912323ed7289164e60580f768d97d7a8879d8c8c901062ec8ed38ccf2a0a30e2",
+      "decodedDocument": {
+        "p": {
+          "prop:text": {
+            "text": [
+              {
+                "insert": "Updated "
+              },
+              {
+                "insert": "Child text",
+                "attributes": {
+                  "bold": true
+                }
+              },
+              {
+                "insert": " — café 🌱",
+                "attributes": {
+                  "italic": true
+                }
+              }
+            ]
+          },
+          "prop:type": "h2",
+          "sys:flavour": "affine:paragraph"
+        },
+        "root": {
+          "prop:title": {
+            "text": [
+              {
+                "insert": "Nested page"
+              }
+            ]
+          },
+          "sys:children": [
+            "p"
+          ],
+          "sys:flavour": "affine:page"
+        }
+      }
+    },
+    {
+      "id": "6cc4a777-ae57-4e3a-b464-253276fdcc87",
+      "vaultId": "fixture-vault",
+      "noteId": "parent",
+      "createdAt": "2026-09-07T07:46:59.427Z",
+      "label": "Research checkpoint",
+      "reason": "manual",
+      "documentVersion": 1,
+      "note": {
+        "id": "parent",
+        "vaultId": "fixture-vault",
+        "title": "Research",
+        "updatedAt": "2026-01-02T03:04:05.000Z",
+        "body": "Original research — café 🌱",
+        "tags": [
+          "research"
+        ],
+        "icon": {
+          "type": "emoji",
+          "unicode": "📚"
+        },
+        "collectionIds": [
+          "collection"
+        ],
+        "links": [
+          {
+            "targetId": "child",
+            "label": "Nested page",
+            "kind": "manual"
+          }
+        ],
+        "createdAt": "2026-01-02T03:04:05.000Z",
+        "kind": "note",
+        "journalDate": null,
+        "aliases": [],
+        "parentId": null,
+        "sortOrder": 0,
+        "favorite": false,
+        "archived": false,
+        "trashed": false
+      },
+      "document": "ARTqp7r1DQAnAQZibG9ja3MEcm9vdAEoAOqnuvUNAAtzeXM6Zmxhdm91cgF3C2FmZmluZTpwYWdlJwDqp7r1DQAKcHJvcDp0aXRsZQIEAOqnuvUNAghSZXNlYXJjaCcA6qe69Q0ADHN5czpjaGlsZHJlbgAIAOqnuvUNCwJ3AXB3BGZpbGUnAQZibG9ja3MBcAEoAOqnuvUNDgtzeXM6Zmxhdm91cgF3EGFmZmluZTpwYXJhZ3JhcGgoAOqnuvUNDglwcm9wOnR5cGUBdwJoMicA6qe69Q0OCXByb3A6dGV4dAIGAOqnuvUNEQRib2xkBHRydWWE6qe69Q0SEU9yaWdpbmFsIHJlc2VhcmNohuqnuvUNIwRib2xkBG51bGyG6qe69Q0kBml0YWxpYwR0cnVlhOqnuvUNJQ8g4oCUIGNhZsOpIPCfjLGG6qe69Q0vBml0YWxpYwRudWxsJwEGYmxvY2tzBGZpbGUBKADqp7r1DTELc3lzOmZsYXZvdXIBdxFhZmZpbmU6YXR0YWNobWVudCgA6qe69Q0xDXByb3A6c291cmNlSWQBdwphdHRhY2htZW50KADqp7r1DTEJcHJvcDpuYW1lAXcMcmVzZWFyY2gudHh0AA==",
+      "assets": {
+        "attachment": "6fadc379196f8507a7559a96e8694ac94ec2506a19eb1edc6aac5612bbab5201"
+      },
+      "contentHash": "95a15ed110a6758d72baaf4bd6a5504e4cacb0af00b207d73bae6292a510a39d",
+      "decodedDocument": {
+        "file": {
+          "prop:name": "research.txt",
+          "prop:sourceId": "attachment",
+          "sys:flavour": "affine:attachment"
+        },
+        "p": {
+          "prop:text": {
+            "text": [
+              {
+                "insert": "Original research",
+                "attributes": {
+                  "bold": true
+                }
+              },
+              {
+                "insert": " — café 🌱",
+                "attributes": {
+                  "italic": true
+                }
+              }
+            ]
+          },
+          "prop:type": "h2",
+          "sys:flavour": "affine:paragraph"
+        },
+        "root": {
+          "prop:title": {
+            "text": [
+              {
+                "insert": "Research"
+              }
+            ]
+          },
+          "sys:children": [
+            "p",
+            "file"
+          ],
+          "sys:flavour": "affine:page"
+        }
+      }
+    }
+  ]
+}

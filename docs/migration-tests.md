@@ -62,6 +62,7 @@ synthetic databases with no user data:
 | --- | --- |
 | `prototype-v0.sqlite3` | Hand-built unversioned prototype tables, partial legacy records, multiple Yjs update rows and an attachment. Exercises the real upgrade and legacy normalization. |
 | `desktop-v1.sqlite3` | The same synthetic data upgraded once by the recorded source commit, then extended with snapshots, a later live edit and an editor-deleted attachment. Exercises compatibility and historical recovery. |
+| `desktop-v4.sqlite3` | The frozen v1 data upgraded once by the per-fixture source commit to schema 4, then closed and checkpointed. Its decoded export was checked against the original v1 contract before capture. Exercises current-schema reopening and provides a baseline for future upgrades. |
 
 The paired `*.expected.json` files record the reviewed data contract after opening.
 `tests/migration-fixture-state.mjs` reads public repository exports and decodes Yjs
@@ -97,6 +98,7 @@ folder is required.
 ## Current limits
 
 The startup path now runs `0 → 1 → 2 → 3 → 4` and `1 → 2 → 3 → 4`, then reopens at version 4.
+The frozen version-4 fixture checks current-schema reopening without creating a migration backup.
 A derived version-2 case also checks Rating deletion, Date preservation and a
 complete version-2 backup. Version-3 cases check conversion of date cards to inline
 text, the complete backup, and rollback when a later document is corrupt.
