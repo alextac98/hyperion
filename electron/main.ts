@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import updater from "electron-updater";
 import { createUpdates } from "./updates.js";
 import { createUpdatePreview } from "./update-preview.js";
-import { DesktopDatabase, type RepositoryRequest } from "./database.js";
+import type { RepositoryRequest } from "./database.js";
+import { VaultLibrary } from "./vault-library.js";
 import { developmentInstance, developmentRendererUrl } from "./development.js";
 
 const updatePreview = !app.isPackaged && Boolean(process.env.HYPERION_UPDATE_PREVIEW);
@@ -55,6 +56,9 @@ const channels = {
   rendererReady: "hyperion:renderer-ready",
   closeReady: "hyperion:close-ready",
   chooseStorageLocation: "hyperion:choose-storage-location",
+  chooseVaultDirectory: "hyperion:choose-vault-directory",
+  openVault: "hyperion:open-vault",
+  showVaultFolder: "hyperion:show-vault-folder",
   editorPull: "hyperion:editor-pull",
   editorPush: "hyperion:editor-push",
   editorDelete: "hyperion:editor-delete",
@@ -66,7 +70,7 @@ const channels = {
 } as const;
 
 let mainWindow: BrowserWindow | null = null;
-let database: DesktopDatabase | null = null;
+let database: VaultLibrary | null = null;
 let updateCheckStarted = false;
 let closeToken: string | null = null;
 let closeApproved = false;
@@ -182,7 +186,7 @@ function registerDesktopHandlers() {
   handle(channels.chooseStorageLocation, async () => {
     const current = databaseInstance().storageInfo();
     const options: Electron.OpenDialogOptions = {
-      title: "Choose where Hyperion stores its data",
+      title: "Move this vault to an empty folder",
       defaultPath: current.directory,
       properties: ["openDirectory", "createDirectory"],
     };
@@ -192,7 +196,19 @@ function registerDesktopHandlers() {
     const selected = result.filePaths[0];
     return result.canceled || !selected
       ? null
-      : databaseInstance().setStorageDirectory(selected);
+      : databaseInstance().moveVault(selected);
+  });
+  handle(channels.chooseVaultDirectory, async () => {
+    const result = await dialog.showOpenDialog({ title: "Choose an empty folder for your new vault", properties: ["openDirectory", "createDirectory"] });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+  handle(channels.openVault, async () => {
+    const result = await dialog.showOpenDialog({ title: "Open an existing Hyperion vault folder", properties: ["openDirectory"] });
+    return result.canceled || !result.filePaths[0] ? null : databaseInstance().openVault(result.filePaths[0]);
+  });
+  handle(channels.showVaultFolder, async () => {
+    const error = await shell.openPath(databaseInstance().storageInfo().directory);
+    if (error) throw new Error(error);
   });
   handle(channels.editorPull, (_event, vaultId, documentId) => (
     databaseInstance().editorPull(String(vaultId), String(documentId))
@@ -297,16 +313,18 @@ app.whenReady().then(async () => {
   if (development && dataDirectoryOverride && !isAbsolute(dataDirectoryOverride)) {
     throw new Error("HYPERION_DATA_DIRECTORY must be an absolute directory.");
   }
-  database = new DesktopDatabase({
+  database = new VaultLibrary({
     defaultDirectory: dataDirectoryOverride || (app.isPackaged
       ? undefined
       : development
         ? join(homedir(), ".config", "hyperion-development", "branches", development.key)
         : join(homedir(), ".config", "hyperion-development")),
   });
-  if (development) console.log(`Development branch: ${development.branch}\nProfile: ${app.getPath("userData")}\nData: ${database.storageInfo().directory}`);
-  database.repositoryExecute({ operation: "captureAutomaticRevisions" });
-  database.createBackup(true);
+  if (development) console.log(`Development branch: ${development.branch}\nProfile: ${app.getPath("userData")}\nData: ${database.defaultDirectory}`);
+  if (database.setupInfo().activeVaultId && !database.setupInfo().error) {
+    database.repositoryExecute({ operation: "captureAutomaticRevisions" });
+    database.createBackup(true);
+  }
   registerDesktopHandlers();
   await createWindow();
   registerAutoUpdater();

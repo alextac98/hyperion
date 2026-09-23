@@ -1,4 +1,4 @@
-import { platformRuntime } from "../platform/runtime";
+import { platformRuntime, requireDesktop } from "../platform/runtime";
 import { UpdateControls } from "./UpdateControls";
 import { DataRecovery } from "./DataRecovery";
 import { dataOperation } from "../lib/data-operations";
@@ -332,21 +332,23 @@ export function SettingsDialog({
                   <p>{platformRuntime.kind === "browser-development" ? "Development data is stored on the machine running the server." : "Everything remains local unless you export it yourself."}</p>
                 </div>
                 <DataRecovery onHistory={onHistory} />
+                {brandError && <p className="data-error" role="alert">{brandError}</p>}
                 {storageInfo && (
                   <div className="data-setting storage-location-setting">
                     <span className="data-setting-icon">
                       <Database size={20} />
                     </span>
                     <span>
-                      <strong>SQLite storage folder</strong>
+                      <strong>Vault location</strong>
                       <small title={storageInfo.databasePath}>
                         {storageInfo.directory}
-                        {storageInfo.isDefault ? " · Default" : ""}
+
                       </small>
                     </span>
-                    {platformRuntime.capabilities.configurableStorage && <button onClick={() => void onStorageLocation()}>
-                      Choose…
-                    </button>}
+                    {platformRuntime.capabilities.configurableStorage && <div className="vault-storage-actions">
+                      <button onClick={() => void requireDesktop().showVaultFolder().catch(error => setBrandError(String(error)))}>Show folder</button>
+                      <button onClick={() => void onStorageLocation()}>Move vault…</button>
+                    </div>}
                   </div>
                 )}
                 <div className="data-setting">
@@ -380,7 +382,7 @@ export function SettingsDialog({
                     <strong>No account or cloud sync</strong>
                     <small>
                       {platformRuntime.kind === "browser-development" ? "Records, editor documents, and assets are saved to SQLite on the development server." : storageInfo
-                        ? "Hyperion stores records, editor documents, and assets in a local SQLite file. Native local-AI services remain on this device."
+                        ? "Your vault folder holds your pages, files, history, and backups. Move it from here whenever you need a different home for your notes."
                         : "Open Hyperion on desktop to access your data."}
                     </small>
                   </span>

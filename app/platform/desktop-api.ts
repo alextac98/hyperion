@@ -1,5 +1,5 @@
 import type { UpdateState } from "../../electron/updates";
-import type { NoteRecord } from "../lib/local-database";
+import type { NoteRecord, VaultRecord } from "../lib/local-database";
 export type RevisionCapture = PageRevision & {
   captureStatus: "created" | "named" | "reused";
 };
@@ -70,7 +70,10 @@ export interface HyperionDesktopApi extends HyperionDataApi {
   restoreBackup(): Promise<StorageInfo | null>;
   showBackupFolder(): Promise<void>;
   onPrepareClose(callback: () => Promise<void>): () => void;
-  chooseStorageLocation(): Promise<StorageInfo | null>;
+  chooseStorageLocation(): Promise<(StorageInfo & { warning?: string }) | null>;
+  chooseVaultDirectory(): Promise<string | null>;
+  openVault(): Promise<VaultRecord | null>;
+  showVaultFolder(): Promise<void>;
   localAiStatus(): Promise<LocalAiStatus>;
 }
 

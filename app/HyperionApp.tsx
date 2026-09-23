@@ -1,3 +1,8 @@
+import { errorMessage } from "./lib/error-message";
+import { flushSync } from "react-dom";
+import { VaultSetup } from "./components/VaultSetup";
+import { Dialog } from "./components/Dialog";
+import { requireDesktop } from "./platform/runtime";
 import { useMouseNavigation } from "./hooks/useMouseNavigation";
 import { uiStorage } from "./lib/ui-storage";
 import { UpdateControls } from "./components/UpdateControls";
@@ -17,6 +22,7 @@ import {
   Check,
   DotsThree,
   FilePlus,
+  FolderOpen,
   GearSix,
   House,
   ListBullets,
@@ -178,6 +184,7 @@ export default function HyperionApp() {
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [view, setView] = useState<View>("home");
   const [loading, setLoading] = useState(true);
+  const [vaultReady, setVaultReady] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(getStoredSidebarWidth);
   const [sidebarResizing, setSidebarResizing] = useState(false);
@@ -199,8 +206,11 @@ export default function HyperionApp() {
   const [pageSearchIndex, setPageSearchIndex] = useState(0);
   const [pageSearchCount, setPageSearchCount] = useState(0);
   const [vaultMenuOpen, setVaultMenuOpen] = useState(false);
+  const [vaultSetupOpen, setVaultSetupOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"general" | "updates">("general");
+  const [settingsTab, setSettingsTab] = useState<"general" | "updates">(
+    "general",
+  );
   const [moreOpen, setMoreOpen] = useState(false);
   const [pageContextMenu, setPageContextMenu] =
     useState<PageContextMenuState | null>(null);
@@ -243,7 +253,7 @@ export default function HyperionApp() {
     [],
   );
   useEffect(() => {
-    if (loading) return;
+    if (loading || !vaultReady) return;
     if (!lastAutomaticBackup.current) lastAutomaticBackup.current = Date.now();
     let busy = false;
     const interval = setInterval(() => {
@@ -264,7 +274,7 @@ export default function HyperionApp() {
         });
     }, 60000);
     return () => clearInterval(interval);
-  }, [loading]);
+  }, [loading, vaultReady]);
 
   const activeVault = vaults.find((vault) => vault.id === vaultId);
   const activeNote = notes.find((note) => note.id === activeId);
@@ -309,96 +319,117 @@ export default function HyperionApp() {
   const loadVault = useCallback(
     async (nextVaultId: string, nextVaults?: VaultRecord[]) => {
       await flushAll();
+      const info = await requireDataService().repositoryExecute<StorageInfo>({
+        operation: "selectVault",
+        vaultId: nextVaultId,
+      });
+      setStorageInfo(info);
       setComparison(null);
       setLoading(true);
-      prepareVaultEditor(nextVaultId);
-      const [
-        storedNotes,
-        storedTemplates,
-        storedCollections,
-        storedPreferences,
-      ] = await Promise.all([
-        knowledgeRepository.listNotes(nextVaultId),
-        knowledgeRepository.listTemplates(nextVaultId),
-        knowledgeRepository.listCollections(nextVaultId),
-        knowledgeRepository.getPreferences(nextVaultId),
-      ]);
-      const hydratedNotes = hydratePageIdentities(
-        storedNotes.map(normalizeNoteRecord),
-      );
-      await Promise.all(
-        hydratedNotes.flatMap((note, index) =>
-          pageIdentityChanged(storedNotes[index], note)
-            ? [knowledgeRepository.saveNote(note)]
-            : [],
-        ),
-      );
-      setVaultId(nextVaultId);
-      setNotes(hydratedNotes);
-      setTemplates(storedTemplates);
-      stableTitles.current = Object.fromEntries(
-        hydratedNotes.map((note) => [note.id, note.title]),
-      );
-      setCollections(storedCollections);
-      const templateIds = new Set(
-        storedTemplates.map((template) => template.id),
-      );
-      const validPreferences = {
-        ...storedPreferences,
-        defaultTemplateIds: {
-          note: templateIds.has(storedPreferences.defaultTemplateIds.note ?? "")
-            ? storedPreferences.defaultTemplateIds.note
-            : null,
-          journal: templateIds.has(
-            storedPreferences.defaultTemplateIds.journal ?? "",
-          )
-            ? storedPreferences.defaultTemplateIds.journal
-            : null,
-        },
-      };
-      setPreferences(validPreferences);
-      if (
-        JSON.stringify(validPreferences) !== JSON.stringify(storedPreferences)
-      ) {
-        await knowledgeRepository.savePreferences(validPreferences);
+      try {
+        prepareVaultEditor(nextVaultId);
+        const [
+          storedNotes,
+          storedTemplates,
+          storedCollections,
+          storedPreferences,
+        ] = await Promise.all([
+          knowledgeRepository.listNotes(nextVaultId),
+          knowledgeRepository.listTemplates(nextVaultId),
+          knowledgeRepository.listCollections(nextVaultId),
+          knowledgeRepository.getPreferences(nextVaultId),
+        ]);
+        const hydratedNotes = hydratePageIdentities(
+          storedNotes.map(normalizeNoteRecord),
+        );
+        await Promise.all(
+          hydratedNotes.flatMap((note, index) =>
+            pageIdentityChanged(storedNotes[index], note)
+              ? [knowledgeRepository.saveNote(note)]
+              : [],
+          ),
+        );
+        setVaultId(nextVaultId);
+        setNotes(hydratedNotes);
+        setTemplates(storedTemplates);
+        stableTitles.current = Object.fromEntries(
+          hydratedNotes.map((note) => [note.id, note.title]),
+        );
+        setCollections(storedCollections);
+        const templateIds = new Set(
+          storedTemplates.map((template) => template.id),
+        );
+        const validPreferences = {
+          ...storedPreferences,
+          defaultTemplateIds: {
+            note: templateIds.has(
+              storedPreferences.defaultTemplateIds.note ?? "",
+            )
+              ? storedPreferences.defaultTemplateIds.note
+              : null,
+            journal: templateIds.has(
+              storedPreferences.defaultTemplateIds.journal ?? "",
+            )
+              ? storedPreferences.defaultTemplateIds.journal
+              : null,
+          },
+        };
+        setPreferences(validPreferences);
+        if (
+          JSON.stringify(validPreferences) !== JSON.stringify(storedPreferences)
+        ) {
+          await knowledgeRepository.savePreferences(validPreferences);
+        }
+        setDetailsOpen(storedPreferences.showDetails);
+        if (nextVaults) setVaults(nextVaults);
+        const remembered = uiStorage.getItem(
+          `hyperion:last-note:${nextVaultId}`,
+        );
+        const target =
+          hydratedNotes.find(
+            (note) => note.id === remembered && !note.trashed && !note.archived,
+          ) ??
+          hydratedNotes.find(
+            (note) => note.kind === "note" && !note.trashed && !note.archived,
+          ) ??
+          hydratedNotes.find((note) => !note.trashed && !note.archived);
+        setActiveId(target?.id ?? "");
+        setActiveTemplateId("");
+        setActiveTag(null);
+        setView(target ? "note" : "home");
+        uiStorage.setItem("hyperion:current-vault", nextVaultId);
+        setVaultMenuOpen(false);
+        setEditorStore(null);
+        setVaultSetupOpen(false);
+        setVaultReady(true);
+        setDataError("");
+      } finally {
+        setLoading(false);
       }
-      setDetailsOpen(storedPreferences.showDetails);
-      if (nextVaults) setVaults(nextVaults);
-      const remembered = uiStorage.getItem(
-        `hyperion:last-note:${nextVaultId}`,
-      );
-      const target =
-        hydratedNotes.find(
-          (note) => note.id === remembered && !note.trashed && !note.archived,
-        ) ??
-        hydratedNotes.find(
-          (note) => note.kind === "note" && !note.trashed && !note.archived,
-        ) ??
-        hydratedNotes.find((note) => !note.trashed && !note.archived);
-      setActiveId(target?.id ?? "");
-      setActiveTemplateId("");
-      setActiveTag(null);
-      setView(target ? "note" : "home");
-      uiStorage.setItem("hyperion:current-vault", nextVaultId);
-      setVaultMenuOpen(false);
-      setEditorStore(null);
-      setLoading(false);
     },
     [setNotes, setTemplates],
   );
 
   useEffect(() => {
     let cancelled = false;
-    void platformRuntime.getStorageInfo().then((info) => {
-      if (!cancelled) setStorageInfo(info);
-    }).catch((error) => { if (!cancelled) setDataError(String(error)); });
     preloadEditor();
     void knowledgeRepository
       .initialize()
       .then(async () => {
-        const storedVaults = await knowledgeRepository.listVaults();
+        const [storedVaults, setupInfo] = await Promise.all([
+          knowledgeRepository.listVaults(),
+          requireDataService().repositoryExecute<{ error: string }>({
+            operation: "vaultSetup",
+          }),
+        ]);
         if (cancelled) return;
         setVaults(storedVaults);
+        if (!storedVaults.length) {
+          setDataError(setupInfo.error);
+          setVaultSetupOpen(true);
+          setLoading(false);
+          return;
+        }
         const remembered = uiStorage.getItem("hyperion:current-vault");
         const target = storedVaults.some((vault) => vault.id === remembered)
           ? remembered!
@@ -406,7 +437,9 @@ export default function HyperionApp() {
         await loadVault(target, storedVaults);
       })
       .catch((error) => {
+        if (cancelled) return;
         setDataError(String(error));
+        setVaultSetupOpen(true);
         setLoading(false);
       });
     return () => {
@@ -641,6 +674,7 @@ export default function HyperionApp() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (!activeVault || loading || vaultSetupOpen) return;
       if (
         dataBusy.getSnapshot() ||
         document.querySelector(".history-dialog, .page-comparison")
@@ -684,7 +718,16 @@ export default function HyperionApp() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeNote, closePageSearch, closeSearch, createNote, view]);
+  }, [
+    activeNote,
+    activeVault,
+    loading,
+    vaultSetupOpen,
+    closePageSearch,
+    closeSearch,
+    createNote,
+    view,
+  ]);
 
   useEffect(() => {
     if (pageSearchOpen) setTimeout(() => pageSearchRef.current?.focus(), 30);
@@ -997,12 +1040,7 @@ export default function HyperionApp() {
   const submitComposer = async (event: FormEvent) => {
     event.preventDefault();
     if (!composer) return;
-    if (composer.type === "vault") {
-      const vault = await knowledgeRepository.createVault(composer.value);
-      const nextVaults = [...vaults, vault];
-      setComposer(null);
-      await loadVault(vault.id, nextVaults);
-    } else if (composer.type === "page") {
+    if (composer.type === "page") {
       const { parentId, value } = composer;
       setComposer(null);
       await createNote(parentId, value);
@@ -1081,6 +1119,81 @@ export default function HyperionApp() {
     }
   };
 
+  const suggestVaultDirectory = useCallback(
+    (name: string) =>
+      requireDataService().repositoryExecute<string>({
+        operation: "suggestVaultDirectory",
+        name,
+      }),
+    [],
+  );
+  const switchVault = async (id: string) => {
+    try {
+      await dataOperation(() => loadVault(id));
+    } catch (error) {
+      setLoading(false);
+      setDataError(String(error));
+    }
+  };
+  const openExistingVault = async () => {
+    await dataOperation(async () => {
+      const vault = await requireDesktop().openVault();
+      if (vault)
+        await loadVault(vault.id, await knowledgeRepository.listVaults());
+    });
+  };
+  const closeCurrentVault = async () => {
+    try {
+      await dataOperation(async () => {
+        flushSync(() => setLoading(true));
+        await forgetVaultWorkspace(vaultId);
+        await requireDataService().repositoryExecute({
+          operation: "closeVault",
+          vaultId,
+        });
+        const remaining = await knowledgeRepository.listVaults();
+        setVaults(remaining);
+        setVaultMenuOpen(false);
+        setSettingsOpen(false);
+        setEditorStore(null);
+        if (remaining.length) await loadVault(remaining[0].id, remaining);
+        else {
+          setVaultReady(false);
+          setVaultSetupOpen(true);
+          setLoading(false);
+        }
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  const setup = (
+    <VaultSetup
+      firstRun={!vaultReady}
+      error={dataError}
+      vaults={!vaultReady ? vaults : []}
+      onClose={vaultReady ? () => setVaultSetupOpen(false) : undefined}
+      onSuggestDirectory={suggestVaultDirectory}
+      onChooseDirectory={
+        platformRuntime.capabilities.configurableStorage
+          ? () => requireDesktop().chooseVaultDirectory()
+          : undefined
+      }
+      onOpen={
+        platformRuntime.capabilities.configurableStorage
+          ? openExistingVault
+          : undefined
+      }
+      onSelect={(id) => dataOperation(() => loadVault(id))}
+      onCreate={async (name, options) => {
+        await dataOperation(async () => {
+          const vault = await knowledgeRepository.createVault(name, options);
+          await loadVault(vault.id, await knowledgeRepository.listVaults());
+        });
+      }}
+    />
+  );
+
   const heading =
     view === "note"
       ? activeNote?.title
@@ -1112,6 +1225,8 @@ export default function HyperionApp() {
       </main>
     );
   }
+
+  if (!vaultReady) return <main className="vault-onboarding">{setup}</main>;
 
   return (
     <main
@@ -1147,7 +1262,7 @@ export default function HyperionApp() {
                   <button
                     key={vault.id}
                     className={vault.id === vaultId ? "selected" : ""}
-                    onClick={() => void loadVault(vault.id)}
+                    onClick={() => void switchVault(vault.id)}
                   >
                     <span
                       className="vault-color"
@@ -1163,11 +1278,32 @@ export default function HyperionApp() {
                 <div className="popover-divider" />
                 <button
                   onClick={() => {
-                    setComposer({ type: "vault", value: "" });
+                    setVaultSetupOpen(true);
                     setVaultMenuOpen(false);
                   }}
                 >
-                  <Plus size={16} /> New vault
+                  <Plus size={16} /> Create vault…
+                </button>
+                {platformRuntime.capabilities.configurableStorage && (
+                  <button
+                    onClick={() => {
+                      setVaultMenuOpen(false);
+                      void openExistingVault().catch((error) =>
+                        setDataError(String(error)),
+                      );
+                    }}
+                  >
+                    <FolderOpen size={16} /> Open existing vault…
+                  </button>
+                )}
+                <button
+                  onClick={() =>
+                    void closeCurrentVault().catch((error) =>
+                      setDataError(String(error)),
+                    )
+                  }
+                >
+                  Close vault
                 </button>
               </div>
             )}
@@ -1308,11 +1444,22 @@ export default function HyperionApp() {
             {trashedNotes.length > 0 && <em>{trashedNotes.length}</em>}
           </button>
           <div className="sidebar-settings-row">
-            <button onClick={() => { setSettingsTab("general"); setSettingsOpen(true); }}>
+            <button
+              onClick={() => {
+                setSettingsTab("general");
+                setSettingsOpen(true);
+              }}
+            >
               <GearSix size={17} />
               <span>Settings</span>
             </button>
-            <UpdateControls compact onOpenDetails={() => { setSettingsTab("updates"); setSettingsOpen(true); }} />
+            <UpdateControls
+              compact
+              onOpenDetails={() => {
+                setSettingsTab("updates");
+                setSettingsOpen(true);
+              }}
+            />
           </div>
         </div>
         {sidebarOpen && (
@@ -1442,7 +1589,9 @@ export default function HyperionApp() {
                 <span className="saving-spinner" />
               ) : null}
               {saveStatus === "saved"
-                ? (platformRuntime.kind === "browser-development" ? "Saved to development server" : "Saved locally")
+                ? platformRuntime.kind === "browser-development"
+                  ? "Saved to development server"
+                  : "Saved locally"
                 : saveStatus === "error"
                   ? "Save failed"
                   : "Saving"}
@@ -1848,6 +1997,16 @@ export default function HyperionApp() {
           <button onClick={() => setDataError("")}>Dismiss</button>
         </div>
       )}
+      {vaultSetupOpen && (
+        <Dialog
+          label="Create or open a vault"
+          busy={operationBusy}
+          onClose={() => setVaultSetupOpen(false)}
+          className="vault-setup-layer"
+        >
+          {setup}
+        </Dialog>
+      )}
       {settingsOpen && activeVault && (
         <SettingsDialog
           initialTab={settingsTab}
@@ -1864,11 +2023,11 @@ export default function HyperionApp() {
               );
               if (info) {
                 setStorageInfo(info);
-                window.location.reload();
+                if (info.warning) setDataError(info.warning);
               }
             } catch (error) {
               alert(
-                `Hyperion could not change the storage folder. ${error instanceof Error ? error.message : String(error)}`,
+                `Hyperion could not move the vault. ${errorMessage(error)}`,
               );
             }
           }}
@@ -1897,16 +2056,23 @@ export default function HyperionApp() {
               )
             )
               return;
-            await dataOperation(async () => {
-              await knowledgeRepository.deleteVault(activeVault.id);
-              await forgetVaultWorkspace(activeVault.id);
-            });
-            const nextVaults = vaults.filter(
-              (vault) => vault.id !== activeVault.id,
-            );
-            setVaults(nextVaults);
-            setSettingsOpen(false);
-            await loadVault(nextVaults[0].id, nextVaults);
+            try {
+              await dataOperation(async () => {
+                flushSync(() => setLoading(true));
+                await forgetVaultWorkspace(activeVault.id);
+                await knowledgeRepository.deleteVault(activeVault.id);
+              });
+              const nextVaults = vaults.filter(
+                (vault) => vault.id !== activeVault.id,
+              );
+              setVaults(nextVaults);
+              setSettingsOpen(false);
+              await loadVault(nextVaults[0].id, nextVaults);
+            } catch (error) {
+              setDataError(errorMessage(error));
+            } finally {
+              setLoading(false);
+            }
           }}
         />
       )}

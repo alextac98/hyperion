@@ -1,11 +1,9 @@
+import { makeStarterPages } from "../lib/starter-vault";
 import { saves } from "../lib/save-coordinator";
 import {
   type CollectionRecord,
   DEFAULT_PREFERENCES,
   type KnowledgeRepository,
-  makeDefaultVault,
-  makeSeedCollections,
-  makeSeedNotes,
   normalizeVaultPreferences,
   type NoteRecord,
   type TemplateRecord,
@@ -28,21 +26,17 @@ export class SqliteKnowledgeRepository implements KnowledgeRepository {
   }
 
   async initialize() {
-    const vault = makeDefaultVault();
-    await this.execute<void>({
-      operation: "initialize",
-      vault,
-      notes: makeSeedNotes(),
-      collections: makeSeedCollections(),
-      preferences: { vaultId: vault.id, ...DEFAULT_PREFERENCES },
-    });
+    await this.execute<void>({ operation: "initialize" });
   }
 
   listVaults() {
     return this.execute<VaultRecord[]>({ operation: "listVaults" });
   }
 
-  async createVault(name: string) {
+  async createVault(
+    name: string,
+    options: { directory?: string; starterNotes?: boolean } = {},
+  ) {
     const now = timestamp();
     const vault: VaultRecord = {
       id: crypto.randomUUID(),
@@ -54,8 +48,20 @@ export class SqliteKnowledgeRepository implements KnowledgeRepository {
       createdAt: now,
       updatedAt: now,
     };
-    await this.execute<void>({
+    const pages = options.starterNotes ? makeStarterPages(vault.id) : [];
+    const documents = pages.length
+      ? await (
+          await import("../editor/editor-client")
+        ).createStarterDocuments(pages)
+      : {};
+    // Creation is an explicit transaction under the UI's data-operation barrier.
+    // A rejected destination must not become a background save retry.
+    await this.data.repositoryExecute<void>({
       operation: "createVault",
+      directory: options.directory,
+      notes: pages.map((page) => page.note),
+      collections: [],
+      documents,
       vault,
       preferences: { vaultId: vault.id, ...DEFAULT_PREFERENCES },
     });

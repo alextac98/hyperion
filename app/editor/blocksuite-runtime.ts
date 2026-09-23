@@ -16,6 +16,7 @@ import { readDocumentMetadata } from "../../blocks/document";
 const storeManager = new StoreExtensionManager(getInternalStoreExtensions().filter(extension => extension !== MindmapStoreExtension));
 const workspacePromises = new Map<string, Promise<TestWorkspace>>();
 const storePromises = new Map<string, Promise<Store>>();
+const storageDisposers = new WeakMap<TestWorkspace, () => void>();
 
 function repairDuplicateRoots(store: Store) {
   const roots = store.getModelsByFlavour("affine:page");
@@ -59,10 +60,16 @@ async function createWorkspace(vaultId: string) {
         ? setBlob(valueOrKey, value!)
         : setBlob(valueOrKey),
     )) as typeof workspace.blobSync.set;
+  storageDisposers.set(workspace, storage.dispose);
   workspace.start();
-  await workspace.waitForSynced();
-  workspace.meta.initialize();
-  return workspace;
+  try {
+    await workspace.waitForSynced();
+    workspace.meta.initialize();
+    return workspace;
+  } catch (error) {
+    storage.dispose(); workspace.forceStop(); workspace.dispose(); workspace.doc.destroy();
+    throw error;
+  }
 }
 
 export function getVaultWorkspace(vaultId: string) {
@@ -328,9 +335,14 @@ export async function renameEditorDocument(note: NoteRecord, title: string) {
 }
 
 export async function forgetVaultWorkspace(vaultId: string) {
+  // An editor may still be initializing when its vault is closed. Drain those
+  // initializations before disposing the workspace and releasing its folder.
+  await Promise.allSettled([...storePromises].filter(([key]) => key.startsWith(`${vaultId}:`)).map(([, store]) => store));
   const promise = workspacePromises.get(vaultId);
   if (promise) {
     const workspace = await promise;
+    await workspace.docSync.waitForSynced(AbortSignal.timeout(15000));
+    storageDisposers.get(workspace)?.();
     workspace.forceStop();
     workspace.dispose();
     workspace.doc.destroy();
@@ -338,4 +350,41 @@ export async function forgetVaultWorkspace(vaultId: string) {
   workspacePromises.delete(vaultId);
   for (const key of storePromises.keys())
     if (key.startsWith(`${vaultId}:`)) storePromises.delete(key);
+}
+
+/** Build actual editor blocks off-disk; publish the vault only after all succeed. */
+export function createStarterDocuments(pages: import("../lib/starter-vault").StarterPage[]) {
+  const workspace = new TestWorkspace({ id: `starter:${crypto.randomUUID()}` });
+  workspace.storeExtensions = [...supportedExtensions(storeManager.get("store")), ...blockStoreExtensions()];
+  workspace.meta.initialize();
+  try {
+    return Object.fromEntries(pages.map(({ note, blocks }) => {
+      const doc = workspace.createDoc(note.id);
+      doc.spaceDoc.load();
+      const store = openBlockStore(doc);
+      store.load();
+      const root = store.addBlock("affine:page", { title: new Text(note.title) });
+      store.addBlock("affine:surface", {}, root);
+      const parent = store.addBlock("affine:note", { xywh: "[0, 0, 800, 640]" }, root);
+      for (const block of blocks) {
+        if (block.type === "table") {
+          const rows = Object.fromEntries(block.rows.map((_, i) => [`r${i}`, { rowId: `r${i}`, order: `a${i}` }]));
+          const columns = Object.fromEntries(block.rows[0].map((_, i) => [`c${i}`, { columnId: `c${i}`, order: `a${i}`, width: 260 }]));
+          const cells = Object.fromEntries(block.rows.flatMap((row, i) => row.map((text, j) => [`r${i}:c${j}`, { text: new Text(text) }])));
+          store.addBlock("affine:table", { rows, columns, cells }, parent);
+        } else if (block.type === "callout") {
+          const callout = store.addBlock("affine:callout", { emoji: "💡" }, parent);
+          store.addBlock("affine:paragraph", { type: "text", text: new Text(block.text) }, callout);
+        } else if (block.type === "todo") {
+          store.addBlock("affine:list", { type: "todo", checked: false, text: new Text(block.text) }, parent);
+        } else {
+          store.addBlock("affine:paragraph", { type: block.type, text: new Text(block.text) }, parent);
+        }
+      }
+      note.body = readEditorMetadata(store).body;
+      return [note.id, bytesToBase64(Y.encodeStateAsUpdate(doc.spaceDoc))];
+    }));
+  } finally {
+    workspace.forceStop(); workspace.dispose(); workspace.doc.destroy();
+  }
 }

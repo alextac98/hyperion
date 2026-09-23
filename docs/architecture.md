@@ -14,13 +14,17 @@ interface icons and is retained for existing records and backups.
 
 ## Boundaries and authority
 
-- `app/lib/local-database.ts`: domain types, defaults, seed records and repository contract.
+- `app/lib/local-database.ts`: domain types, defaults and repository contract.
+- `app/lib/starter-vault.ts`: the three editable starter pages; the editor builds
+  their real blocks before the new vault is published.
 - `app/platform/`: typed Electron bridge and document/blob storage adapters.
 - `app/lib/save-coordinator.ts`: pending writes, error reporting and retry.
 - `app/lib/data-operations.ts`: editor write barrier for backups, history and restore.
 - `electron/data-format.ts`: runtime validation, document transformations and hashing.
 - `electron/database.ts`: transactions, migrations, records, documents, assets and revisions.
-- `electron/main.ts`: trusted IPC, dialogs, storage locations and save-aware shutdown.
+- `electron/main.ts`: trusted IPC, native folder dialogs and save-aware shutdown.
+- `electron/vault-library.ts`: the app registry, single-vault folders, open/close,
+  migration, folder locks and verified moves.
 
 For UI development, `pnpm dev:web` provides an opt-in Node server using the
 same `DesktopDatabase`. Shared SQLite repository and editor adapters consume
@@ -94,6 +98,42 @@ Version 4 converts standalone Date blocks to inline dates inside paragraphs,
 preserving block IDs, child order and visible date text. Databases upgrading from
 version 3 receive a verified version-3 backup; historical snapshots stay intact.
 
+
+## Vault folders and first launch
+
+An empty installation shows Create/Open setup without seeding a database. Creating
+asks for a name (default **Hyperion**), a location, and whether to include the starter
+guide. The first vault includes the guide by default; subsequent vaults start empty
+unless selected. The guide uses real heading, checklist, callout, and table blocks.
+
+`~/.config/hyperion/vault-library.json` records known vault IDs, cached names,
+absolute locations, and the active vault. New vaults default to
+`~/.config/hyperion/vaults/<name>` (with a numeric suffix for occupied names).
+Each vault folder contains `hyperion.sqlite3`, its SQLite sidecars while open,
+and `backups/`. Opening attaches an existing folder in place. Closing removes its
+registration and releases its lock without deleting data. Importing a portable JSON
+backup creates a separate folder with new IDs.
+
+Existing single-vault databases stay in their original folder, including a remembered
+`storage-location`. Shared databases are split into verified snapshots, one per
+vault, preserving IDs, links, preferences, documents, assets and revisions. The
+registry is published only after all copies pass verification. The original shared
+database and its old backups remain at the original location for recovery. Opening
+an older shared folder from setup performs the same split.
+
+Moving a vault locks the loaded editors and drains pending saves, then writes a
+verified database snapshot and copies its backups into an empty destination.
+After validation and an atomic registry update, the active connection switches and
+source database/backups are removed. Failure before publication retains the original
+active vault. If old files cannot be removed afterward, the UI reports their location.
+Other files in the source folder (including app configuration) are preserved.
+
+A folder lock rejects simultaneous access from another Hyperion instance. Dead
+process locks are reclaimed. Missing folders remain registered and produce a recovery
+message; startup never creates an empty replacement on a missing drive. Reopening a
+relocated folder reconnects its identity. A second available copy of an already
+registered identity is rejected until the first is closed.
+
 ## Save and recovery lifecycle
 
 Editor changes synchronously enqueue metadata projections, including the final edit
@@ -105,12 +145,13 @@ stores, drain pending work and then invoke the native operation. Window close an
 app quit wait for this barrier; a save error leaves the window open.
 
 SQLite snapshots use `VACUUM INTO` and verification before publishing a completed
-file. Snapshots include all vaults, documents, assets and history. Automatic backups
+file. Each vault has its own database and `backups` folder. Snapshots include
+that vault’s documents, assets and history. Automatic backups
 run at startup and daily while the app is open; retain the latest 10. Manual and
 pre-migration backups are retained. Settings → Data opens the folder or creates a
 manual snapshot. Restoring a database backup writes to a separate folder, validates
-it, and leaves the current database active. The storage folder chooser can open
-the restored database. Copy backups off-device for protection against disk loss.
+it, and leaves the current database active. The vault menu’s **Open existing vault** action opens the restored folder.
+Close the current vault first when opening another copy with the same identity. Copy backups off-device for protection against disk loss.
 
 Portable vault format 9 includes metadata, independently encoded page and template
 documents, immutable blobs, asset mappings and revisions. A SHA-256 checksum covers

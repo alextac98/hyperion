@@ -31,13 +31,14 @@ export function BlockEditor({
 
   useEffect(() => {
     let cancelled = false;
+    const opening = new AbortController();
     let unsubscribe: (() => void) | undefined;
     const mount = mountRef.current;
     const initialDocument = initialDocumentRef.current;
     if (!mount) return;
     setLoading(true);
     setError(null);
-    void openEditor(initialDocument)
+    void openEditor(initialDocument, opening.signal)
       .then(({ runtime, view, store }) => {
         if (cancelled) return;
         const { viewport } = view.renderPageEditor(store);
@@ -87,6 +88,7 @@ export function BlockEditor({
 
     return () => {
       cancelled = true;
+      opening.abort();
       unsubscribe?.();
       mount.replaceChildren();
     };

@@ -123,7 +123,7 @@ const note = record(
 );
 async function seed(editor) {
   const result = await editor.rpc("repositoryExecute", {
-    operation: "initialize",
+    operation: "createVault",
     vault: record(
       {
         id: "vault",
@@ -332,7 +332,7 @@ test("SSH forwarding can use a different loopback host and port", async (context
         headers,
       )
     ).body.result.directory,
-    api.directory,
+    join(api.directory, "vaults"),
   );
   assert.equal(
     (

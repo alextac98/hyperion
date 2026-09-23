@@ -9,7 +9,7 @@ import { assetReferences, array, bytes, documentBytes, documentMetadata, retired
 
 import { removeRetiredBlocks, retiredBlockFlavoursV2, retiredBlockFlavours } from "../blocks/retired.js";
 
-const DATABASE_FILE = "hyperion.sqlite3";
+export const DATABASE_FILE = "hyperion.sqlite3";
 export const DATABASE_VERSION = 4;
 const HISTORY_DAYS = 30;
 export type RepositoryRequest = { operation: string; [key: string]: unknown };
@@ -233,7 +233,7 @@ export class DesktopDatabase {
   private validateDocumentAssets(vaultId: string, document: Uint8Array, assets = this.revisionAssets(vaultId)) {
     for (const key of assetReferences(document)) if (!Object.hasOwn(assets, key)) throw new Error(`Missing attachment: ${key}`);
   }
-  private verifyPayloads() {
+  verifyPayloads() {
     this.checkIntegrity();
     for (const row of this.rows("blobs")) if (hash(row.data as Uint8Array) !== row.hash) throw new Error("Asset checksum mismatch");
     for (const row of this.database.prepare("SELECT DISTINCT vault_id,document_id FROM editor_updates").all()) {
@@ -246,6 +246,23 @@ export class DesktopDatabase {
       record(revision.note, "note");
       if (revision.document) this.validateDocumentAssets(revision.vaultId, documentBytes(revision.document), revision.assets);
     }
+  }
+  /** A verified, identity-preserving snapshot for folder moves and legacy splits. */
+  snapshotTo(directory: string, vaultId?: string) {
+    this.verifyPayloads();
+    mkdirSync(directory, { recursive: true });
+    this.snapshotFile(join(directory, DATABASE_FILE));
+    const copy = new DesktopDatabase({ defaultDirectory: directory, initialDirectory: directory });
+    try {
+      if (vaultId) {
+        transaction(copy.database, () => {
+          copy.database.prepare("DELETE FROM vaults WHERE id <> ?").run(id(vaultId));
+          copy.database.exec("DELETE FROM blobs WHERE hash NOT IN (SELECT hash FROM assets UNION SELECT hash FROM revision_assets)");
+        });
+        copy.database.exec("VACUUM");
+      }
+      copy.verifyPayloads();
+    } finally { copy.close(); }
   }
   async setStorageDirectory(directory: string): Promise<StorageInfo> {
     this.ensureOpen(); if (!isAbsolute(directory)) throw new Error("The storage directory must be an absolute path");

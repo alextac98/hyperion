@@ -25,15 +25,17 @@ export function prepareVaultEditor(vaultId: string) {
 
 export function openEditor(
   document: Pick<NoteRecord, "vaultId" | "id" | "title" | "body">,
+  signal?: AbortSignal,
 ) {
-  return loader.open((loaded) =>
-    loaded.getOrCreateEditorStore(
+  return loader.open((loaded) => {
+    signal?.throwIfAborted();
+    return loaded.getOrCreateEditorStore(
       document.vaultId,
       document.id,
       document.title,
       document.body,
-    ),
-  );
+    );
+  });
 }
 
 export async function getOrCreateEditorStore(
@@ -114,4 +116,10 @@ export async function forgetVaultWorkspace(
   >
 ) {
   return (await runtime()).forgetVaultWorkspace(...args);
+}
+
+export async function createStarterDocuments(
+  pages: import("../lib/starter-vault").StarterPage[],
+) {
+  return (await runtime()).createStarterDocuments(pages);
 }

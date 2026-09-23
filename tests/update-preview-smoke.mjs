@@ -1,3 +1,4 @@
+import { createFirstVault } from "./vault-setup-helpers.mjs";
 import { app, BrowserWindow } from "electron";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -31,6 +32,7 @@ void (async () => {
     );
     const window = BrowserWindow.getAllWindows()[0];
     const js = (code) => window.webContents.executeJavaScript(code);
+    await createFirstVault(js, until);
     await until(
       () =>
         js(
