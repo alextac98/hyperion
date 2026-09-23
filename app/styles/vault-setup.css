@@ -1,0 +1,197 @@
+.vault-onboarding {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 48px 24px;
+  background: var(--bg);
+  overflow: auto;
+}
+.vault-setup {
+  position: relative;
+  width: min(540px, 100%);
+  padding: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-dialog);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+.vault-setup h1 {
+  font-size: 28px;
+  line-height: 1.25;
+  letter-spacing: -0.6px;
+  margin: 24px 0 12px;
+}
+.vault-setup-intro {
+  color: var(--text-soft);
+  line-height: 1.65;
+  margin: 0 0 28px;
+}
+.vault-setup fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.vault-setup fieldset > label:not(.vault-starter-option) {
+  display: block;
+  font-weight: 600;
+  margin: 20px 0 8px;
+}
+.vault-setup input:not([type="checkbox"]) {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  background: var(--panel);
+  font: inherit;
+}
+.vault-location-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: var(--radius-control);
+  padding: 10px 12px;
+}
+.vault-location-control output {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+.vault-location-control button {
+  flex-shrink: 0;
+}
+.vault-setup button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+}
+.vault-setup small {
+  display: block;
+  font-size: 12px;
+  color: var(--text-soft);
+  line-height: 1.5;
+  margin-top: 8px;
+}
+.vault-starter-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 24px 0;
+  cursor: pointer;
+}
+.vault-setup .vault-starter-option input[type="checkbox"] {
+  flex: 0 0 16px;
+  margin: 3px 0 0;
+  width: 16px;
+  min-width: 16px;
+  max-width: 16px;
+  height: 16px;
+  accent-color: var(--action);
+}
+.vault-starter-option > span {
+  font-size: 14px;
+  font-weight: 600;
+}
+.vault-starter-option small {
+  font-weight: 400;
+}
+.vault-starter-option small {
+  margin-top: 4px;
+}
+.vault-create-button {
+  width: 100%;
+  padding: 12px;
+}
+.vault-open-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--text-soft);
+}
+.vault-open-option button,
+.vault-location-control button {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 6px 10px;
+  background: var(--surface);
+  color: var(--text);
+}
+.vault-setup-close {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+}
+.vault-setup-footnote {
+  margin: 24px 0 0;
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-soft);
+}
+.vault-setup-error {
+  color: var(--danger);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 12px;
+  border-radius: var(--radius-control);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.vault-setup-status {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+.vault-recent {
+  margin-top: 20px;
+  display: grid;
+  gap: 8px;
+}
+.vault-recent h2 {
+  font-size: 14px;
+  margin: 0;
+}
+.vault-recent button {
+  justify-content: flex-start;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+}
+.vault-setup-layer {
+  padding: 24px;
+}
+.vault-setup-layer .vault-setup {
+  margin: auto;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+}
+.vault-storage-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 560px) {
+  .vault-onboarding {
+    padding: 20px 12px;
+  }
+  .vault-setup {
+    padding: 24px 20px;
+  }
+  .vault-open-option {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

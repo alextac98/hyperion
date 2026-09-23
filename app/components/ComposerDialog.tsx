@@ -1,4 +1,4 @@
-import { Database, FileText, PencilSimple, Stack } from "@phosphor-icons/react";
+import { FileText, PencilSimple, Stack } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Composer } from "../application/navigation";
 import { Dialog } from "./Dialog";
@@ -51,9 +51,7 @@ export function ComposerDialog({
         }}
       >
         <div className="dialog-icon">
-          {composer.type === "vault" ? (
-            <Database size={22} />
-          ) : composer.type === "rename" ? (
+          {composer.type === "rename" ? (
             <PencilSimple size={22} />
           ) : composer.type === "template" ? (
             <Stack size={22} />
@@ -68,38 +66,28 @@ export function ComposerDialog({
               ? composer.noteId
                 ? "Save as template"
                 : "New template"
-              : `New ${composer.type === "vault" ? "vault" : "page"}`}
+              : "New page"}
         </h2>
         <p>
-          {composer.type === "vault"
-            ? "A separate local knowledge space with its own notes and settings."
-            : composer.type === "rename"
-              ? "Give this page a clear name. Existing page links will continue to work."
-              : composer.type === "template"
-                ? composer.noteId
-                  ? "Save this page’s content, icon, and tags for future pages and journal entries."
-                  : "Create a blank reusable page, then shape its title, icon, and content in the template editor."
-                : composer.parentId
-                  ? `Create a page inside “${parentTitle ?? "this page"}”.`
-                  : "Create a top-level page. It can hold content and child pages."}
+          {composer.type === "rename"
+            ? "Give this page a clear name. Existing page links will continue to work."
+            : composer.type === "template"
+              ? composer.noteId
+                ? "Save this page’s content, icon, and tags for future pages and journal entries."
+                : "Create a blank reusable page, then shape its title, icon, and content in the template editor."
+              : composer.parentId
+                ? `Create a page inside “${parentTitle ?? "this page"}”.`
+                : "Create a top-level page. It can hold content and child pages."}
         </p>
         <input
           ref={inputRef}
           aria-label={
-            composer.type === "vault"
-              ? "Vault name"
-              : composer.type === "template"
-                ? "Template name"
-                : "Page title"
+            composer.type === "template" ? "Template name" : "Page title"
           }
           value={composer.value}
           onChange={(event) => onValue(event.target.value)}
           placeholder={
-            composer.type === "vault"
-              ? "Vault name"
-              : composer.type === "template"
-                ? "Template name"
-                : "Page title"
+            composer.type === "template" ? "Template name" : "Page title"
           }
         />
         {error && <p role="alert">{error}</p>}

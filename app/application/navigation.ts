@@ -15,7 +15,6 @@ export type PageDropTarget = {
 export type PageContextMenuState = { noteId: string; x: number; y: number };
 
 export type Composer =
-  | { type: "vault"; value: string }
   | { type: "page"; value: string; parentId: string | null }
   | { type: "template"; value: string; noteId: string | null }
   | { type: "rename"; value: string; noteId: string }

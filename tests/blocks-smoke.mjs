@@ -1,3 +1,4 @@
+import { createFirstVault } from "./vault-setup-helpers.mjs";
 import { app, BrowserWindow } from "electron";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -42,12 +43,13 @@ void (async () => {
     window.webContents.on("console-message", (event) => {
       if (event.level === "error") rendererErrors.push(event.message);
     });
+    const vaultId = await createFirstVault(js, until);
     await until(
       () => js(`Boolean(document.querySelector('affine-slash-menu-widget'))`),
       "Editor did not load",
     );
     const identity = await js(
-      `(() => { const store=document.querySelector('doc-title').doc; return {noteId:store.id,vaultId:'hyperion'}; })()`,
+      `(() => { const store=document.querySelector('doc-title').doc; return {noteId:store.id,vaultId:${JSON.stringify(vaultId)}}; })()`,
     );
     // Use the registered slash-menu action, including its selection context.
     await js(`(() => {
@@ -95,7 +97,7 @@ void (async () => {
     await until(
       () =>
         js(
-          `window.hyperionDesktop.repositoryExecute({operation:'listNotes',vaultId:'hyperion'}).then(notes=>notes.find(note=>note.id===${JSON.stringify(identity.noteId)})?.body.includes('2030-06-15'))`,
+          `window.hyperionDesktop.repositoryExecute({operation:'listNotes',vaultId:${JSON.stringify(vaultId)}}).then(notes=>notes.find(note=>note.id===${JSON.stringify(identity.noteId)})?.body.includes('2030-06-15'))`,
         ),
       "Date was not indexed",
     );
@@ -570,7 +572,7 @@ void (async () => {
       `document.querySelector('doc-title').doc.doc.yBlocks.get('unknown-block').toJSON()`,
     );
     const checkpoint = await js(
-      `window.hyperionDesktop.repositoryExecute({operation:'captureRevision',vaultId:'hyperion',noteId:${JSON.stringify(identity.noteId)},label:'Custom blocks'})`,
+      `window.hyperionDesktop.repositoryExecute({operation:'captureRevision',vaultId:${JSON.stringify(vaultId)},noteId:${JSON.stringify(identity.noteId)},label:'Custom blocks'})`,
     );
     // Saving and reopening does not discard an unavailable block or its descendants.
     await js("location.reload()");
@@ -701,10 +703,10 @@ void (async () => {
     );
     await saved();
     const restored = await js(
-      `window.hyperionDesktop.repositoryExecute({operation:'restoreRevision',vaultId:'hyperion',revisionId:${JSON.stringify(checkpoint.id)},asCopy:true})`,
+      `window.hyperionDesktop.repositoryExecute({operation:'restoreRevision',vaultId:${JSON.stringify(vaultId)},revisionId:${JSON.stringify(checkpoint.id)},asCopy:true})`,
     );
     await js(
-      `localStorage.setItem('hyperion:last-note:hyperion',${JSON.stringify(restored.id)});location.reload()`,
+      `localStorage.setItem('hyperion:last-note:'+${JSON.stringify(vaultId)},${JSON.stringify(restored.id)});location.reload()`,
     );
     await until(
       () =>
@@ -721,7 +723,7 @@ void (async () => {
     );
     await saved();
     const exported = await js(
-      `window.hyperionDesktop.repositoryExecute({operation:'exportVault',vaultId:'hyperion'})`,
+      `window.hyperionDesktop.repositoryExecute({operation:'exportVault',vaultId:${JSON.stringify(vaultId)}})`,
     );
     const imported = await js(
       `window.hyperionDesktop.repositoryExecute({operation:'importVault',bundle:${JSON.stringify(exported)}})`,

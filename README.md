@@ -19,12 +19,14 @@ bundled Chromium runtime. SQLite stores all knowledge data locally.
 - BlockSuite editor with rich text, slash commands,
   headings, lists, to-dos, callouts, code, LaTeX, tables, database views,
   kanban, images, attachments, bookmarks, and embeds
-- Independent local vaults with switching, creation, deletion, JSON backup,
+- First-run setup with a vault name, save location, and optional editable starter guide
+- Independent vault folders with creation, opening, switching, moving, JSON backup,
   and restore
 - Automatic and named page versions with rich previews and restoration
 - Verified database backups and complete portable vault exports, including assets and history
-- A desktop SQLite database containing notes, rich editor documents, and assets,
-  stored in `~/.config/hyperion` by default with a user-selectable location
+- A SQLite database and backups in each vault folder, containing notes, rich
+  editor documents, assets, and history; new vaults default to
+  `~/.config/hyperion/vaults/<vault name>` with a user-selectable location
 - A resizable sidebar with a collapsible Notes tree where every page can
   contain child pages, with drag-and-drop nesting, persistent sibling order,
   and right-click actions for renaming, duplicating, favoriting, archiving,

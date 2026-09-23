@@ -46,12 +46,15 @@ you deliberately need another instance of the same branch:
 HYPERION_DEV_BRANCH=feature/search-review pnpm dev
 ```
 
-Each new branch starts with fresh development data. The installed app continues
-to use `~/.config/hyperion/hyperion.sqlite3`. Existing installed-app data and the
-old shared development database are not copied, moved, or deleted. Explicit test
-and update-preview profiles remain isolated from branch development.
+Each new branch starts with first-run setup and its own vault registry. The
+installed app keeps its registry in `~/.config/hyperion`; new vault folders default
+to its `vaults/` subdirectory. Existing single-vault locations stay in place;
+legacy shared databases are split into independent folders with their source
+retained for recovery. Branch development never adopts installed-app data. Explicit
+test and update-preview profiles remain isolated from branch development.
 
-Settings → Data can choose another folder independently in each instance.
+Setup can create a vault in a chosen folder. Settings → Data → Move vault moves
+only the active vault, including its backups.
 Set `HYPERION_DATA_DIRECTORY` to an isolated absolute directory for disposable
 data. Keep these overrides and chosen folders separate across running instances;
 they bypass the default branch data location. The application never auto-imports

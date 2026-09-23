@@ -8,11 +8,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, isAbsolute, resolve } from "node:path";
-import { DesktopDatabase } from "../dist-electron/database.js";
+import { VaultLibrary } from "../dist-electron/vault-library.js";
 
 const MAX_BODY = 32 * 1024 * 1024;
 const repositoryOperations = new Set([
   "initialize",
+  "vaultSetup",
+  "suggestVaultDirectory",
+  "selectVault",
+  "closeVault",
   "listVaults",
   "createVault",
   "updateVault",
@@ -117,12 +121,14 @@ export function browserDevelopmentPlugin({
       }
       try {
         // Browser development never follows a desktop storage-location pointer.
-        database = new DesktopDatabase({
+        database = new VaultLibrary({
           defaultDirectory: directory,
-          initialDirectory: directory,
+          followLegacyLocation: false,
         });
-        database.repositoryExecute({ operation: "captureAutomaticRevisions" });
-        database.createBackup(true);
+        if (database.setupInfo().activeVaultId && !database.setupInfo().error) {
+          database.repositoryExecute({ operation: "captureAutomaticRevisions" });
+          database.createBackup(true);
+        }
       } catch (error) {
         close();
         throw error;
@@ -133,6 +139,7 @@ export function browserDevelopmentPlugin({
           (request) => {
             if (!request || !repositoryOperations.has(request.operation))
               fail(400, "Unknown repository operation.");
+            if (request.operation === "createVault" && request.directory) fail(400, "Custom storage locations require the desktop app.");
             return database.repositoryExecute(request);
           },
         ],

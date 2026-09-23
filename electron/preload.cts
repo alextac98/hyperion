@@ -11,6 +11,9 @@ const channels = {
   rendererReady: "hyperion:renderer-ready",
   closeReady: "hyperion:close-ready",
   chooseStorageLocation: "hyperion:choose-storage-location",
+  chooseVaultDirectory: "hyperion:choose-vault-directory",
+  openVault: "hyperion:open-vault",
+  showVaultFolder: "hyperion:show-vault-folder",
   editorPull: "hyperion:editor-pull",
   editorPush: "hyperion:editor-push",
   editorDelete: "hyperion:editor-delete",
@@ -55,6 +58,9 @@ contextBridge.exposeInMainWorld("hyperionDesktop", Object.freeze({
     return () => ipcRenderer.removeListener(channels.prepareClose, listener);
   },
   chooseStorageLocation: () => ipcRenderer.invoke(channels.chooseStorageLocation),
+  chooseVaultDirectory: () => ipcRenderer.invoke(channels.chooseVaultDirectory),
+  openVault: () => ipcRenderer.invoke(channels.openVault),
+  showVaultFolder: () => ipcRenderer.invoke(channels.showVaultFolder),
   editorPull: (vaultId: string, documentId: string) => (
     ipcRenderer.invoke(channels.editorPull, vaultId, documentId)
   ),

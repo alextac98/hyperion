@@ -26,9 +26,11 @@ class SqliteDocSource implements DocSource {
   constructor(
     private readonly data: HyperionDataApi,
     private readonly vaultId: string,
+    private readonly closed: () => boolean,
   ) {}
 
   async pull(docId: string, state: Uint8Array) {
+    if (this.closed()) throw new DOMException("Vault is closed", "AbortError");
     const encodedUpdates = await this.data.editorPull(this.vaultId, docId);
     if (!encodedUpdates.length) return null;
     const update = mergeUpdates(encodedUpdates.map(base64ToBytes));
@@ -39,6 +41,7 @@ class SqliteDocSource implements DocSource {
   }
 
   push(docId: string, data: Uint8Array) {
+    if (this.closed()) throw new Error("Cannot save to a closed vault");
     return saves.track(() =>
       this.data.editorPush(this.vaultId, docId, bytesToBase64(data)),
     );
@@ -58,9 +61,11 @@ class SqliteBlobSource implements BlobSource {
   constructor(
     private readonly data: HyperionDataApi,
     private readonly vaultId: string,
+    private readonly closed: () => boolean,
   ) {}
 
   async get(key: string) {
+    if (this.closed()) return null;
     const asset = await this.data.assetGet(this.vaultId, key);
     return asset
       ? new Blob([base64ToBytes(asset.data)], { type: asset.mimeType })
@@ -68,6 +73,7 @@ class SqliteBlobSource implements BlobSource {
   }
 
   async set(key: string, value: Blob) {
+    if (this.closed()) throw new Error("Cannot save to a closed vault");
     return saves.track(async () => {
       await this.data.assetSet(
         this.vaultId,
@@ -80,10 +86,12 @@ class SqliteBlobSource implements BlobSource {
   }
 
   delete(key: string) {
+    if (this.closed()) throw new Error("Cannot change a closed vault");
     return this.data.assetDelete(this.vaultId, key);
   }
 
   list() {
+    if (this.closed()) return Promise.resolve([]);
     return this.data.assetList(this.vaultId);
   }
 }
@@ -92,8 +100,10 @@ export function createSqliteEditorStorage(
   data: HyperionDataApi,
   vaultId: string,
 ) {
+  let closed = false;
   return {
-    doc: new SqliteDocSource(data, vaultId),
-    blobs: new SqliteBlobSource(data, vaultId),
+    doc: new SqliteDocSource(data, vaultId, () => closed),
+    blobs: new SqliteBlobSource(data, vaultId, () => closed),
+    dispose: () => { closed = true; },
   };
 }
