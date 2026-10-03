@@ -240,9 +240,8 @@
   .journal-calendar-entry i { width: 6px; height: 6px; }
   .journal-entry-label { width: calc(100% - 30px); margin-top: 24px; }
   .page-icon-row { width: calc(100% - 30px); margin-top: 22px; }
-  .note-workspace.has-page-icon .page-icon-picker-wrap { transform: translate(24px, 34px); }
+  :root { --page-title-padding-top: 34px; }
   .page-icon-picker { max-width: calc(100vw - 46px); }
-  .hyperion-blocksuite-viewport .doc-title-container { padding-top: 34px; }
   .collection-card-grid,
   .note-card-grid.wide { grid-template-columns: 1fr; }
   .data-toolbar { align-items: stretch; flex-wrap: wrap; }

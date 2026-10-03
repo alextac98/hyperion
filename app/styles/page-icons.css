@@ -1,3 +1,8 @@
+:root {
+  --page-title-font-size: clamp(35px, 4.4vw, 48px);
+  --page-title-padding-top: 44px;
+}
+
 .page-icon-row {
   position: relative;
   z-index: 14;
@@ -18,7 +23,8 @@
 }
 
 .note-workspace.has-page-icon .page-icon-picker-wrap {
-  transform: translate(24px, 44px);
+  /* Center the 42px icon on the title's first line (line-height: 1.25). */
+  transform: translate(24px, calc(var(--page-title-padding-top) + var(--page-title-font-size) * .625 - 21px));
 }
 
 .note-workspace.has-page-icon .hyperion-blocksuite-viewport .doc-title-container {
@@ -255,10 +261,10 @@
 .hyperion-blocksuite-page { min-height: 440px; flex: 1; }
 .hyperion-blocksuite-page editor-host { min-height: 440px; }
 .hyperion-blocksuite-viewport .doc-title-container {
-  padding-top: 44px;
+  padding-top: var(--page-title-padding-top);
   padding-bottom: 22px;
   color: var(--text);
-  font-size: clamp(35px, 4.4vw, 48px);
+  font-size: var(--page-title-font-size);
   line-height: 1.25;
   letter-spacing: -.04em;
   overflow-wrap: anywhere;
