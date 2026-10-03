@@ -1,0 +1,78 @@
+.content-shell { position: relative; }
+
+.page-context-toggle {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: var(--font-size-caption);
+}
+.page-context-toggle:hover { background: var(--hover); }
+.page-context-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.page-context-toggle em { font-style: normal; font-variant-numeric: tabular-nums; }
+
+.page-context-drawer {
+  z-index: 15;
+  display: flex;
+  width: 290px;
+  min-width: 0;
+  flex: 0 0 auto;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--bg);
+}
+.page-context-header { display: flex; flex: 0 0 auto; align-items: center; gap: 3px; padding: 14px 12px 14px 18px; border-bottom: 1px solid var(--line); }
+.page-context-header h2 { min-width: 0; flex: 1; margin: 0; font-size: var(--font-size-ui); font-weight: 600; }
+.page-context-header .icon-button { width: 29px; height: 29px; }
+.page-context-header [aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+.page-context-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 18px; }
+.page-context-body section + section { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); }
+.page-context-body .details-link-select { margin-top: 22px; }
+.context-empty { margin: 0; color: var(--text-faint); font-size: var(--font-size-ui); line-height: 1.65; }
+.page-context-scrim { display: none; }
+
+.page-context-body .backlinks-list button { height: auto; min-height: 36px; align-items: flex-start; padding: 8px 7px; }
+.page-context-body .backlinks-list button > svg,
+.page-context-body .backlinks-list button > .page-icon-glyph { margin-top: 2px; }
+.page-context-body .backlinks-list .connection-text { min-width: 0; white-space: normal; }
+.connection-text > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connection-text small { display: -webkit-box; overflow: hidden; margin-top: 6px; color: var(--text-faint); font-size: var(--font-size-caption); line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.page-context-body .details-properties dl > div { align-items: flex-start; gap: 15px; padding-block: 8px; }
+.page-context-body .details-properties dd { max-width: 65%; text-align: right; overflow-wrap: anywhere; }
+
+.has-page-metadata .doc-title-container { padding-bottom: 12px; }
+.page-tags { display: flex; width: 100%; max-width: var(--affine-editor-width); flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 auto; padding: 0 var(--affine-editor-side-padding, 24px) 20px; }
+.note-workspace.has-page-icon .page-tags { padding-left: calc(24px + 42px + 16px); }
+.page-tags [hidden] { display: none; }
+.page-tag-form { display: inline-flex; max-width: 100%; align-items: center; overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
+.page-tag-form:focus-within { border-color: var(--accent); }
+.page-tag-form input { width: 110px; min-width: 0; padding: 5px 8px; border: 0; background: transparent; font-size: var(--font-size-caption); }
+.page-tag-form button { display: grid; width: 27px; height: 27px; flex: 0 0 auto; place-items: center; background: transparent; color: var(--text-soft); }
+.page-tag-form button:disabled { opacity: .5; cursor: default; }
+
+@media (max-width: 1120px) {
+  .page-context-toggle > span { display: none; }
+  .page-context-toggle { padding-inline: 8px; }
+}
+@media (max-width: 900px) {
+  .page-context-drawer { position: absolute; inset: 0 0 0 auto; width: min(320px, 100%); box-shadow: var(--shadow-lg); }
+  .page-context-scrim { position: absolute; z-index: 14; inset: 0; display: block; width: 100%; height: 100%; background: color-mix(in srgb, var(--text) 12%, transparent); }
+}
+@media (max-width: 480px) {
+  .topbar { gap: 4px; }
+  .topbar-history { display: none; }
+  .page-tags { padding-inline: 24px; }
+}
+@media (pointer: coarse) {
+  .page-context-header .icon-button { width: 40px; height: 40px; }
+  .page-context-toggle { min-height: 40px; }
+  .page-tags .tag-pill { height: 34px; padding-right: 3px; }
+  .page-tags .tag-pill button { width: 30px; height: 30px; margin: 0; }
+  .page-tags .add-tag { height: 36px; }
+  .page-tag-form input { font-size: 16px; }
+  .page-tag-form button { width: 36px; height: 36px; }
+}

@@ -2,7 +2,9 @@ import { SidebarOrganizer } from "../app/components/SidebarOrganizer";
 import { UpdateControls } from "../app/components/UpdateControls";
 import type { UpdateState } from "../electron/updates";
 import type { HyperionDesktopApi } from "../app/platform/desktop-api";
-import { NoteDetails } from "../app/components/NoteDetails";
+import { PageConnections, backlinkExcerpt } from "../app/components/PageConnections";
+import { PageTags } from "../app/components/PageTags";
+import { usePageContext } from "../app/hooks/usePageContext";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
@@ -522,7 +524,7 @@ test("in-page search keeps correct offsets after Unicode case folding and treats
   );
 });
 
-test("details remove the source page's manual link without changing the target", async () => {
+test("connections remove the source page's manual link without changing the target", async () => {
   const target = page("target", "Target");
   const source = {
     ...page("source", "Source"),
@@ -532,10 +534,9 @@ test("details remove the source page's manual link without changing the target",
   };
   const changes: unknown[] = [];
   const ui = await mount(
-    <NoteDetails
+    <PageConnections
       note={source}
       notes={[source, target]}
-      store={null}
       onSelect={() => {}}
       onChange={(patch) => changes.push(patch)}
     />,
@@ -548,6 +549,97 @@ test("details remove the source page's manual link without changing the target",
   assert.deepEqual(changes, [{ links: [] }]);
   assert.equal(source.links.length, 1);
   await ui.unmount();
+});
+
+test("page context closes on navigation, persists pins per vault, and remembers closing after restart", async () => {
+  localStorage.clear();
+  let context!: ReturnType<typeof usePageContext>;
+  let navigate!: (id: string) => void;
+  let switchVault!: (id: string) => void;
+  function Harness() {
+    const [vaultId, setVaultId] = useState("context-a");
+    const [noteId, setNoteId] = useState("one");
+    navigate = setNoteId;
+    switchVault = setVaultId;
+    context = usePageContext(vaultId, noteId, true);
+    return <span>{context.view ?? "closed"}</span>;
+  }
+  let ui = await mount(<StrictMode><Harness /></StrictMode>);
+  try {
+    assert.equal(context.view, null);
+    await act(async () => context.toggle("outline"));
+    assert.equal(context.view, "outline");
+    await act(async () => navigate("two"));
+    assert.equal(context.view, null);
+    await act(async () => navigate("one"));
+    assert.equal(context.view, null, "returning to a page does not reopen unpinned context");
+    await act(async () => context.toggle("connections"));
+    await act(async () => context.togglePin());
+    await act(async () => navigate("two"));
+    assert.equal(context.view, "connections");
+    await ui.unmount();
+    ui = await mount(<StrictMode><Harness /></StrictMode>);
+    assert.equal(context.view, "connections");
+    assert.equal(context.pinned, true);
+    await act(async () => switchVault("context-b"));
+    assert.equal(context.view, null);
+    await act(async () => context.toggle("history"));
+    await act(async () => context.togglePin());
+    await act(async () => switchVault("context-a"));
+    assert.equal(context.view, "connections");
+    await act(async () => context.close());
+    await ui.unmount();
+    ui = await mount(<StrictMode><Harness /></StrictMode>);
+    assert.equal(context.view, null);
+    assert.equal(context.pinned, false);
+    await act(async () => switchVault("context-b"));
+    assert.equal(context.view, "history", "closing one vault's context preserves another vault's pin");
+    await act(async () => context.toggle("outline"));
+    assert.equal(context.pinned, true, "switching the pinned view keeps it pinned");
+    await act(async () => context.toggle("outline"));
+    assert.equal(context.view, null);
+    assert.equal(context.pinned, false);
+  } finally { await ui.unmount(); localStorage.clear(); }
+});
+
+test("connections show the actual backlink passage and omit empty sections", async () => {
+  const target = page("target", "Target");
+  const source = { ...page("source", "Source"), body: "Connect this question to [[Target]] before returning to the project.", links: [{ targetId: target.id, label: target.title, kind: "inline" as const }] };
+  assert.match(backlinkExcerpt(source, target.id), /question to \[\[Target\]\]/);
+  assert.equal(backlinkExcerpt({ ...source, links: [{ ...source.links[0], kind: "manual" }] }, target.id), "");
+  const ui = await mount(<PageConnections note={target} notes={[target, source]} onSelect={() => {}} onChange={() => {}} />);
+  assert.match(ui.host.textContent!, /Connect this question to \[\[Target\]\]/);
+  assert.equal(ui.host.querySelectorAll("section").length, 1);
+  assert.equal(ui.host.textContent!.includes("Links from this page"), false);
+  await ui.unmount();
+});
+
+test("page tags normalize additions, reject duplicates, and support keyboard cancellation", async () => {
+  const changes: Partial<import("../app/lib/local-database").NoteRecord>[] = [];
+  const note = { ...page("tagged"), tags: ["ideas"] };
+  const ui = await mount(<PageTags note={note} onChange={patch => changes.push(patch)} />);
+  try {
+    const add = ui.host.querySelector<HTMLButtonElement>('[aria-label="Add tag"]')!;
+    const enter = async (value: string) => {
+      await act(async () => add.click());
+      const input = ui.host.querySelector<HTMLInputElement>('input')!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(input, value);
+        input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      });
+      await act(async () => ui.host.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+    };
+    await enter(" #Reading ");
+    assert.deepEqual(changes, [{ tags: ["ideas", "reading"] }]);
+    await enter("IDEAS");
+    assert.equal(changes.length, 1);
+    await act(async () => add.click());
+    await act(async () => key(ui.host.querySelector("input")!, "Escape"));
+    assert.equal(ui.host.querySelector("input"), null);
+    assert.equal(document.activeElement, add);
+    await act(async () => ui.host.querySelector<HTMLButtonElement>('[aria-label="Remove tag ideas"]')!.click());
+    assert.deepEqual(changes[1], { tags: [] });
+  } finally { await ui.unmount(); }
 });
 
 test("editor initialization overlaps view loading and reuses preloaded modules", async () => {

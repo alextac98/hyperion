@@ -155,14 +155,6 @@ export function SettingsDialog({
                     onBlur={() => void onVault({ description })}
                   />
                 </label>
-                <SettingToggle
-                  title="Open page details"
-                  description="Show outline, backlinks, and properties when opening a page."
-                  checked={preferences.showDetails}
-                  onChange={(checked) =>
-                    void onPreferences({ showDetails: checked })
-                  }
-                />
               </>
             )}
             {tab === "editor" && (

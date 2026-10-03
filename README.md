@@ -37,6 +37,8 @@ bundled Chromium runtime. SQLite stores all knowledge data locally.
   through the tree, links, search, and every other view without affecting identity
 - Permanent page identities with rename-safe `[[Page name]]` references,
   quick page links, ID-based backlinks, and searchable former names
+- Tags beneath the page title, on-demand outline and connections drawers with
+  optional pins, and page properties and version history in the page menu
 - Sortable/filterable table and card views, favorites, journal, search,
   recoverable archives, and trash
 - Vault-scoped page templates with a searchable picker, direct template editing,

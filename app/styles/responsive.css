@@ -1,5 +1,4 @@
 @media (max-width: 1120px) {
-  .details-panel { width: 225px; }
   .note-editor { padding-inline: 46px; }
   .note-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .note-card { min-height: 170px; }
@@ -7,7 +6,6 @@
 
 @media (max-width: 900px) {
   .outline-toggle { display: none; }
-  .details-panel { display: none; }
   .library-view { padding-inline: 34px; }
   .table-head,
   .table-row { grid-template-columns: minmax(220px, 1fr) 70px; }

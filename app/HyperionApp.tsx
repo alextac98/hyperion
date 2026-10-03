@@ -7,6 +7,7 @@ import { VaultSetup } from "./components/VaultSetup";
 import { Dialog } from "./components/Dialog";
 import { requireDesktop } from "./platform/runtime";
 import { useWorkspaceTabs } from "./hooks/useWorkspaceTabs";
+import { usePageContext, type PageContextView } from "./hooks/usePageContext";
 import { WorkspaceLayout } from "./components/WorkspaceLayout";
 import { layoutPanes } from "./application/workspace-layout";
 import { useMouseNavigation } from "./hooks/useMouseNavigation";
@@ -26,11 +27,14 @@ import {
   CaretDown,
   CaretRight,
   Check,
+  ClockCounterClockwise,
   DotsThree,
   FilePlus,
   FolderOpen,
   GearSix,
   House,
+  Info,
+  Link,
   ListBullets,
   MagnifyingGlass,
   PencilSimple,
@@ -69,7 +73,11 @@ import {
   TemplatesView,
   TrashView,
 } from "./components/LibraryViews";
-import { NoteDetails } from "./components/NoteDetails";
+import { DocumentOutline } from "./components/DocumentOutline";
+import { PageConnections, pageConnections } from "./components/PageConnections";
+import { PageContextDrawer } from "./components/PageContextDrawer";
+import { PageProperties } from "./components/PageProperties";
+import { PageTags } from "./components/PageTags";
 import { PageContextMenu } from "./components/PageContextMenu";
 import { PageIcon } from "./components/PageIcon";
 import { PageIconPicker } from "./components/PageIconPicker";
@@ -162,7 +170,7 @@ const FALLBACK_PREFERENCES: VaultPreferences = {
   editorWidth: "comfortable",
   spellcheck: true,
   meetingDefaultTab: "notes",
-  showDetails: true,
+  showDetails: false,
   notesView: "table",
   defaultTemplateIds: { note: null, journal: null },
 };
@@ -205,10 +213,12 @@ export default function HyperionApp() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(getStoredSidebarWidth);
   const [sidebarResizing, setSidebarResizing] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(true);
-  const [detailsTab, setDetailsTab] = useState<"details" | "history">(
-    "details",
+  const pageContext = usePageContext(
+    vaultId,
+    view === "note" ? activeId : null,
+    vaultReady && !loading,
   );
+  const { close: closePageContext } = pageContext;
   const [comparison, setComparison] = useState<PageComparison | null>(null);
   const pageComparison =
     view === "note" &&
@@ -470,7 +480,6 @@ export default function HyperionApp() {
         ) {
           await knowledgeRepository.savePreferences(validPreferences);
         }
-        setDetailsOpen(storedPreferences.showDetails);
         if (nextVaults) setVaults(nextVaults);
         const remembered = uiStorage.getItem(
           `hyperion:last-note:${nextVaultId}`,
@@ -1180,8 +1189,24 @@ export default function HyperionApp() {
   const savePreferencePatch = async (patch: Partial<VaultPreferences>) => {
     const next = { ...preferences, ...patch };
     setPreferences(next);
-    if ("showDetails" in patch) setDetailsOpen(next.showDetails);
     await knowledgeRepository.savePreferences(next);
+  };
+
+  const togglePageContext = (next: PageContextView) => {
+    setMoreOpen(false);
+    setPageSearchOpen(false);
+    setComparison(null);
+    pageContext.toggle(next);
+  };
+
+  const dismissPageContext = () => {
+    setComparison(null);
+    closePageContext();
+  };
+
+  const openPageContext = (next: PageContextView) => {
+    if (pageContext.view !== next) togglePageContext(next);
+    else setMoreOpen(false);
   };
 
   const exportVault = async () => {
@@ -1318,6 +1343,12 @@ export default function HyperionApp() {
     view === "note" && activeNote?.kind === "note"
       ? ancestorPath(organizedNotes, activeNote)
       : [];
+  const connections = activeNote ? pageConnections(activeNote, activeNotes) : null;
+  const connectionCount = new Set(
+    [...(connections?.outgoing ?? []), ...(connections?.backlinks ?? [])].map(
+      note => note.id,
+    ),
+  ).size;
 
   if (loading) {
     return (
@@ -1712,16 +1743,33 @@ export default function HyperionApp() {
               </button>
             )}
             {view === "note" && (
-              <button
-                className={`icon-button${detailsOpen ? " active" : ""}`}
-                aria-label="Toggle note details"
-                onClick={() => {
-                  setDetailsOpen((open) => !open);
-                  setComparison(null);
-                }}
-              >
-                <ListBullets size={19} />
-              </button>
+              <>
+                <button
+                  className="page-context-toggle"
+                  aria-label="Toggle outline"
+                  title="Outline"
+                  aria-pressed={pageContext.view === "outline"}
+                  aria-controls="page-context-drawer"
+                  onClick={() => togglePageContext("outline")}
+                >
+                  <ListBullets size={18} />
+                  <span>Outline</span>
+                </button>
+                <button
+                  className="page-context-toggle"
+                  aria-label="Toggle connections"
+                  title={
+                    connectionCount ? `Connections (${connectionCount})` : "Connections"
+                  }
+                  aria-pressed={pageContext.view === "connections"}
+                  aria-controls="page-context-drawer"
+                  onClick={() => togglePageContext("connections")}
+                >
+                  <Link size={18} />
+                  <span>Connections</span>
+                  {connectionCount > 0 && <em>{connectionCount}</em>}
+                </button>
+              </>
             )}
             {view === "note" && activeNote && (
               <div className="more-wrap topbar-more">
@@ -1736,6 +1784,13 @@ export default function HyperionApp() {
                 </button>
                 {moreOpen && (
                   <div className="popover note-menu">
+                    <button onClick={() => openPageContext("history")}>
+                      <ClockCounterClockwise size={17} /> Version history
+                    </button>
+                    <button onClick={() => openPageContext("properties")}>
+                      <Info size={17} /> Page properties
+                    </button>
+                    <div className="popover-divider" />
                     <button
                       onClick={() => {
                         setMoreOpen(false);
@@ -1923,6 +1978,15 @@ export default function HyperionApp() {
                               updateNoteById(activeNote.id, patch)
                             }
                             onStoreReady={onStoreReady}
+                            belowTitle={
+                              <PageTags
+                                key={activeNote.id}
+                                note={activeNote}
+                                onChange={patch =>
+                                  updateNoteById(activeNote.id, patch, true)
+                                }
+                              />
+                            }
                           />
                         </article>
                       </>
@@ -2083,29 +2147,17 @@ export default function HyperionApp() {
             />
           </section>
 
-          {detailsOpen && view === "note" && activeNote && (
-            <aside
-              className={`details-panel${detailsTab === "history" ? " history-open" : ""}`}
-              aria-label="Page sidebar"
+          {pageContext.view && view === "note" && activeNote && (
+            <PageContextDrawer
+              view={pageContext.view}
+              pinned={pageContext.pinned}
+              busy={operationBusy}
+              onPin={pageContext.togglePin}
+              onClose={dismissPageContext}
             >
-              <div className="details-tabs">
-                <button
-                  aria-pressed={detailsTab === "details"}
-                  onClick={() => {
-                    setDetailsTab("details");
-                    setComparison(null);
-                  }}
-                >
-                  Details
-                </button>
-                <button
-                  aria-pressed={detailsTab === "history"}
-                  onClick={() => setDetailsTab("history")}
-                >
-                  History
-                </button>
-              </div>
-              {detailsTab === "history" ? (
+              {pageContext.view === "outline" ? (
+                <DocumentOutline store={editorStore} />
+              ) : pageContext.view === "history" ? (
                 <PageHistory
                   key={`${vaultId}:${activeNote.id}`}
                   vaultId={vaultId}
@@ -2117,19 +2169,20 @@ export default function HyperionApp() {
                     setComparison(value);
                   }}
                 />
+              ) : pageContext.view === "properties" ? (
+                <PageProperties note={activeNote} />
               ) : (
-                <NoteDetails
+                <PageConnections
                   key={activeNote.id}
                   note={activeNote}
                   notes={activeNotes}
-                  store={editorStore}
                   onSelect={selectNote}
                   onChange={(patch) =>
                     updateNoteById(activeNote.id, patch, true)
                   }
                 />
               )}
-            </aside>
+            </PageContextDrawer>
           )}
         </div>
       </section>
