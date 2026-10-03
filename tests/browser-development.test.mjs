@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, rm, access } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, access } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -20,6 +20,7 @@ async function fixture(context, options = {}) {
   let server;
   let url;
   let token;
+  let storageKey;
   async function start() {
     ({ server, url } = await startDevelopmentServer({
       root,
@@ -34,9 +35,11 @@ async function fixture(context, options = {}) {
       ],
     }));
     const html = await (await fetch(url)).text();
-    token = JSON.parse(
+    const config = JSON.parse(
       html.match(/window.hyperionBrowserDevelopment=(\{.*?\});/)[1],
-    ).token;
+    );
+    token = config.token;
+    storageKey = config.storageKey;
   }
   await start();
   context.after(async () => {
@@ -89,6 +92,7 @@ async function fixture(context, options = {}) {
   }
   return {
     request,
+    root,
     directory,
     get url() {
       return url;
@@ -96,8 +100,16 @@ async function fixture(context, options = {}) {
     get token() {
       return token;
     },
+    get storageKey() {
+      return storageKey;
+    },
     restart: async () => {
       await server.close();
+      await start();
+    },
+    reset: async () => {
+      await server.close();
+      await rm(directory, { recursive: true, force: true });
       await start();
     },
   };
@@ -184,8 +196,10 @@ test("HTTP data services persist records, documents, assets and history across r
     200,
   );
   const oldToken = api.token;
+  const oldStorageKey = api.storageKey;
   await api.restart();
   assert.notEqual(api.token, oldToken);
+  assert.equal(api.storageKey, oldStorageKey);
   editor = client(api);
   assert.equal(
     (await api.request("acquire", { clientId: editor.id, token: oldToken }))
@@ -227,6 +241,44 @@ test("HTTP data services persist records, documents, assets and history across r
   assert.equal((await editor.rpc("createBackup", false)).status, 200);
   doc.destroy();
   restored.destroy();
+});
+
+test("browser preference namespaces are isolated and reset with their data directory", async (context) => {
+  const first = await fixture(context);
+  const second = await fixture(context);
+  assert.match(first.storageKey, /^[a-f0-9]{32}$/);
+  assert.notEqual(first.storageKey, second.storageKey);
+  const originalKey = first.storageKey;
+  await first.restart();
+  assert.equal(first.storageKey, originalKey);
+  await first.reset();
+  assert.notEqual(first.storageKey, originalKey);
+});
+
+test("the renderer server never serves worktree-local development state", async (context) => {
+  const api = await fixture(context);
+  const profile = join(api.root, ".hyperion-dev", "profile");
+  await mkdir(profile, { recursive: true });
+  await writeFile(
+    join(profile, "preferences.json"),
+    '{"private":"development state"}',
+  );
+  await writeFile(
+    join(api.root, ".env.test-private"),
+    "PRIVATE=development state",
+  );
+  for (const path of [
+    "/.hyperion-dev/profile/preferences.json",
+    `/@fs/${profile.replaceAll("\\", "/")}/preferences.json`,
+    "/.env.test-private",
+  ]) {
+    const response = await fetch(`${api.url}${path}`);
+    assert.equal(response.status, 403);
+    assert.doesNotMatch(
+      await response.text(),
+      /private.*development state|PRIVATE=development state/,
+    );
+  }
 });
 
 test("only one editor can access an instance, including after lease expiry", async (context) => {

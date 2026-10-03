@@ -19,46 +19,66 @@ pnpm dev
 ```
 
 `pnpm dev`, `pnpm dev:desktop`, and `pnpm dev:electron` build Electron, start a
-dedicated Vite renderer server, and open the desktop app. The current Git branch
-determines the development instance. Different branches can run at the same time
-in separate worktrees or checkouts; launching the same branch again focuses its
-existing instance. The window title includes the branch name.
+dedicated Vite renderer server, and open the desktop app. Each worktree or checkout
+owns its development instance and data. Separate worktrees can run at the same
+time, including checkouts with the same branch name; launching the same worktree
+again focuses its existing instance. The window title includes the branch name.
 
-Each branch gets a filesystem-safe key containing a readable name and a short
-hash, so names such as `feature/search` and `feature-search` remain distinct:
+Development state lives in the gitignored `.hyperion-dev/` directory at the
+worktree root:
 
-- Electron profile: `Hyperion Development/branches/<key>` under the platform's
-  application-data folder.
-- SQLite and storage-location settings:
-  `~/.config/hyperion-development/branches/<key>/`.
+- Electron profile and UI preferences: `.hyperion-dev/profile/`.
+- Desktop vault registry, SQLite databases, attachments and backups:
+  `.hyperion-dev/desktop/`.
+- Browser development data: `.hyperion-dev/browser/`.
 - Renderer: the first available loopback port starting at 3000. The launcher
-  passes the actual URL to Electron and prints it, along with the branch identity;
-  Electron prints the profile and active data directory.
+  passes the actual URL to Electron and prints it, along with the branch label and
+  worktree path; Electron prints the profile and active data directory.
 
-The identity follows the branch name, independent of checkout location. Switching
-back to a branch restores its development data. Stop development before switching
-branches in the same checkout, then restart; a running instance keeps its original
-identity. A renamed branch gets a new identity. Detached HEAD uses the commit ID.
-Set `HYPERION_DEV_BRANCH` to override the identity, including outside Git or when
-you deliberately need another instance of the same branch:
+A new worktree starts with fresh data. Restarts preserve data in that worktree;
+switching or renaming its branch also preserves it. Stop development before
+switching branches in the same checkout, then restart; a running instance keeps
+its original branch label. Detached HEAD uses the commit ID as its label.
+Set `HYPERION_DEV_BRANCH` to override the displayed branch label, including outside
+Git. This does not change the data directory or create another instance:
 
 ```sh
 HYPERION_DEV_BRANCH=feature/search-review pnpm dev
 ```
 
-Each new branch starts with first-run setup and its own vault registry. The
+Each new worktree starts with first-run setup and its own vault registry. The
 installed app keeps its registry in `~/.config/hyperion`; new vault folders default
 to its `vaults/` subdirectory. Existing single-vault locations stay in place;
 legacy shared databases are split into independent folders with their source
-retained for recovery. Branch development never adopts installed-app data. Explicit
-test and update-preview profiles remain isolated from branch development.
+retained for recovery. Worktree development never adopts installed-app data or
+the previous global branch-development directories. Existing global development
+data is left in place. Explicit test and update-preview profiles remain isolated
+from worktree development.
 
 Setup can create a vault in a chosen folder. Settings → Data → Move vault moves
 only the active vault, including its backups.
 Set `HYPERION_DATA_DIRECTORY` to an isolated absolute directory for disposable
 data. Keep these overrides and chosen folders separate across running instances;
-they bypass the default branch data location. The application never auto-imports
+they bypass the default worktree data location. The application never auto-imports
 browser prototype data.
+
+To start fresh in the current worktree, stop its desktop and browser development
+instances, then run:
+
+```sh
+pnpm dev:reset
+```
+
+This removes only the current worktree's `.hyperion-dev/` directory, including its
+desktop profile, default vault data and backups. It refuses while a desktop or
+browser instance is using those files. Vault folders and data-directory overrides
+outside `.hyperion-dev/` are retained. Browser preferences start fresh the next
+time its data directory is created. Removing the worktree directory also removes
+its local development state.
+
+Schema changes within an existing worktree still require a migration or a reset.
+Fresh development data does not replace upgrade testing for installed users;
+keep running `pnpm test:migrations` against the frozen database fixtures.
 
 Changes under `app/` update through Vite. Restart development after changing
 `electron/` so the main process and preload are rebuilt. `pnpm dev:web` starts
@@ -81,19 +101,21 @@ Restart the command after changing server scripts or code under `electron/`.
 HTTP requests are limited to 32 MiB including JSON/base64 encoding; use desktop
 for larger imports or attachments.
 
-The current branch (or `HYPERION_DEV_BRANCH`) determines the browser data directory:
-`~/.config/hyperion-browser-development/branches/<key>/`. Browser development data
-is separate from desktop data. Set `HYPERION_BROWSER_DATA_DIRECTORY` to an absolute
+The browser data directory is `.hyperion-dev/browser/` in the current worktree.
+Browser development data is separate from desktop data.
+Set `HYPERION_BROWSER_DATA_DIRECTORY` to an absolute
 directory for disposable fixtures. The server uses that exact directory and does
 not follow desktop storage-location settings. Browser UI preferences are also
-namespaced by branch, even when another branch later reuses the same port.
+namespaced by a key persisted in that data directory, even when another worktree
+later reuses the same port. The key survives server restarts and branch changes;
+resetting the data directory starts a fresh preference namespace.
 Use a dedicated browser directory; do not point it at a running desktop instance's
 database.
 
 Only one editor tab may use an instance at a time. A second tab shows a retry
 screen; closing the first releases its session. A disconnected session can be
 replaced after two minutes, and the old session is then rejected. For simultaneous
-agent and human editing, use separate branch identities and data directories.
+agent and human editing, use separate worktrees and data directories.
 
 Wait for **Saved to development server** before reloading or closing. Pending or
 failed saves trigger the browser's leave-page warning where supported. Network
@@ -131,13 +153,13 @@ its API tests. Server provisioning and agent process supervision are separate.
 - `pnpm check:desktop`: checks the native boundary and data implementation types.
 - `pnpm test:blocks`: checks custom block contracts, migrations, references and retirement.
 - `pnpm test:migrations`: runs the frozen-database upgrade, preservation and rollback suite.
-- `pnpm test:desktop`: validates branch identity and renderer URL handling, plus
+- `pnpm test:desktop`: validates worktree isolation, development reset and renderer URL handling, plus
   SQLite persistence, migration, backup and history behavior.
 - `pnpm test:browser`: tests the development HTTP API with temporary databases,
   including persistence across restart, editor leases, origin/token validation,
   operation validation and data-directory locking. Also included in `pnpm test`.
-- `pnpm test:development`: launches three branch instances and verifies separate
-  renderer URLs, profiles and data, same-branch single-instance behavior, and
+- `pnpm test:development`: launches three worktree instances and verifies separate
+  renderer URLs, profiles and data, same-worktree single-instance behavior, and
   continued operation after one instance closes, plus launcher shutdown cleanup.
   Requires a graphical desktop
   session (or Xvfb on Linux).

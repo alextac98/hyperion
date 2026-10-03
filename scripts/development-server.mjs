@@ -4,7 +4,36 @@ import { pathToFileURL } from "node:url";
 export async function startDevelopmentServer(config = {}) {
   const server = await createServer({
     ...config,
-    server: { ...config.server, host: "127.0.0.1", port: 3000, strictPort: false, open: false },
+    server: {
+      ...config.server,
+      host: "127.0.0.1",
+      port: 3000,
+      strictPort: false,
+      open: false,
+      fs: {
+        ...config.server?.fs,
+        // Retain Vite's default deny list when no custom list was supplied.
+        deny: [
+          ...(config.server?.fs?.deny ?? [
+            ".env",
+            ".env.*",
+            "*.{crt,pem}",
+            "**/.git/**",
+          ]),
+          "**/.hyperion-dev/**",
+        ],
+      },
+      watch:
+        config.server?.watch === null
+          ? null
+          : {
+              ...config.server?.watch,
+              ignored: [
+                ...[config.server?.watch?.ignored ?? []].flat(),
+                "**/.hyperion-dev/**",
+              ],
+            },
+    },
   });
   try {
     // Vite binds the first available port; Electron must use the actual result.

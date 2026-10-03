@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -31,12 +31,13 @@ if (!app.isPackaged) {
   const userData = app.getPath("userData");
   app.setName(applicationName);
   const profile = development
-    ? join(app.getPath("appData"), "Hyperion Development", "branches", development.key)
+    ? development.profileDirectory
     : !updatePreview && userData === join(app.getPath("appData"), "Hyperion")
     ? join(app.getPath("appData"), "Hyperion Development")
     : userData;
   mkdirSync(profile, { recursive: true });
   app.setPath("userData", profile);
+  if (development) app.setPath("sessionData", profile);
 }
 const applicationIcon = app.isPackaged
   ? join(process.resourcesPath, "hyperion-icon.png")
@@ -300,6 +301,13 @@ async function createWindow() {
 }
 
 const ownsInstance = app.requestSingleInstanceLock();
+const developmentProcessFile = ownsInstance && development
+  ? join(development.profileDirectory, ".development-process.json")
+  : null;
+if (developmentProcessFile) {
+  // The reset command must preserve a profile while its desktop instance is open.
+  writeFileSync(developmentProcessFile, JSON.stringify({ pid: process.pid }));
+}
 if (!ownsInstance) {
   console.log(`${applicationName} is already running; focusing the existing instance.`);
   app.quit();
@@ -317,10 +325,10 @@ app.whenReady().then(async () => {
     defaultDirectory: dataDirectoryOverride || (app.isPackaged
       ? undefined
       : development
-        ? join(homedir(), ".config", "hyperion-development", "branches", development.key)
+        ? development.desktopDirectory
         : join(homedir(), ".config", "hyperion-development")),
   });
-  if (development) console.log(`Development branch: ${development.branch}\nProfile: ${app.getPath("userData")}\nData: ${database.defaultDirectory}`);
+  if (development) console.log(`Development branch: ${development.branch}\nWorktree: ${development.root}\nProfile: ${app.getPath("userData")}\nData: ${database.defaultDirectory}`);
   if (database.setupInfo().activeVaultId && !database.setupInfo().error) {
     database.repositoryExecute({ operation: "captureAutomaticRevisions" });
     database.createBackup(true);
@@ -342,7 +350,11 @@ app.on("before-quit", event => {
   quitting = true;
   if (mainWindow && !closeApproved) { event.preventDefault(); mainWindow.close(); }
 });
-app.on("will-quit", () => { database?.close(); database = null; });
+app.on("will-quit", () => {
+  database?.close();
+  database = null;
+  if (developmentProcessFile) rmSync(developmentProcessFile, { force: true });
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

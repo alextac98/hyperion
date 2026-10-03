@@ -1,21 +1,23 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { startDevelopmentServer } from "../scripts/development-server.mjs";
 import { desktopRuntime } from "../scripts/desktop-runtime.mjs";
-import { developmentInstance } from "../dist-electron/development.js";
+import { resetDevelopmentData } from "../scripts/reset-development.mjs";
 
 // Requires a graphical session (or Xvfb), like the existing Electron smoke test.
 test(
-  "three branch instances use their own renderers, profiles and data",
+  "three worktrees use their own renderers, profiles and data, including matching branch labels",
   { timeout: 90000 },
   async (context) => {
-    const directory = await mkdtemp(join(tmpdir(), "hyperion-development-"));
+    const directory = await realpath(
+      await mkdtemp(join(tmpdir(), "hyperion-development-")),
+    );
     const children = [];
     const servers = [];
     context.after(async () => {
@@ -35,25 +37,22 @@ test(
     const executable = await desktopRuntime();
     const appData = join(directory, "profiles");
     await mkdir(appData);
-    async function launch(branch, url, data) {
+    async function launch(root, branch, url) {
       const env = {
         ...process.env,
         HYPERION_DEV_BRANCH: branch,
         HYPERION_DEV_URL: url,
-        HYPERION_DATA_DIRECTORY: data,
         HYPERION_TEST_APP_DATA: appData,
       };
       delete env.ELECTRON_RUN_AS_NODE;
       delete env.HYPERION_TEST_RENDERER;
       delete env.HYPERION_UPDATE_PREVIEW;
-      const child = spawn(
-        executable,
-        ["tests/fixtures/development-instance.mjs"],
-        {
-          env,
-          stdio: ["ignore", "pipe", "pipe", "ipc"],
-        },
-      );
+      delete env.HYPERION_DATA_DIRECTORY;
+      const child = spawn(executable, [root], {
+        cwd: root,
+        env,
+        stdio: ["ignore", "pipe", "pipe", "ipc"],
+      });
       children.push(child);
       let output = "";
       child.stdout.on("data", (chunk) => {
@@ -83,13 +82,23 @@ test(
       return { child, ready };
     }
     const running = [];
-    for (const branch of [
+    for (const [index, branch] of [
       "feature/search",
-      "feature-search",
+      "feature/search",
       "feature/editor",
-    ]) {
-      const root = join(directory, developmentInstance(directory, branch).key);
+    ].entries()) {
+      const root = join(directory, `worktree-${index}`);
       await mkdir(root);
+      await writeFile(
+        join(root, "package.json"),
+        JSON.stringify({
+          name: "hyperion-development-fixture",
+          version: "0.0.0",
+          main: fileURLToPath(
+            new URL("./fixtures/development-instance.mjs", import.meta.url),
+          ),
+        }),
+      );
       await writeFile(
         join(root, "index.html"),
         `<html><body>${branch}</body></html>`,
@@ -100,35 +109,35 @@ test(
         logLevel: "silent",
       });
       servers.push(renderer);
-      const instance = await launch(branch, renderer.url, join(root, "data"));
+      const instance = await launch(root, branch, renderer.url);
       const result = await instance.ready;
       assert.equal(result.branch, branch, JSON.stringify(result));
       assert.equal(result.title, `[Dev] Hyperion — ${branch}`);
       assert.equal(result.url, `${renderer.url}/`);
       assert.equal(result.body.trim(), branch);
-      assert.equal(
-        result.profile,
-        join(
-          appData,
-          "Hyperion Development",
-          "branches",
-          developmentInstance(root, branch).key,
-        ),
-      );
-      // Before first-run setup, storageInfo reports the branch's vault parent;
+      assert.equal(result.profile, join(root, ".hyperion-dev", "profile"));
+      assert.equal(result.sessionData, result.profile);
+      // Before first-run setup, storageInfo reports the worktree's vault parent;
       // no active vault database exists yet.
-      assert.equal(result.data.directory, join(root, "data", "vaults"));
+      assert.equal(
+        result.data.directory,
+        join(root, ".hyperion-dev", "desktop", "vaults"),
+      );
       assert.equal(result.data.databasePath, "");
       assert.equal(result.data.isDefault, true);
-      running.push({ ...instance, result });
+      assert.throws(
+        () => resetDevelopmentData(root, branch),
+        /Stop the development instance/,
+      );
+      running.push({ ...instance, root, result });
     }
     assert.equal(new Set(running.map(({ result }) => result.url)).size, 3);
     assert.equal(new Set(running.map(({ result }) => result.profile)).size, 3);
-    // Reopening the same branch should focus the existing app, not open its DB again.
+    // Branch labels do not change the worktree's single-instance lock.
     const duplicate = await launch(
-      "feature/search",
+      running[0].root,
+      "renamed-label",
       servers[1].url,
-      join(directory, "unused-data"),
     );
     assert.equal((await duplicate.ready).exited, 0);
     const closed = once(running[0].child, "exit", {
@@ -137,6 +146,7 @@ test(
     running[0].child.send("close");
     await closed;
     await servers[0].server.close();
+    resetDevelopmentData(running[0].root, "feature/search");
     for (let index = 1; index < running.length; index++) {
       const child = running[index].child;
       assert.equal(child.exitCode, null);
@@ -157,7 +167,9 @@ test(
   "the launcher passes its renderer URL and stops both child processes",
   { timeout: 45000 },
   async (context) => {
-    const directory = await mkdtemp(join(tmpdir(), "hyperion-launcher-"));
+    const directory = await realpath(
+      await mkdtemp(join(tmpdir(), "hyperion-launcher-")),
+    );
     await mkdir(join(directory, "profiles"));
     await writeFile(
       join(directory, "index.html"),
@@ -166,6 +178,8 @@ test(
     await writeFile(
       join(directory, "package.json"),
       JSON.stringify({
+        name: "hyperion-launcher-fixture",
+        version: "0.0.0",
         main: fileURLToPath(
           new URL("./fixtures/development-instance.mjs", import.meta.url),
         ),

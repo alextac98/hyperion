@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
+  existsSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -76,6 +77,8 @@ export function browserDevelopmentPlugin({
   let database;
   let ownsLock = false;
   let client;
+  let storageKey;
+  const storageKeyPath = join(directory, ".ui-storage-key");
   const lockPath = join(directory, ".browser-development.lock");
   const lockOwner = JSON.stringify({ pid: process.pid, branch, token });
   function close() {
@@ -90,7 +93,7 @@ export function browserDevelopmentPlugin({
     name: "hyperion:browser-development",
     apply: "serve",
     transformIndexHtml() {
-      const config = JSON.stringify({ token, branch }).replaceAll(
+      const config = JSON.stringify({ token, branch, storageKey }).replaceAll(
         "<",
         "\\u003c",
       );
@@ -120,6 +123,14 @@ export function browserDevelopmentPlugin({
         closeSync(fd);
       }
       try {
+        // Keep browser preferences with this database across restarts and branch
+        // renames. Resetting the directory also starts a fresh preference namespace.
+        if (existsSync(storageKeyPath)) {
+          storageKey = readFileSync(storageKeyPath, "utf8").trim();
+        } else {
+          storageKey = randomBytes(16).toString("hex");
+          writeFileSync(storageKeyPath, storageKey);
+        }
         // Browser development never follows a desktop storage-location pointer.
         database = new VaultLibrary({
           defaultDirectory: directory,
