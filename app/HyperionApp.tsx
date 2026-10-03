@@ -3,6 +3,8 @@ import { flushSync } from "react-dom";
 import { VaultSetup } from "./components/VaultSetup";
 import { Dialog } from "./components/Dialog";
 import { requireDesktop } from "./platform/runtime";
+import { useWorkspaceTabs } from "./hooks/useWorkspaceTabs";
+import { WorkspaceTabBar } from "./components/WorkspaceTabBar";
 import { useMouseNavigation } from "./hooks/useMouseNavigation";
 import { uiStorage } from "./lib/ui-storage";
 import { UpdateControls } from "./components/UpdateControls";
@@ -179,12 +181,20 @@ export default function HyperionApp() {
   );
   const [, setCollections] = useState<CollectionRecord[]>([]);
   const [preferences, setPreferences] = useState(FALLBACK_PREFERENCES);
-  const [activeId, setActiveId] = useState("");
-  const [activeTemplateId, setActiveTemplateId] = useState("");
-  const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [view, setView] = useState<View>("home");
   const [loading, setLoading] = useState(true);
   const [vaultReady, setVaultReady] = useState(false);
+  const workspace = useWorkspaceTabs(vaultId, vaultReady && !loading);
+  const {
+    open: openTab,
+    restore: restoreWorkspace,
+    state: tabState,
+    dispatch: dispatchTab,
+  } = workspace;
+  const { location } = workspace;
+  const view = location.view;
+  const activeId = location.view === "note" ? location.id : "";
+  const activeTemplateId = location.view === "template" ? location.id : "";
+  const activeTag = location.view === "tags" ? location.tag : null;
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(getStoredSidebarWidth);
   const [sidebarResizing, setSidebarResizing] = useState(false);
@@ -225,6 +235,73 @@ export default function HyperionApp() {
   const [history, setHistory] = useState<{ noteId?: string } | null>(null);
   const [dataError, setDataError] = useState("");
   const [editorStore, setEditorStore] = useState<EditorStore | null>(null);
+  const tabStores = useRef(new Map<string, EditorStore>());
+  useEffect(() => {
+    setEditorStore(tabStores.current.get(tabState.active) ?? null);
+    setComparison(null);
+    setPageSearchOpen(false);
+    setPageSearchQuery("");
+    setMoreOpen(false);
+    setPageContextMenu(null);
+    const ids = new Set(tabState.tabs.map((tab) => tab.id));
+    for (const id of tabStores.current.keys())
+      if (!ids.has(id)) tabStores.current.delete(id);
+  }, [tabState.active, tabState.tabs]);
+  useEffect(() => {
+    tabStores.current.clear();
+  }, [vaultId]);
+  useEffect(() => {
+    if (loading || !vaultReady) return;
+    const ids = tabState.tabs
+      .filter(({ location }) =>
+        location.view === "note"
+          ? !notes.some(
+              (note) =>
+                note.id === location.id && !note.trashed && !note.archived,
+            )
+          : location.view === "template"
+            ? !templates.some((template) => template.id === location.id)
+            : false,
+      )
+      .map((tab) => tab.id);
+    if (ids.length) dispatchTab({ type: "prune", ids });
+  }, [notes, templates, loading, vaultReady, tabState.tabs, dispatchTab]);
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (
+        loading ||
+        !vaultReady ||
+        dataBusy.getSnapshot() ||
+        document.querySelector("dialog[open]")
+      )
+        return;
+      const command = event.metaKey || event.ctrlKey;
+      if (command && !event.shiftKey && event.key.toLowerCase() === "w") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        dispatchTab({ type: "close", id: tabState.active });
+      } else if (event.ctrlKey && event.key === "Tab") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const index = tabState.tabs.findIndex(
+          (tab) => tab.id === tabState.active,
+        );
+        const next =
+          (index + (event.shiftKey ? -1 : 1) + tabState.tabs.length) %
+          tabState.tabs.length;
+        dispatchTab({
+          type: "focus",
+          id: tabState.tabs[next].id,
+        });
+      } else if (command && event.key.toLowerCase() === "t") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openTab({ view: "home" });
+      }
+    };
+    window.addEventListener("keydown", keydown, true);
+    return () => window.removeEventListener("keydown", keydown, true);
+  }, [loading, vaultReady, tabState, dispatchTab, openTab]);
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   const pageSearchRef = useRef<HTMLInputElement>(null);
   const pageSearchMatchesRef = useRef<PageSearchMatch[]>([]);
@@ -393,10 +470,22 @@ export default function HyperionApp() {
             (note) => note.kind === "note" && !note.trashed && !note.archived,
           ) ??
           hydratedNotes.find((note) => !note.trashed && !note.archived);
-        setActiveId(target?.id ?? "");
-        setActiveTemplateId("");
-        setActiveTag(null);
-        setView(target ? "note" : "home");
+        restoreWorkspace(
+          nextVaultId,
+          (location) => {
+            if (location.view === "note")
+              return hydratedNotes.some(
+                (note) =>
+                  note.id === location.id && !note.trashed && !note.archived,
+              );
+            if (location.view === "template")
+              return storedTemplates.some(
+                (template) => template.id === location.id,
+              );
+            return true;
+          },
+          target ? { view: "note", id: target.id } : { view: "home" },
+        );
         uiStorage.setItem("hyperion:current-vault", nextVaultId);
         setVaultMenuOpen(false);
         setEditorStore(null);
@@ -407,7 +496,7 @@ export default function HyperionApp() {
         setLoading(false);
       }
     },
-    [setNotes, setTemplates],
+    [setNotes, setTemplates, restoreWorkspace],
   );
 
   useEffect(() => {
@@ -524,8 +613,7 @@ export default function HyperionApp() {
   const selectNote = useCallback(
     (id: string) => {
       setComparison(null);
-      setActiveId(id);
-      setView("note");
+      openTab({ view: "note", id });
       setMoreOpen(false);
       setEditorStore(null);
       setPageContextMenu(null);
@@ -534,18 +622,20 @@ export default function HyperionApp() {
       uiStorage.setItem(`hyperion:last-note:${vaultId}`, id);
       if (window.innerWidth <= 720) setSidebarOpen(false);
     },
-    [vaultId],
+    [vaultId, openTab],
   );
 
-  const selectTemplate = useCallback((id: string) => {
-    setActiveTemplateId(id);
-    setView("template");
-    setMoreOpen(false);
-    setEditorStore(null);
-    setPageContextMenu(null);
-    setPageSearchOpen(false);
-    if (window.innerWidth <= 720) setSidebarOpen(false);
-  }, []);
+  const selectTemplate = useCallback(
+    (id: string) => {
+      openTab({ view: "template", id });
+      setMoreOpen(false);
+      setEditorStore(null);
+      setPageContextMenu(null);
+      setPageSearchOpen(false);
+      if (window.innerWidth <= 720) setSidebarOpen(false);
+    },
+    [openTab],
+  );
 
   const instantiatePage = useCallback(
     async ({
@@ -737,7 +827,7 @@ export default function HyperionApp() {
     if (!pageSearchOpen) return;
     const frame = requestAnimationFrame(() => {
       const editor = document.querySelector<HTMLElement>(
-        ".note-workspace .blocksuite-mount",
+        ".workspace-panel:not([hidden]) .note-workspace .blocksuite-mount",
       );
       const matches = editor ? findTextMatches(editor, pageSearchQuery) : [];
       pageSearchMatchesRef.current = matches;
@@ -815,8 +905,10 @@ export default function HyperionApp() {
     applySidebarWidth(nextWidth, true);
   };
 
-  const navigateView = (nextView: Exclude<View, "note">) => {
-    setView(nextView);
+  const navigateView = (nextView: Exclude<View, "note" | "template">) => {
+    openTab(
+      nextView === "tags" ? { view: "tags", tag: null } : { view: nextView },
+    );
     setMoreOpen(false);
     setPageContextMenu(null);
     if (window.innerWidth <= 720) setSidebarOpen(false);
@@ -851,8 +943,7 @@ export default function HyperionApp() {
         setEditorStore(null);
         setPageSearchOpen(false);
         setPageSearchQuery("");
-        if (location.view === "tags") setActiveTag(location.tag);
-        navigateView(location.view);
+        openTab(location);
       }
     },
   });
@@ -898,8 +989,7 @@ export default function HyperionApp() {
       if (!cloned) throw new Error("The page content could not be copied.");
       await knowledgeRepository.saveTemplate(template);
       setTemplates((current) => [template, ...current]);
-      setActiveTemplateId(template.id);
-      setView("templates");
+      openTab({ view: "templates" });
     } catch (error) {
       await removeEditorDocument(note.vaultId, templateDocumentId(template.id));
       window.alert(
@@ -948,8 +1038,7 @@ export default function HyperionApp() {
       current.filter((item) => item.id !== template.id),
     );
     if (activeTemplateId === template.id) {
-      setActiveTemplateId("");
-      setView("templates");
+      openTab({ view: "templates" });
       setEditorStore(null);
     }
   };
@@ -1479,6 +1568,45 @@ export default function HyperionApp() {
       </aside>
 
       <section className="workspace">
+        <WorkspaceTabBar
+          state={tabState}
+          dispatch={dispatchTab}
+          disabled={operationBusy}
+          label={({ location }) =>
+            location.view === "note"
+              ? notes.find((note) => note.id === location.id)?.title ||
+                "Untitled"
+              : location.view === "template"
+                ? templates.find((template) => template.id === location.id)
+                    ?.name || "Template"
+                : location.view === "tags"
+                  ? location.tag
+                    ? `#${location.tag}`
+                    : "Tags"
+                  : {
+                      home: "Home",
+                      journal: "Journal",
+                      templates: "Templates",
+                      archive: "Archive",
+                      trash: "Trash",
+                    }[location.view]
+          }
+          icon={({ location }) => {
+            const note =
+              location.view === "note"
+                ? notes.find((note) => note.id === location.id)
+                : undefined;
+            return note ? (
+              <PageIcon note={note} size={14} />
+            ) : location.view === "home" ? (
+              <House size={14} />
+            ) : location.view === "journal" ? (
+              <CalendarBlank size={14} />
+            ) : (
+              <Stack size={14} />
+            );
+          }}
+        />
         <header className="topbar">
           <div className="topbar-left">
             {!sidebarOpen && (
@@ -1680,190 +1808,247 @@ export default function HyperionApp() {
 
         <div className="content-shell">
           <section className="main-content">
-            {view === "note" && activeNote ? (
-              <>
-                {pageComparison && (
-                  <PageHistoryPreview
-                    key={pageComparison.revision.id}
-                    comparison={pageComparison}
-                    onClose={() => setComparison(null)}
-                  />
-                )}
-                <article
-                  hidden={!!pageComparison}
-                  className={`note-workspace${activeNote.icon ? " has-page-icon" : ""}`}
-                >
-                  {activeNote.kind === "journal" && activeNote.journalDate && (
-                    <div
-                      className={`journal-entry-label width-${preferences.editorWidth}`}
-                    >
-                      <CalendarBlank size={14} />
-                      <span>
-                        {new Intl.DateTimeFormat("en", {
-                          weekday: "long",
-                          month: "long",
-                          day: "numeric",
-                          year: "numeric",
-                        }).format(journalDate(activeNote.journalDate))}
-                      </span>
-                    </div>
-                  )}
+            {tabState.tabs
+              .filter((tab) => tab.visited)
+              .map((tab) => {
+                const location = tab.location;
+                const view = location.view;
+                const activeNote =
+                  location.view === "note"
+                    ? notes.find((note) => note.id === location.id)
+                    : undefined;
+                const activeTemplate =
+                  location.view === "template"
+                    ? templates.find((template) => template.id === location.id)
+                    : undefined;
+                const activeTemplatePage = activeTemplate
+                  ? templatePageRecord(activeTemplate)
+                  : null;
+                const activeTag =
+                  location.view === "tags" ? location.tag : null;
+                const selected = tab.id === tabState.active;
+                const onStoreReady = (store: EditorStore) => {
+                  tabStores.current.set(tab.id, store);
+                  if (selected) setEditorStore(store);
+                };
+                return (
                   <div
-                    className={`page-icon-row width-${preferences.editorWidth}`}
+                    key={`${vaultId}:${tab.id}`}
+                    id={`panel-${tab.id}`}
+                    role="tabpanel"
+                    aria-labelledby={`tab-${tab.id}`}
+                    className="workspace-panel"
+                    hidden={!selected}
+                    inert={!selected}
                   >
-                    <PageIconPicker
-                      key={activeNote.id}
-                      note={activeNote}
-                      onChange={(icon) =>
-                        updateNoteById(activeNote.id, { icon }, true)
-                      }
-                    />
-                  </div>
+                    {view === "note" && activeNote ? (
+                      <>
+                        {selected && pageComparison && (
+                          <PageHistoryPreview
+                            key={pageComparison.revision.id}
+                            comparison={pageComparison}
+                            onClose={() => setComparison(null)}
+                          />
+                        )}
+                        <article
+                          hidden={selected && !!pageComparison}
+                          className={`note-workspace${activeNote.icon ? " has-page-icon" : ""}`}
+                        >
+                          {activeNote.kind === "journal" &&
+                            activeNote.journalDate && (
+                              <div
+                                className={`journal-entry-label width-${preferences.editorWidth}`}
+                              >
+                                <CalendarBlank size={14} />
+                                <span>
+                                  {new Intl.DateTimeFormat("en", {
+                                    weekday: "long",
+                                    month: "long",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  }).format(
+                                    journalDate(activeNote.journalDate),
+                                  )}
+                                </span>
+                              </div>
+                            )}
+                          <div
+                            className={`page-icon-row width-${preferences.editorWidth}`}
+                          >
+                            <PageIconPicker
+                              key={activeNote.id}
+                              note={activeNote}
+                              onChange={(icon) =>
+                                updateNoteById(activeNote.id, { icon }, true)
+                              }
+                            />
+                          </div>
 
-                  <BlockEditor
-                    key={`${vaultId}:${activeNote.id}`}
-                    document={activeNote}
-                    preferences={preferences}
-                    onChange={(patch) => updateNoteById(activeNote.id, patch)}
-                    onStoreReady={setEditorStore}
-                  />
-                </article>
-              </>
-            ) : view === "template" && activeTemplate && activeTemplatePage ? (
-              <article
-                className={`note-workspace template-workspace${activeTemplate.icon ? " has-page-icon" : ""}`}
-              >
-                <div
-                  className={`template-editor-banner width-${preferences.editorWidth}`}
-                >
-                  <span>
-                    <Stack size={16} />
-                    <strong>Editing template</strong>
-                    <small>Changes affect new pages only.</small>
-                  </span>
-                  <div>
-                    <button
-                      onClick={() =>
-                        void createNote(null, undefined, {
-                          templateId: activeTemplate.id,
-                        })
-                      }
-                    >
-                      Use template
-                    </button>
-                    <button
-                      className="danger-text"
-                      onClick={() => void deleteTemplate(activeTemplate)}
-                    >
-                      Delete
-                    </button>
+                          <BlockEditor
+                            active={selected && !pageComparison}
+                            key={`${vaultId}:${activeNote.id}`}
+                            document={activeNote}
+                            preferences={preferences}
+                            onChange={(patch) =>
+                              updateNoteById(activeNote.id, patch)
+                            }
+                            onStoreReady={onStoreReady}
+                          />
+                        </article>
+                      </>
+                    ) : view === "template" &&
+                      activeTemplate &&
+                      activeTemplatePage ? (
+                      <article
+                        className={`note-workspace template-workspace${activeTemplate.icon ? " has-page-icon" : ""}`}
+                      >
+                        <div
+                          className={`template-editor-banner width-${preferences.editorWidth}`}
+                        >
+                          <span>
+                            <Stack size={16} />
+                            <strong>Editing template</strong>
+                            <small>Changes affect new pages only.</small>
+                          </span>
+                          <div>
+                            <button
+                              onClick={() =>
+                                void createNote(null, undefined, {
+                                  templateId: activeTemplate.id,
+                                })
+                              }
+                            >
+                              Use template
+                            </button>
+                            <button
+                              className="danger-text"
+                              onClick={() =>
+                                void deleteTemplate(activeTemplate)
+                              }
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                        <label
+                          className={`template-name-field width-${preferences.editorWidth}`}
+                        >
+                          <span>Template name</span>
+                          <input
+                            value={activeTemplate.name}
+                            onChange={(event) =>
+                              updateTemplateById(activeTemplate.id, {
+                                name: event.target.value,
+                              })
+                            }
+                            onBlur={() =>
+                              !activeTemplate.name.trim() &&
+                              updateTemplateById(
+                                activeTemplate.id,
+                                { name: "Untitled template" },
+                                true,
+                              )
+                            }
+                          />
+                        </label>
+                        <div
+                          className={`page-icon-row width-${preferences.editorWidth}`}
+                        >
+                          <PageIconPicker
+                            key={activeTemplate.id}
+                            note={activeTemplatePage}
+                            onChange={(icon) =>
+                              updateTemplateById(
+                                activeTemplate.id,
+                                { icon },
+                                true,
+                              )
+                            }
+                          />
+                        </div>
+                        <BlockEditor
+                          active={selected && !pageComparison}
+                          key={`${vaultId}:${templateDocumentId(activeTemplate.id)}`}
+                          document={{
+                            ...activeTemplatePage,
+                            id: templateDocumentId(activeTemplate.id),
+                          }}
+                          preferences={preferences}
+                          onChange={(patch) =>
+                            updateTemplateById(activeTemplate.id, {
+                              defaultTitle: patch.title,
+                              body: patch.body,
+                            })
+                          }
+                          onStoreReady={onStoreReady}
+                        />
+                      </article>
+                    ) : view === "templates" ? (
+                      <TemplatesView
+                        templates={templates}
+                        preferences={preferences}
+                        onCreate={() =>
+                          setComposer({
+                            type: "template",
+                            noteId: null,
+                            value: "",
+                          })
+                        }
+                        onUse={(template) =>
+                          void createNote(null, undefined, {
+                            templateId: template.id,
+                          })
+                        }
+                        onEdit={(template) => selectTemplate(template.id)}
+                        onDelete={(template) => void deleteTemplate(template)}
+                        onDefaults={(defaultTemplateIds) =>
+                          void savePreferencePatch({ defaultTemplateIds })
+                        }
+                      />
+                    ) : view === "home" ? (
+                      <HomeView
+                        notes={organizedNotes}
+                        onSelect={selectNote}
+                        onCreate={() => void createNote()}
+                      />
+                    ) : view === "journal" ? (
+                      <JournalView
+                        entries={journalEntries}
+                        onSelect={selectNote}
+                        onOpenDate={(dateKey) => void openJournalDate(dateKey)}
+                      />
+                    ) : view === "tags" ? (
+                      <TagsView
+                        tags={allTags}
+                        notes={activeNotes}
+                        activeTag={activeTag}
+                        onTag={(tag) => openTab({ view: "tags", tag })}
+                        onSelect={selectNote}
+                      />
+                    ) : view === "archive" ? (
+                      <ArchiveView
+                        notes={archivedNotes}
+                        onRestore={(note) =>
+                          updateNoteById(note.id, { archived: false }, true)
+                        }
+                        onTrash={trashNote}
+                      />
+                    ) : (
+                      <TrashView
+                        notes={trashedNotes}
+                        onRestore={(note) =>
+                          updateNoteById(
+                            note.id,
+                            { trashed: false, archived: false },
+                            true,
+                          )
+                        }
+                        onDelete={permanentlyDelete}
+                      />
+                    )}
                   </div>
-                </div>
-                <label
-                  className={`template-name-field width-${preferences.editorWidth}`}
-                >
-                  <span>Template name</span>
-                  <input
-                    value={activeTemplate.name}
-                    onChange={(event) =>
-                      updateTemplateById(activeTemplate.id, {
-                        name: event.target.value,
-                      })
-                    }
-                    onBlur={() =>
-                      !activeTemplate.name.trim() &&
-                      updateTemplateById(
-                        activeTemplate.id,
-                        { name: "Untitled template" },
-                        true,
-                      )
-                    }
-                  />
-                </label>
-                <div
-                  className={`page-icon-row width-${preferences.editorWidth}`}
-                >
-                  <PageIconPicker
-                    key={activeTemplate.id}
-                    note={activeTemplatePage}
-                    onChange={(icon) =>
-                      updateTemplateById(activeTemplate.id, { icon }, true)
-                    }
-                  />
-                </div>
-                <BlockEditor
-                  key={`${vaultId}:${templateDocumentId(activeTemplate.id)}`}
-                  document={{
-                    ...activeTemplatePage,
-                    id: templateDocumentId(activeTemplate.id),
-                  }}
-                  preferences={preferences}
-                  onChange={(patch) =>
-                    updateTemplateById(activeTemplate.id, {
-                      defaultTitle: patch.title,
-                      body: patch.body,
-                    })
-                  }
-                  onStoreReady={setEditorStore}
-                />
-              </article>
-            ) : view === "templates" ? (
-              <TemplatesView
-                templates={templates}
-                preferences={preferences}
-                onCreate={() =>
-                  setComposer({ type: "template", noteId: null, value: "" })
-                }
-                onUse={(template) =>
-                  void createNote(null, undefined, { templateId: template.id })
-                }
-                onEdit={(template) => selectTemplate(template.id)}
-                onDelete={(template) => void deleteTemplate(template)}
-                onDefaults={(defaultTemplateIds) =>
-                  void savePreferencePatch({ defaultTemplateIds })
-                }
-              />
-            ) : view === "home" ? (
-              <HomeView
-                notes={organizedNotes}
-                onSelect={selectNote}
-                onCreate={() => void createNote()}
-              />
-            ) : view === "journal" ? (
-              <JournalView
-                entries={journalEntries}
-                onSelect={selectNote}
-                onOpenDate={(dateKey) => void openJournalDate(dateKey)}
-              />
-            ) : view === "tags" ? (
-              <TagsView
-                tags={allTags}
-                notes={activeNotes}
-                activeTag={activeTag}
-                onTag={setActiveTag}
-                onSelect={selectNote}
-              />
-            ) : view === "archive" ? (
-              <ArchiveView
-                notes={archivedNotes}
-                onRestore={(note) =>
-                  updateNoteById(note.id, { archived: false }, true)
-                }
-                onTrash={trashNote}
-              />
-            ) : (
-              <TrashView
-                notes={trashedNotes}
-                onRestore={(note) =>
-                  updateNoteById(
-                    note.id,
-                    { trashed: false, archived: false },
-                    true,
-                  )
-                }
-                onDelete={permanentlyDelete}
-              />
-            )}
+                );
+              })}
           </section>
 
           {detailsOpen && view === "note" && activeNote && (

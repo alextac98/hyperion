@@ -42,6 +42,9 @@ export function Dialog({
       ref={ref}
       className={`dialog-layer ${className}`}
       aria-label={label}
+      // Editors remain mounted behind dialogs. Do not let a dialog key also
+      // reach their document-level shortcuts, including the key that closes it.
+      onKeyDown={(event) => event.stopPropagation()}
       onKeyDownCapture={(event) => {
         if (busy) {
           event.preventDefault();
