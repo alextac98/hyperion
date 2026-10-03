@@ -31,7 +31,7 @@ worktree root:
 - Desktop vault registry, SQLite databases, attachments and backups:
   `.hyperion-dev/desktop/`.
 - Browser development data: `.hyperion-dev/browser/`.
-- Renderer: the first available loopback port starting at 3000. The launcher
+- Renderer: the first available port starting at 3000, bound to `0.0.0.0`. The launcher
   passes the actual URL to Electron and prints it, along with the branch label and
   worktree path; Electron prints the profile and active data directory.
 
@@ -136,8 +136,21 @@ ssh -N -L 4300:127.0.0.1:3001 your-server
 ```
 
 Then open `http://127.0.0.1:4300`. Use the actual server port in place of `3001`.
-The server binds only to loopback; the API requires same-origin requests and a
-per-start token. A graphical desktop is not required for the browser server or
+The server binds to `0.0.0.0` by default; the API requires an allowed same-origin
+request and a per-start token. To test directly from another machine, configure
+the desktop hostname and origin in `.env.local` (or an environment variable):
+
+```sh
+HYPERION_BROWSER_ORIGINS=http://your-desktop.example:3000
+```
+
+Run `pnpm dev:web`, then open that exact origin on the other machine. Only the configured origins and
+loopback origins may use the API; cross-origin requests remain rejected. Multiple
+origins can be comma-separated. An explicit remote origin fixes the port at 3000
+so the launcher cannot silently switch away from the advertised URL. Browser
+sessions still share one editor lease. The dependency cache is isolated by worktree.
+HTTP supports editing and importing audio; microphone capture requires a secure
+context, such as trusted HTTPS or the localhost SSH-forwarding URL above. A graphical desktop is not required for the browser server or
 its API tests. Server provisioning and agent process supervision are separate.
 
 ## Checks

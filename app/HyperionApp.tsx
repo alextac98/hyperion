@@ -1,3 +1,6 @@
+import { MeetingRecordingStatus } from "./components/MeetingRecordingStatus";
+import { flushMeetingTasks, hasMeetingTasks } from "./lib/meeting-tasks";
+import { meetingRecorder } from "./lib/meeting-recording";
 import { errorMessage } from "./lib/error-message";
 import { flushSync } from "react-dom";
 import { VaultSetup } from "./components/VaultSetup";
@@ -156,6 +159,7 @@ const FALLBACK_PREFERENCES: VaultPreferences = {
   editorFontSize: 17,
   editorWidth: "comfortable",
   spellcheck: true,
+  meetingDefaultTab: "notes",
   showDetails: true,
   notesView: "table",
   defaultTemplateIds: { note: null, journal: null },
@@ -338,7 +342,8 @@ export default function HyperionApp() {
     if (!lastAutomaticBackup.current) lastAutomaticBackup.current = Date.now();
     let busy = false;
     const interval = setInterval(() => {
-      if (busy || dataBusy.getSnapshot()) return;
+      // Defer background snapshots so their editor lock cannot interrupt capture.
+      if (busy || dataBusy.getSnapshot() || meetingRecorder.getSnapshot() || hasMeetingTasks()) return;
       busy = true;
       void dataOperation(async () => {
         await requireDataService().repositoryExecute({
@@ -399,6 +404,8 @@ export default function HyperionApp() {
 
   const loadVault = useCallback(
     async (nextVaultId: string, nextVaults?: VaultRecord[]) => {
+      await flushMeetingTasks();
+      await meetingRecorder.stop();
       await flushAll();
       const info = await requireDataService().repositoryExecute<StorageInfo>({
         operation: "selectVault",
@@ -2211,6 +2218,7 @@ export default function HyperionApp() {
           {setup}
         </Dialog>
       )}
+      <MeetingRecordingStatus />
       {settingsOpen && activeVault && (
         <SettingsDialog
           initialTab={settingsTab}

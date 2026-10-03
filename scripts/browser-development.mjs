@@ -69,9 +69,23 @@ export function browserDevelopmentPlugin({
   directory,
   branch,
   leaseMilliseconds = 120000,
+  allowedOrigins = [],
 }) {
   if (!isAbsolute(directory))
     throw new Error("HYPERION_BROWSER_DATA_DIRECTORY must be absolute.");
+  const permittedOrigins = new Set(
+    allowedOrigins.map((origin) => {
+      const parsed = new URL(origin);
+      if (
+        !["http:", "https:"].includes(parsed.protocol) ||
+        parsed.origin !== origin
+      )
+        throw new Error(
+          "Browser development origins must be exact HTTP or HTTPS origins.",
+        );
+      return origin;
+    }),
+  );
   directory = resolve(directory);
   const token = randomBytes(32).toString("hex");
   let database;
@@ -100,7 +114,16 @@ export function browserDevelopmentPlugin({
       return [
         {
           tag: "script",
-          children: `window.hyperionBrowserDevelopment=${config};`,
+          children: `window.hyperionBrowserDevelopment=${config};
+if (!crypto.randomUUID) {
+  crypto.randomUUID = () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 15) | 64;
+    bytes[8] = (bytes[8] & 63) | 128;
+    const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+    return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-" + hex.slice(12, 16) + "-" + hex.slice(16, 20) + "-" + hex.slice(20);
+  };
+}`,
           injectTo: "head-prepend",
         },
       ];
@@ -137,7 +160,9 @@ export function browserDevelopmentPlugin({
           followLegacyLocation: false,
         });
         if (database.setupInfo().activeVaultId && !database.setupInfo().error) {
-          database.repositoryExecute({ operation: "captureAutomaticRevisions" });
+          database.repositoryExecute({
+            operation: "captureAutomaticRevisions",
+          });
           database.createBackup(true);
         }
       } catch (error) {
@@ -150,7 +175,8 @@ export function browserDevelopmentPlugin({
           (request) => {
             if (!request || !repositoryOperations.has(request.operation))
               fail(400, "Unknown repository operation.");
-            if (request.operation === "createVault" && request.directory) fail(400, "Custom storage locations require the desktop app.");
+            if (request.operation === "createVault" && request.directory)
+              fail(400, "Custom storage locations require the desktop app.");
             return database.repositoryExecute(request);
           },
         ],
@@ -180,13 +206,18 @@ export function browserDevelopmentPlugin({
         response.setHeader("Content-Type", "application/json");
         try {
           const host = request.headers.host;
-          if (
-            !/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host ?? "") ||
-            request.headers.origin !== `http://${host}`
-          )
+          const origin = request.headers.origin;
+          const loopback =
+            /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host ?? "") &&
+            origin === `http://${host}`;
+          const permitted =
+            typeof origin === "string" &&
+            permittedOrigins.has(origin) &&
+            new URL(origin).host === host;
+          if (!loopback && !permitted)
             fail(
               403,
-              "Development API requests must come from the same loopback origin.",
+              "Development API requests must come from the same allowed origin.",
             );
           if (request.method !== "POST") fail(405, "Expected POST.");
           const body = await readBody(request);

@@ -32,6 +32,7 @@ export async function desktopRuntime() {
     await cp(source, bundle, { recursive: true, verbatimSymlinks: true });
     const plist = join(bundle, "Contents/Info.plist");
     for (const [key, value] of Object.entries({
+      NSMicrophoneUsageDescription: "Record microphone audio for meeting blocks in your local vault.",
       CFBundleName: "[Dev] Hyperion",
       CFBundleDisplayName: "[Dev] Hyperion",
       CFBundleIdentifier: "app.hyperion.desktop.development",

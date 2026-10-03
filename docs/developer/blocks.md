@@ -40,6 +40,49 @@ Respect `store.readonly` for history previews. Group a discrete action with
 Use accessible labels and keyboard-operable controls. Views can implement
 `onInsert()` to focus or open their controls.
 
+## Meeting interaction
+
+`/meeting` inserts a `hyperion:meeting` block with a title/date and three tabs:
+Notes, Transcript & recording, and Summary. Notes contain a regular
+`affine:note` container and use the page's native blocks, rich text, slash menu,
+formatting shortcuts and undo history. Paragraphs, headings, lists, tables,
+code, links and attachments use the existing page implementations and persistence.
+New meetings default to today's local date, or the journal entry's stored date
+when inserted into a journal. The date is saved at insertion and remains editable.
+The first prototype's plain Markdown notes are preserved as text in paragraphs
+when opened; initialization is atomic and idempotent, including history previews.
+Native meeting controls exclude BlockSuite's range synchronization so typing
+keeps its caret. Select All respects form fields and stays within meeting notes
+when invoked there. Transcripts are editable text and accept
+TXT, Markdown, VTT and SRT imports. Recording/import controls and playback appear
+only in Transcript & recording. The summary is reserved persisted data with an
+unavailable status; no automatic transcription or summary generation runs.
+
+Settings → Blocks → Meeting stores the default tab in vault preferences.
+Microphone selection uses device-local UI storage. Access is requested when the
+user starts recording or explicitly refreshes microphone labels in settings.
+Packaged and development macOS apps include a microphone usage description;
+packaged apps also include the audio-input entitlement.
+
+Audio imports and microphone capture use the existing blob store, with explicit
+ordered `references.assets` slots named `audio-00000000`, etc. Transfers are at
+most 2 MiB; recording requests chunks every five seconds. Each recorded chunk
+is saved before its reference is appended to the document. Playback/download
+joins the referenced chunks into a Blob. Removing audio only removes the current
+reference; history and duplicate blocks can still use the asset. Imports publish
+all references together after the file has been saved, so a failed import cannot
+replace existing content with a partial file.
+
+A shared recorder permits one active session and survives page navigation. The
+shell displays the active session and Stop/Retry save controls. Vault switches,
+data operations and desktop close wait for imports and stop/save the recorder
+before locking stores. Recording metadata and chunk updates bypass undo history
+so they do not interrupt note-typing undo. A failed write stops capture and keeps
+pending chunks in memory for ordered retry. After an unexpected app exit, a
+persisted `capturing` recording is shown as interrupted and its saved chunks can
+be played, downloaded or kept. Audio since the last saved chunk cannot survive
+an unexpected exit. Browser development warns before unloading an active session.
+
 ## Date interaction
 
 Typing `//` at the start of a paragraph/list item or after whitespace searches
@@ -134,6 +177,11 @@ keep the native picker test when upgrading BlockSuite. Shared upstream infrastru
 remains in the dependency. Check this adapter when upgrading BlockSuite.
 
 ## Validation
+
+`pnpm test:blocks` also checks bounded audio transfers, ordered recording retries,
+microphone denial and import barriers. `tests/meeting-smoke.mjs` exercises meeting
+insertion, editing, playback, reopening and real MediaRecorder capture using a
+synthetic microphone.
 
 `pnpm test:blocks` checks registry validation, migration ordering/atomicity,
 unknown data preservation, text/history projections, references and retirement.

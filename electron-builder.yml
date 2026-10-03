@@ -21,6 +21,10 @@ files:
   - package.json
 
 mac:
+  extendInfo:
+    NSMicrophoneUsageDescription: Record microphone audio for meeting blocks in your local vault.
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   category: public.app-category.productivity
   icon: build/icon.icns
   # The release build script overrides these defaults when credentials are absent.

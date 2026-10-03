@@ -1,3 +1,4 @@
+import { MeetingSettings } from "./MeetingSettings";
 import { platformRuntime, requireDesktop } from "../platform/runtime";
 import { UpdateControls } from "./UpdateControls";
 import { DataRecovery } from "./DataRecovery";
@@ -63,7 +64,7 @@ export function SettingsDialog({
 }) {
   const [brandError, setBrandError] = useState("");
   const [tab, setTab] = useState<
-    "general" | "editor" | "templates" | "appearance" | "data" | "updates"
+    "general" | "editor" | "blocks" | "templates" | "appearance" | "data" | "updates"
   >(initialTab);
   const [name, setName] = useState(vault.name);
   const [description, setDescription] = useState(vault.description);
@@ -99,7 +100,7 @@ export function SettingsDialog({
         <div className="settings-body">
           <nav>
             {(
-              ["general", "editor", "templates", "appearance", "data", ...(window.hyperionDesktop ? ["updates" as const] : [])] as const
+              ["general", "editor", "blocks", "templates", "appearance", "data", ...(window.hyperionDesktop ? ["updates" as const] : [])] as const
             ).map((item) => (
               <button
                 key={item}
@@ -112,6 +113,8 @@ export function SettingsDialog({
                   <DownloadSimple size={17} />
                 ) : item === "editor" ? (
                   <BookOpenText size={17} />
+                ) : item === "blocks" ? (
+                  <Stack size={17} />
                 ) : item === "templates" ? (
                   <Stack size={17} />
                 ) : item === "appearance" ? (
@@ -124,6 +127,9 @@ export function SettingsDialog({
             ))}
           </nav>
           <div className="settings-content">
+            {tab === "blocks" && (
+              <MeetingSettings preferences={preferences} onPreferences={onPreferences} />
+            )}
             {tab === "updates" && <UpdateControls />}
             {tab === "general" && (
               <>

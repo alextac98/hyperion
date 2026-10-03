@@ -1,5 +1,7 @@
 import type { HyperionDataApi } from "./desktop-api";
 import { saves } from "../lib/save-coordinator";
+import { hasMeetingTasks } from "../lib/meeting-tasks";
+import { meetingRecorder } from "../lib/meeting-recording";
 import { dataBusy, flushAll } from "../lib/data-operations";
 
 export async function connectBrowserDevelopment(config: {
@@ -79,7 +81,7 @@ export async function connectBrowserDevelopment(config: {
     if (!stopped) void request("heartbeat").catch(() => {});
   }, 15000);
   const beforeUnload = (event: BeforeUnloadEvent) => {
-    if (saves.getState() !== "saved" || dataBusy.getSnapshot()) {
+    if (saves.getState() !== "saved" || dataBusy.getSnapshot() || meetingRecorder.getSnapshot() || hasMeetingTasks()) {
       event.preventDefault();
       event.returnValue = "";
     }

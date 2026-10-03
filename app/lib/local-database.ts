@@ -96,6 +96,7 @@ export type VaultPreferences = {
   editorFontSize: number;
   editorWidth: "compact" | "comfortable" | "wide";
   spellcheck: boolean;
+  meetingDefaultTab: "notes" | "transcript" | "summary";
   showDetails: boolean;
   notesView: NotesViewPreference;
   defaultTemplateIds: Record<TemplatePurpose, string | null>;
@@ -127,6 +128,7 @@ export const DEFAULT_PREFERENCES: Omit<VaultPreferences, "vaultId"> = {
   editorFontSize: 17,
   editorWidth: "comfortable",
   spellcheck: true,
+  meetingDefaultTab: "notes",
   showDetails: true,
   notesView: "table",
   defaultTemplateIds: { note: null, journal: null },
@@ -143,6 +145,10 @@ export function normalizeVaultPreferences(
     editorFontSize: preferences?.editorFontSize ?? DEFAULT_PREFERENCES.editorFontSize,
     editorWidth: preferences?.editorWidth ?? DEFAULT_PREFERENCES.editorWidth,
     spellcheck: preferences?.spellcheck ?? DEFAULT_PREFERENCES.spellcheck,
+    meetingDefaultTab:
+      preferences?.meetingDefaultTab === "transcript" || preferences?.meetingDefaultTab === "summary"
+        ? preferences.meetingDefaultTab
+        : "notes",
     showDetails: preferences?.showDetails ?? DEFAULT_PREFERENCES.showDetails,
     notesView: preferences?.notesView ?? DEFAULT_PREFERENCES.notesView,
     defaultTemplateIds: {
