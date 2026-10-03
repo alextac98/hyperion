@@ -42,6 +42,9 @@ bundled Chromium runtime. SQLite stores all knowledge data locally.
 - Vault-scoped page templates with a searchable picker, direct template editing,
   and independently configurable defaults for new pages and journal entries
 - Working vault, editor, appearance, and data settings
+- Workspace tabs open or focus pages, templates, and library views, with reordering,
+  independent scroll positions, and session restoration per vault. Use Command/Ctrl+T
+  for Home, Command/Ctrl+W to close a tab, and Ctrl+Tab / Ctrl+Shift+Tab to switch.
 - Mouse Back/Forward buttons revisit pages and views within the current vault.
 - Keyboard shortcuts for global search (`Command/Ctrl + Shift + F`), current-page
   search (`Command/Ctrl + F`), and new notes

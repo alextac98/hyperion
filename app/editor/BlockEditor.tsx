@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { NoteRecord, VaultPreferences } from "../lib/local-database";
 import { openEditor, type EditorStore } from "./editor-client";
 import { observeMetadata } from "./metadata-subscription";
 
 type Props = {
+  active?: boolean;
   document: Pick<NoteRecord, "id" | "vaultId" | "title" | "body">;
   preferences: VaultPreferences;
   onChange: (patch: Pick<NoteRecord, "title" | "body">) => void;
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export function BlockEditor({
+  active = true,
   document: editorDocument,
   preferences,
   onChange,
@@ -19,6 +21,57 @@ export function BlockEditor({
   onStoreReady,
 }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
+  const activeRef = useRef(active);
+  const dispatcherRef = useRef<{ active: boolean } | null>(null);
+  const selectionRef = useRef<Range | null>(null);
+  useLayoutEffect(() => {
+    activeRef.current = active;
+    if (!active) {
+      if (dispatcherRef.current) dispatcherRef.current.active = false;
+      return;
+    }
+    const restoreSelection = () => {
+      const range = selectionRef.current;
+      if (
+        !range ||
+        !range.startContainer.isConnected ||
+        document.activeElement?.matches('[role="tab"]') ||
+        document.querySelector("dialog[open]")
+      )
+        return;
+      const element =
+        range.startContainer instanceof Element
+          ? range.startContainer
+          : range.startContainer.parentElement;
+      (
+        (element?.closest("affine-page-root") ??
+          element?.closest('[contenteditable="true"]')) as HTMLElement | null
+      )?.focus({ preventScroll: true });
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      if (dispatcherRef.current) dispatcherRef.current.active = true;
+    };
+    // Restore after the triggering key/click finishes, so opening a search
+    // result with Enter cannot also insert a paragraph in the editor.
+    const timer = setTimeout(restoreSelection, 0);
+    return () => clearTimeout(timer);
+  }, [active]);
+  useEffect(() => {
+    const remember = () => {
+      const selection = window.getSelection();
+      if (
+        activeRef.current &&
+        selection?.rangeCount &&
+        mountRef.current?.contains(selection.anchorNode) &&
+        mountRef.current?.contains(selection.focusNode)
+      ) {
+        selectionRef.current = selection.getRangeAt(0).cloneRange();
+      }
+    };
+    document.addEventListener("selectionchange", remember);
+    return () => document.removeEventListener("selectionchange", remember);
+  }, []);
   const initialDocumentRef = useRef(editorDocument);
   const callbacksRef = useRef({ onChange, onReady, onStoreReady });
   const [loading, setLoading] = useState(true);
@@ -41,8 +94,10 @@ export function BlockEditor({
     void openEditor(initialDocument, opening.signal)
       .then(({ runtime, view, store }) => {
         if (cancelled) return;
-        const { viewport } = view.renderPageEditor(store);
+        const { viewport, scope } = view.renderPageEditor(store);
+        dispatcherRef.current = scope.event;
         mount.replaceChildren(viewport);
+        if (!activeRef.current) scope.event.active = false;
         const syncTheme = () => {
           viewport.dataset.theme =
             document.documentElement.dataset.theme ?? "light";
@@ -90,6 +145,7 @@ export function BlockEditor({
       cancelled = true;
       opening.abort();
       unsubscribe?.();
+      dispatcherRef.current = null;
       mount.replaceChildren();
     };
   }, [attempt]);

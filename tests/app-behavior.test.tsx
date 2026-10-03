@@ -462,6 +462,9 @@ test("search supports arrow selection and Enter opens the selected result", asyn
       }}
     />,
   );
+  let escapedKeys = 0;
+  const backgroundEditor = () => escapedKeys++;
+  document.addEventListener("keydown", backgroundEditor);
   const input = ui.host.querySelector("input")!;
   await act(async () => key(input, "ArrowDown"));
   assert.equal(
@@ -471,6 +474,8 @@ test("search supports arrow selection and Enter opens the selected result", asyn
   await act(async () => key(input, "Enter"));
   assert.deepEqual(opened, ["second"]);
   assert.ok(closed);
+  assert.equal(escapedKeys, 0, "dialog keys must not reach mounted editors");
+  document.removeEventListener("keydown", backgroundEditor);
   await ui.unmount();
 });
 
@@ -750,4 +755,80 @@ test("nested note groups follow expand and collapse without changing page select
   } finally {
     await ui.unmount();
   }
+});
+
+// Workspace tabs use document identity, independently of mutable page titles.
+import { initialTabs, locationKey, restoreTabs, tabsReducer } from "../app/application/workspace-tabs";
+
+test("workspace tabs open beside active, deduplicate and return to most recent on close", () => {
+  const a = { view: "note", id: "a" } as const;
+  const b = { view: "note", id: "b" } as const;
+  const c = { view: "note", id: "c" } as const;
+  let state = initialTabs(a);
+  state = tabsReducer(state, { type: "open", location: b });
+  state = tabsReducer(state, { type: "open", location: a });
+  assert.equal(state.tabs.length, 2);
+  state = tabsReducer(state, { type: "open", location: c });
+  assert.deepEqual(state.tabs.map(tab => tab.location), [a, c, b]);
+  state = tabsReducer(state, { type: "close", id: locationKey(c) });
+  assert.equal(state.active, locationKey(a));
+  state = tabsReducer(state, { type: "close", id: locationKey(a) });
+  assert.equal(state.active, locationKey(b));
+  state = tabsReducer(state, { type: "close", id: locationKey(b) });
+  assert.deepEqual(state.tabs[0].location, { view: "home" });
+});
+
+test("workspace tabs restore only available unique destinations and lazily visit panels", () => {
+  const a = { view: "note", id: "a" } as const;
+  const b = { view: "note", id: "b" } as const;
+  const state = restoreTabs(JSON.stringify({ version: 1, locations: [a, a, b, { view: "note", id: "deleted" }, { view: "invalid" }], active: locationKey(b) }), location => !("id" in location) || location.id !== "deleted", { view: "home" });
+  assert.equal(state.tabs.length, 2);
+  assert.deepEqual(state.tabs.map(tab => tab.visited), [false, true]);
+  assert.equal(state.active, locationKey(b));
+  assert.deepEqual(restoreTabs("broken", () => true, a), initialTabs(a));
+  const reordered = tabsReducer(state, { type: "reorder", id: locationKey(b), before: locationKey(a) });
+  assert.equal(reordered.tabs[0].id, locationKey(b));
+  assert.equal(reordered.active, locationKey(b));
+  const pruned = tabsReducer(reordered, { type: "prune", ids: [locationKey(b)] });
+  assert.equal(pruned.active, locationKey(a));
+  assert.equal(pruned.tabs[0].visited, true);
+});
+
+test("reordering can move to either end without changing active page or history", () => {
+  let state = initialTabs({ view: "home" });
+  state = tabsReducer(state, { type: "open", location: { view: "journal" } });
+  state = tabsReducer(state, { type: "open", location: { view: "tags", tag: "work" } });
+  const [first, middle, last] = state.tabs;
+  const moved = tabsReducer(state, { type: "reorder", id: first.id, before: last.id });
+  assert.deepEqual(moved.tabs.map(tab => tab.id), [middle.id, last.id, first.id]);
+  assert.equal(moved.active, last.id);
+  assert.deepEqual(moved.recent, state.recent);
+});
+
+import { useWorkspaceTabs } from "../app/hooks/useWorkspaceTabs";
+
+test("workspace sessions stay isolated by vault and recover from unavailable destinations", async () => {
+  localStorage.clear();
+  let workspace: ReturnType<typeof useWorkspaceTabs>;
+  let switchVault: (id: string) => void;
+  function Harness() {
+    const [vault, setVault] = useState("a");
+    switchVault = setVault;
+    workspace = useWorkspaceTabs(vault, true);
+    return null;
+  }
+  const app = await mount(<Harness />);
+  try {
+    await act(async () => workspace.restore("a", () => true, { view: "home" }));
+    await act(async () => workspace.open({ view: "note", id: "page-a" }));
+    await act(async () => { switchVault("b"); workspace.restore("b", () => true, { view: "journal" }); });
+    assert.deepEqual(workspace!.location, { view: "journal" });
+    await act(async () => workspace.open({ view: "template", id: "template-b" }));
+    await act(async () => { switchVault("a"); workspace.restore("a", () => true, { view: "home" }); });
+    assert.deepEqual(workspace!.location, { view: "note", id: "page-a" });
+    assert.equal(workspace!.state.tabs.length, 2);
+    await act(async () => { switchVault("b"); workspace.restore("b", location => location.view !== "template", { view: "home" }); });
+    assert.deepEqual(workspace!.location, { view: "journal" });
+    assert.equal(workspace!.state.tabs.length, 1);
+  } finally { await app.unmount(); localStorage.clear(); }
 });

@@ -44,6 +44,15 @@ membership and lifecycle flags are domain records. IDs survive renames and moves
 UI-only preferences such as the open page and sidebar width remain localStorage
 values and are not knowledge data. Vault preferences remain in SQLite.
 
+Workspace tabs use the reducer in `app/application/workspace-tabs.ts` and the
+`useWorkspaceTabs` hook. A destination has one tab per vault; navigation opens or
+focuses it. Tab order and active destination are versioned UI storage, separate
+from knowledge data. Back/Forward remains workspace-wide. Restored tabs mount
+lazily; visited panels remain mounted until closed, preserving editor undo and
+scroll state. Hidden panels are inert and their editor event dispatchers are
+deactivated. Closing a panel does not discard its document's queued saves.
+This prototype does not evict inactive editors, so memory grows with visited tabs.
+
 The application shell composes feature views and dialogs from `app/components`.
 Pure page mutation rules live in `app/application/page-operations.ts`; hierarchy
 and search indexing helpers live in `app/lib`. Editor operations enter through
