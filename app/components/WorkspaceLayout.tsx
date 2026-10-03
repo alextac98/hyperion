@@ -1,0 +1,613 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import {
+  DockviewReact,
+  type DockviewApi,
+  type DockviewReadyEvent,
+  type IDockviewPanelProps,
+  type IDockviewPanelHeaderProps,
+  type IDockviewHeaderActionsProps,
+  type IContextMenuItemComponentProps,
+  type DockviewWillDropEvent,
+  type DockviewWillShowOverlayLocationEvent,
+} from "dockview-react";
+import { Plus, X } from "@phosphor-icons/react";
+import { locationKey } from "../application/workspace-tabs";
+import { readPageDrag, type PageDrag } from "../application/page-drag";
+import type {
+  TabAction,
+  WorkspaceTab,
+  WorkspaceTabs,
+} from "../application/workspace-tabs";
+import {
+  canSplitPane,
+  layoutMinimum,
+  MIN_PANE_WIDTH,
+  MIN_PANE_HEIGHT,
+  PANE_TAB_HEIGHT,
+  WORKSPACE_COMPONENT,
+  type SplitDirection,
+} from "../application/workspace-layout";
+
+type Props = {
+  state: WorkspaceTabs;
+  dispatch: (action: TabAction) => void;
+  disabled: boolean;
+  canOpenPage: (page: PageDrag) => boolean;
+  label: (tab: WorkspaceTab) => string;
+  icon: (tab: WorkspaceTab) => ReactNode;
+  render: (tab: WorkspaceTab, visible: boolean) => ReactNode;
+};
+const WorkspaceContext = createContext<Props | null>(null);
+function useWorkspace() {
+  const context = useContext(WorkspaceContext);
+  if (!context) throw new Error("Workspace panel has no workspace");
+  return context;
+}
+
+function WorkspacePanel({ api }: IDockviewPanelProps) {
+  const { state, render } = useWorkspace();
+  const visible = useSyncExternalStore(
+    useCallback(
+      (notify) => {
+        const subscription = api.onDidVisibilityChange(notify);
+        return () => subscription.dispose();
+      },
+      [api],
+    ),
+    () => api.isVisible,
+  );
+  const tab = state.tabs.find((item) => item.id === api.id);
+  return tab && (tab.visited || visible) ? render(tab, visible) : null;
+}
+
+function WorkspaceTabHeader({ api }: IDockviewPanelHeaderProps) {
+  const { state, label, icon, dispatch, disabled } = useWorkspace();
+  const tab = state.tabs.find((item) => item.id === api.id);
+  if (!tab) return null;
+  return (
+    <div
+      className="workspace-tab-content"
+      title={label(tab)}
+      onAuxClick={(event) => {
+        if (event.button === 1) {
+          event.preventDefault();
+          if (!disabled) dispatch({ type: "close", id: tab.id });
+        }
+      }}
+    >
+      {icon(tab)}
+      <span>{label(tab)}</span>
+      <button
+        className="tab-close"
+        disabled={disabled}
+        aria-label={`Close ${label(tab)} tab`}
+        title="Close tab"
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          dispatch({ type: "close", id: tab.id });
+        }}
+      >
+        <X size={12} />
+      </button>
+    </div>
+  );
+}
+
+function WorkspacePaneActions({ api }: IDockviewHeaderActionsProps) {
+  const { dispatch, disabled } = useWorkspace();
+  return (
+    <button
+      className="tab-home"
+      disabled={disabled}
+      aria-label="Open Home tab"
+      title="Open Home tab"
+      onClick={() => {
+        api.setActive();
+        dispatch({ type: "open", location: { view: "home" } });
+      }}
+    >
+      <Plus size={16} />
+    </button>
+  );
+}
+
+function focusTabElement(id: string) {
+  Array.from(document.querySelectorAll<HTMLElement>(".dv-tab"))
+    .find((element) => element.dataset.tabPanelId === id)
+    ?.focus();
+}
+
+function WorkspaceTabMenu({
+  panel,
+  api,
+  close,
+}: IContextMenuItemComponentProps) {
+  const { dispatch, disabled } = useWorkspace();
+  const menu = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    menu.current
+      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      ?.focus();
+  }, []);
+  if (!panel) return null;
+  const run = (action: () => void) => {
+    action();
+    close();
+    requestAnimationFrame(() => {
+      if (api.activePanel) focusTabElement(api.activePanel.id);
+    });
+  };
+  const split = (direction: SplitDirection, label: string) => (
+    <button
+      role="menuitem"
+      key={direction}
+      disabled={
+        disabled ||
+        panel.group.panels.length < 2 ||
+        !canSplitPane(panel.group.width, panel.group.height, direction)
+      }
+      onClick={() =>
+        run(() => panel.api.moveTo({ group: panel.group, position: direction }))
+      }
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div
+      className="workspace-tab-menu"
+      role="menu"
+      aria-label="Tab actions"
+      tabIndex={-1}
+      ref={menu}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        const items = Array.from(
+          menu.current?.querySelectorAll<HTMLButtonElement>(
+            "button:not(:disabled)",
+          ) ?? [],
+        );
+        const index = items.indexOf(
+          document.activeElement as HTMLButtonElement,
+        );
+        let next: number;
+        if (event.key === "ArrowDown") next = (index + 1) % items.length;
+        else if (event.key === "ArrowUp")
+          next = (index - 1 + items.length) % items.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = items.length - 1;
+        else if (event.key === "Escape" || event.key === "Tab") {
+          event.preventDefault();
+          close();
+          focusTabElement(panel.id);
+          return;
+        } else return;
+        event.preventDefault();
+        items[next]?.focus();
+      }}
+    >
+      {split("left", "Split left")}
+      {split("right", "Split right")}
+      {split("top", "Split above")}
+      {split("bottom", "Split below")}
+      {api.groups.map(
+        (group, index) =>
+          group !== panel.group && (
+            <button
+              role="menuitem"
+              key={group.id}
+              disabled={disabled}
+              onClick={() =>
+                run(() => panel.api.moveTo({ group, position: "center" }))
+              }
+            >
+              Move to pane {index + 1}: {group.activePanel?.title ?? "Home"}
+            </button>
+          ),
+      )}
+      <button
+        role="menuitem"
+        disabled={disabled}
+        onClick={() => run(() => dispatch({ type: "close", id: panel.id }))}
+      >
+        Close tab
+      </button>
+    </div>
+  );
+}
+
+// Component identities must stay stable: changing them replaces the live editors.
+const components = { [WORKSPACE_COMPONENT]: WorkspacePanel };
+const theme = { name: "hyperion", className: "dockview-theme-hyperion" };
+
+export function WorkspaceLayout(props: Props) {
+  const latest = useRef(props);
+  const viewport = useRef<HTMLDivElement>(null);
+  const canvas = useRef<HTMLDivElement>(null);
+  const [api, setApi] = useState<DockviewApi>();
+  const reconciling = useRef(false);
+  const schedule = useRef(() => {});
+  useLayoutEffect(() => {
+    latest.current = props;
+  });
+
+  const onReady = useCallback(({ api }: DockviewReadyEvent) => {
+    const { state } = latest.current;
+    if (state.layout) {
+      try {
+        api.fromJSON(state.layout);
+      } catch {
+        api.clear();
+      } // Invalid/stale layouts still recover their open pages below.
+    }
+    setApi(api);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!api) return;
+    const { state, label } = latest.current;
+    reconciling.current = true;
+    try {
+      const initializing = api.totalPanels === 0;
+      const ids = new Set(state.tabs.map((tab) => tab.id));
+      for (const panel of api.panels)
+        if (!ids.has(panel.id)) api.removePanel(panel);
+      for (const tab of state.tabs) {
+        const existing = api.getPanel(tab.id);
+        if (existing) {
+          if (existing.title !== label(tab)) existing.api.setTitle(label(tab));
+          continue;
+        }
+        const active = api.activePanel ?? api.panels.at(-1);
+        api.addPanel({
+          id: tab.id,
+          component: WORKSPACE_COMPONENT,
+          title: label(tab),
+          renderer: "always",
+          inactive: true,
+          minimumWidth: MIN_PANE_WIDTH,
+          minimumHeight: MIN_PANE_HEIGHT - PANE_TAB_HEIGHT,
+          ...(active
+            ? {
+                position: {
+                  referencePanel: active.id,
+                  direction: "within" as const,
+                  index: initializing
+                    ? active.group.panels.length
+                    : active.group.panels.indexOf(active) + 1,
+                },
+              }
+            : {}),
+        });
+      }
+      if (api.activePanel?.id !== state.active)
+        api.getPanel(state.active)?.api.setActive();
+    } finally {
+      reconciling.current = false;
+    }
+    schedule.current();
+  }, [api, props.state.tabs, props.state.active, props.label]);
+
+  useEffect(() => {
+    if (!api) return;
+    let frame = 0;
+    let disposed = false;
+    const dragSurface = viewport.current;
+    let dragging: "native" | "pointer" | null = null;
+    let draggedPage: PageDrag | null = null;
+    let dragCleanup = 0;
+    const endTabDrag = () => {
+      dragging = null;
+      dragSurface?.removeAttribute("data-tab-dragging");
+      // Native event listeners can run microtasks between capture and bubble.
+      // Keep the payload available until all of Dockview's drop handlers finish.
+      window.clearTimeout(dragCleanup);
+      dragCleanup = window.setTimeout(() => {
+        draggedPage = null;
+      }, 0);
+    };
+    const endPointerDrag = () => {
+      // HTML dragstart itself causes pointercancel; only end pointer-based drags here.
+      if (dragging === "pointer") endTabDrag();
+    };
+    const beginPageDrag = (event: DragEvent) => {
+      window.clearTimeout(dragCleanup);
+      draggedPage = null;
+      const page = readPageDrag(event.dataTransfer);
+      if (
+        event.defaultPrevented ||
+        latest.current.disabled ||
+        !page ||
+        !latest.current.canOpenPage(page)
+      )
+        return;
+      draggedPage = page;
+      dragging = "native";
+      dragSurface?.setAttribute("data-tab-dragging", "true");
+    };
+    const fit = () => {
+      if (!viewport.current || !canvas.current) return;
+      const minimum = layoutMinimum(api.toJSON());
+      const width = Math.max(viewport.current.clientWidth, minimum.width);
+      const height = Math.max(viewport.current.clientHeight, minimum.height);
+      canvas.current.style.width = `${width}px`;
+      canvas.current.style.height = `${height}px`;
+      if (api.width !== width || api.height !== height)
+        api.layout(width, height);
+    };
+    const publish = () => {
+      if (disposed || frame) return;
+      frame = requestAnimationFrame(() => {
+        fit();
+        frame = 0;
+        if (api.totalPanels)
+          latest.current.dispatch({ type: "layout", layout: api.toJSON() });
+      });
+    };
+    schedule.current = publish;
+    const constrain = () => {
+      for (const group of api.groups)
+        group.api.setConstraints({
+          minimumWidth: MIN_PANE_WIDTH,
+          minimumHeight: MIN_PANE_HEIGHT,
+        });
+    };
+    const guardDrop = (
+      event: DockviewWillShowOverlayLocationEvent | DockviewWillDropEvent,
+    ) => {
+      const data = event.getData();
+      const page =
+        draggedPage && latest.current.canOpenPage(draggedPage)
+          ? draggedPage
+          : null;
+      if (
+        latest.current.disabled ||
+        (!page && (!data || data.viewId !== api.id || !data.panelId))
+      ) {
+        event.preventDefault();
+        return;
+      }
+      // Left/right on a tab means insertion, not splitting the content pane.
+      if (
+        event.kind === "tab" ||
+        event.kind === "header_space" ||
+        event.position === "center"
+      )
+        return;
+      const group = event.group;
+      const sourceGroup = page
+        ? api.getPanel(locationKey({ view: "note", id: page.id }))?.group.id
+        : data?.groupId;
+      if (
+        !group ||
+        !canSplitPane(group.width, group.height, event.position) ||
+        (sourceGroup === group.id && group.panels.length < 2)
+      )
+        event.preventDefault();
+    };
+    const subscriptions = [
+      api.onDidLayoutChange(publish),
+      api.onDidActivePanelChange(({ panel }) => {
+        if (!reconciling.current && panel)
+          latest.current.dispatch({ type: "focus", id: panel.id });
+      }),
+      api.onDidRemovePanel((panel) => {
+        if (!reconciling.current)
+          latest.current.dispatch({ type: "close", id: panel.id });
+      }),
+      api.onDidAddGroup(() => {
+        constrain();
+        publish();
+      }),
+      api.onWillShowOverlay(guardDrop),
+      api.onWillDrop(guardDrop),
+      api.onUnhandledDragOver((event) => {
+        if (
+          !latest.current.disabled &&
+          draggedPage &&
+          latest.current.canOpenPage(draggedPage)
+        )
+          event.accept();
+      }),
+      api.onDidDrop((event) => {
+        const { group } = event;
+        const page =
+          "dataTransfer" in event.nativeEvent
+            ? readPageDrag(event.nativeEvent.dataTransfer)
+            : null;
+        if (
+          !group ||
+          latest.current.disabled ||
+          !page ||
+          !latest.current.canOpenPage(page)
+        )
+          return;
+        const location = { view: "note" as const, id: page.id };
+        const id = locationKey(location);
+        const index = event.panel
+          ? group.panels.indexOf(event.panel)
+          : group.panels.length;
+        latest.current.dispatch({ type: "open", location });
+        const existing = api.getPanel(id);
+        if (existing) {
+          existing.api.moveTo({ group, position: event.position, index });
+          existing.api.setActive();
+        } else {
+          api.addPanel({
+            id,
+            component: WORKSPACE_COMPONENT,
+            title: latest.current.label({ id, location, visited: true }),
+            renderer: "always",
+            minimumWidth: MIN_PANE_WIDTH,
+            minimumHeight: MIN_PANE_HEIGHT - PANE_TAB_HEIGHT,
+            position: {
+              referenceGroup: group,
+              direction:
+                event.position === "center" ? "within" : event.position,
+              index,
+            },
+          });
+        }
+      }),
+      api.onWillDragPanel(({ nativeEvent }) => {
+        if (latest.current.disabled || nativeEvent.defaultPrevented) return;
+        window.clearTimeout(dragCleanup);
+        draggedPage = null;
+        dragging = nativeEvent.type.startsWith("pointer")
+          ? "pointer"
+          : "native";
+        dragSurface?.setAttribute("data-tab-dragging", "true");
+      }),
+      api.onWillDragGroup((event) => event.nativeEvent.preventDefault()),
+    ];
+    // Use the window so cancellation and drops outside this workspace also clean up.
+    window.addEventListener("dragstart", beginPageDrag);
+    window.addEventListener("drop", endTabDrag, true);
+    window.addEventListener("dragend", endTabDrag, true);
+    window.addEventListener("pointerup", endPointerDrag, true);
+    window.addEventListener("pointercancel", endPointerDrag, true);
+    const observer = new ResizeObserver(publish);
+    if (viewport.current) observer.observe(viewport.current);
+    constrain();
+    publish();
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      subscriptions.forEach((subscription) => subscription.dispose());
+      window.removeEventListener("dragstart", beginPageDrag);
+      window.removeEventListener("drop", endTabDrag, true);
+      window.removeEventListener("dragend", endTabDrag, true);
+      window.removeEventListener("pointerup", endPointerDrag, true);
+      window.removeEventListener("pointercancel", endPointerDrag, true);
+      endTabDrag();
+      window.clearTimeout(dragCleanup);
+      schedule.current = () => {};
+    };
+  }, [api]);
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!api || !(event.target instanceof HTMLElement)) return;
+    if (props.disabled) {
+      if (event.target.closest(".dv-tab")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+    const focusTab = (id: string) => {
+      api.getPanel(id)?.api.setActive();
+      focusTabElement(id);
+    };
+    if (event.key === "F6") {
+      event.preventDefault();
+      event.stopPropagation();
+      const groups = api.groups;
+      const index = groups.findIndex((group) => group === api.activeGroup);
+      const next =
+        groups[
+          (index + (event.shiftKey ? -1 : 1) + groups.length) % groups.length
+        ];
+      if (next?.activePanel) focusTab(next.activePanel.id);
+      return;
+    }
+    const tabElement = event.target.closest<HTMLElement>(".dv-tab");
+    // A close button keeps its normal Enter/Space behavior.
+    if (!tabElement || event.target.closest("button")) return;
+    const panel = api.getPanel(tabElement.dataset.tabPanelId ?? "");
+    if (!panel) return;
+    const tabs = panel.group.panels;
+    const index = tabs.indexOf(panel);
+    let next = index;
+    if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+    else if (event.key === "ArrowLeft")
+      next = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = tabs.length - 1;
+    else if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      event.stopPropagation();
+      props.dispatch({ type: "close", id: panel.id });
+      requestAnimationFrame(() => {
+        if (api.activePanel) focusTab(api.activePanel.id);
+      });
+      return;
+    } else if (
+      event.key === "ContextMenu" ||
+      (event.shiftKey && event.key === "F10")
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      const bounds = tabElement.getBoundingClientRect();
+      tabElement.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: bounds.left,
+          clientY: bounds.bottom,
+        }),
+      );
+      return;
+    } else return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.altKey) {
+      // Dockview's insertion index is measured before removing the source tab.
+      panel.api.moveTo({
+        group: panel.group,
+        position: "center",
+        index: next > index ? next + 1 : next,
+      });
+      focusTab(panel.id);
+    } else focusTab(tabs[next].id);
+  };
+
+  return (
+    <WorkspaceContext.Provider value={props}>
+      <div
+        className="workspace-layout-viewport"
+        ref={viewport}
+        onKeyDownCapture={onKeyDown}
+        onPointerDownCapture={(event) => {
+          if (
+            props.disabled &&
+            event.target instanceof Element &&
+            event.target.closest(".dv-tab")
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }}
+      >
+        <div className="workspace-layout-canvas" ref={canvas}>
+          <DockviewReact
+            components={components}
+            onReady={onReady}
+            theme={theme}
+            defaultRenderer="always"
+            disableFloatingGroups
+            disableAutoResizing
+            disableDnd={props.disabled}
+            dndEdges={false}
+            defaultTabComponent={WorkspaceTabHeader}
+            rightHeaderActionsComponent={WorkspacePaneActions}
+            getTabContextMenuItems={() => [{ component: WorkspaceTabMenu }]}
+          />
+        </div>
+      </div>
+    </WorkspaceContext.Provider>
+  );
+}

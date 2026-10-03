@@ -1,0 +1,173 @@
+.main-content:has(> .workspace-layout-viewport) {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+.workspace-layout-viewport {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.workspace-layout-canvas {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+/* Keep tab drags on Dockview's drop surface. Editors otherwise interpret the
+   same gesture as a content/file drop and show an inline insertion indicator.
+   The transparent shield leaves normal editor drag/drop untouched. */
+.workspace-layout-viewport[data-tab-dragging] .dv-render-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: auto;
+}
+.dockview-theme-hyperion {
+  --dv-background-color: var(--bg);
+  --dv-group-view-background-color: var(--bg);
+  --dv-tabs-and-actions-container-background-color: var(--panel);
+  --dv-tabs-and-actions-container-height: 39px;
+  --dv-activegroup-visiblepanel-tab-background-color: var(--bg);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--panel);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--panel);
+  --dv-activegroup-visiblepanel-tab-color: var(--text);
+  --dv-activegroup-hiddenpanel-tab-color: var(--text-soft);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--text-soft);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--text-soft);
+  --dv-tab-divider-color: var(--line);
+  --dv-separator-border: var(--line);
+  --dv-active-sash-color: var(--accent);
+  --dv-drag-over-background-color: color-mix(
+    in srgb,
+    var(--accent) 17%,
+    transparent
+  );
+  --dv-drag-over-border: 2px solid var(--accent);
+  --dv-drag-over-border-color: var(--accent);
+  --dv-icon-hover-background-color: var(--hover);
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-border-radius: 0;
+  --dv-tab-margin: 0;
+  --dv-overlay-z-index: 30;
+  --dv-focus-border: var(--accent);
+}
+.dockview-theme-hyperion .dv-tabs-and-actions-container {
+  border-bottom: 1px solid var(--line);
+}
+.dockview-theme-hyperion .dv-tab {
+  padding: 0;
+  border-top: 2px solid transparent;
+}
+.dockview-theme-hyperion .dv-tab:focus-visible::after {
+  outline-color: var(--accent) !important;
+}
+.dockview-theme-hyperion .dv-active-group .dv-tab.dv-active-tab {
+  border-top-color: var(--accent);
+}
+.dockview-theme-hyperion .dv-inactive-group .dv-tab.dv-active-tab {
+  border-top-color: var(--line-strong);
+}
+.workspace-tab-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding-left: 10px;
+  max-width: 220px;
+}
+.workspace-tab-content > svg {
+  flex-shrink: 0;
+}
+.workspace-tab-content > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-tab-content .tab-close {
+  margin-left: 3px;
+}
+.dockview-theme-hyperion .tab-home {
+  height: 36px;
+}
+.dockview-theme-hyperion .workspace-panel {
+  height: 100%;
+  width: 100%;
+  container-type: inline-size;
+}
+.dockview-theme-hyperion .note-workspace {
+  min-height: 100%;
+  --page-title-font-size: clamp(30px, 6cqw, 48px);
+}
+.dockview-theme-hyperion .library-view {
+  min-height: 100%;
+}
+
+/* A narrow pane needs the compact page treatment even in a wide desktop window. */
+@container (max-width: 650px) {
+  .library-view {
+    padding: 32px 20px 60px;
+  }
+  .note-card-grid,
+  .tag-grid {
+    grid-template-columns: 1fr;
+  }
+  .stat-row {
+    grid-template-columns: 1fr;
+  }
+  .view-heading {
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .view-heading h1 {
+    font-size: 30px;
+  }
+  .table-head,
+  .table-row {
+    grid-template-columns: minmax(0, 1fr) 65px;
+  }
+  .table-head span:nth-child(2),
+  .table-tags {
+    display: none;
+  }
+  .template-editor-banner {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .journal-heading-actions {
+    flex-wrap: wrap;
+  }
+  .tags-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.workspace-tab-menu {
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+}
+.workspace-tab-menu button {
+  padding: 7px 12px;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.workspace-tab-menu button:hover,
+.workspace-tab-menu button:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+.workspace-tab-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+@container (max-width: 450px) {
+  .page-icon-picker {
+    max-width: calc(100cqw - 48px);
+  }
+}

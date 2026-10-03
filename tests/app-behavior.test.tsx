@@ -23,6 +23,7 @@ import { SearchDialog } from "../app/components/SearchDialog";
 import { useRecords } from "../app/hooks/useRecords";
 import { NavigationHistory, type NavigationLocation, type NavigationDirection } from "../app/application/navigation-history";
 import { useMouseNavigation } from "../app/hooks/useMouseNavigation";
+import { PAGE_DRAG_TYPE, readPageDrag, writePageDrag } from "../app/application/page-drag";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost",
@@ -786,26 +787,82 @@ test("workspace tabs restore only available unique destinations and lazily visit
   assert.deepEqual(state.tabs.map(tab => tab.visited), [false, true]);
   assert.equal(state.active, locationKey(b));
   assert.deepEqual(restoreTabs("broken", () => true, a), initialTabs(a));
-  const reordered = tabsReducer(state, { type: "reorder", id: locationKey(b), before: locationKey(a) });
-  assert.equal(reordered.tabs[0].id, locationKey(b));
-  assert.equal(reordered.active, locationKey(b));
-  const pruned = tabsReducer(reordered, { type: "prune", ids: [locationKey(b)] });
+  const pruned = tabsReducer(state, { type: "prune", ids: [locationKey(b)] });
   assert.equal(pruned.active, locationKey(a));
   assert.equal(pruned.tabs[0].visited, true);
 });
 
-test("reordering can move to either end without changing active page or history", () => {
-  let state = initialTabs({ view: "home" });
-  state = tabsReducer(state, { type: "open", location: { view: "journal" } });
-  state = tabsReducer(state, { type: "open", location: { view: "tags", tag: "work" } });
-  const [first, middle, last] = state.tabs;
-  const moved = tabsReducer(state, { type: "reorder", id: first.id, before: last.id });
-  assert.deepEqual(moved.tabs.map(tab => tab.id), [middle.id, last.id, first.id]);
-  assert.equal(moved.active, last.id);
-  assert.deepEqual(moved.recent, state.recent);
+import { useWorkspaceTabs } from "../app/hooks/useWorkspaceTabs";
+import { canSplitPane, layoutMinimum, layoutPanes, restoreLayout } from "../app/application/workspace-layout";
+
+function splitSession() {
+  const ids = ["a", "b", "c", "d"].map(id => locationKey({ view: "note", id }));
+  const leaf = (id: string, views: string[], activeView = views[0]) => ({ type: "leaf", size: 400, data: { id, views, activeView } });
+  const layout = restoreLayout({
+    grid: { width: 1000, height: 800, orientation: "HORIZONTAL", root: {
+      type: "branch", data: [leaf("left", ids.slice(0, 2), ids[1]), {
+        type: "branch", size: 500, data: [leaf("top", [ids[2]]), leaf("bottom", [ids[3]])],
+      }],
+    } }, activeGroup: "top",
+  }, ids)!;
+  return { ids, layout };
+}
+
+test("workspace layouts preserve nested axes, order and every visible tab across restore", () => {
+  const { ids, layout } = splitSession();
+  const restored = restoreTabs(JSON.stringify({ version: 2, locations: ids.map(id => JSON.parse(id)), active: ids[2], layout }), () => true, { view: "home" });
+  assert.deepEqual(restored.tabs.map(tab => tab.visited), [false, true, true, true]);
+  assert.deepEqual(layoutPanes(restored.layout).map(pane => pane.views), [ids.slice(0, 2), [ids[2]], [ids[3]]]);
+  assert.deepEqual(layoutMinimum(restored.layout), { width: 644, height: 484 });
+  const pruned = restoreTabs(JSON.stringify({ version: 2, locations: ids.map(id => JSON.parse(id)), active: ids[2], layout }), location => !("id" in location) || location.id !== "c", { view: "home" });
+  assert.equal(layoutPanes(pruned.layout).length, 2);
+  assert.deepEqual(layoutMinimum(pruned.layout), { width: 644, height: 240 });
+  assert.equal(pruned.active, ids[0]);
 });
 
-import { useWorkspaceTabs } from "../app/hooks/useWorkspaceTabs";
+test("workspace layout recovery removes duplicate and missing pages and rejects foreign components", () => {
+  const { ids, layout } = splitSession();
+  const panes = layoutPanes(layout);
+  panes[1].views.push(ids[0], "missing");
+  layout.panels[ids[0]] = { id: ids[0], contentComponent: "foreign", params: { secret: "ignored" } };
+  layout.floatingGroups = [{ data: { id: "floating", views: [ids[0]] }, position: { left: 0, top: 0, width: 400, height: 300 } }];
+  const recovered = restoreLayout(layout, ids.slice(0, 3))!;
+  assert.deepEqual(layoutPanes(recovered).flatMap(pane => pane.views), ids.slice(0, 3));
+  assert.equal(recovered.panels[ids[0]].contentComponent, "workspace-page");
+  assert.equal(recovered.panels[ids[0]].params, undefined);
+  assert.equal(recovered.floatingGroups, undefined);
+  assert.equal(restoreLayout({ grid: { orientation: "broken" } }, ids), undefined);
+  assert.equal(restoreLayout({ grid: { orientation: "HORIZONTAL", root: { type: "branch", data: [null, { type: "leaf", data: null }] } } }, ids), undefined);
+});
+
+test("split limits account for both resulting panes and the divider", () => {
+  assert.equal(canSplitPane(643, 600, "right"), false);
+  assert.equal(canSplitPane(644, 239, "left"), false);
+  assert.equal(canSplitPane(644, 240, "left"), true);
+  assert.equal(canSplitPane(320, 483, "bottom"), false);
+  assert.equal(canSplitPane(319, 484, "top"), false);
+  assert.equal(canSplitPane(320, 484, "bottom"), true);
+});
+
+test("pane focus and close preserve layout and choose a remaining tab in the same pane", () => {
+  const { ids, layout } = splitSession();
+  let state = initialTabs(JSON.parse(ids[0]));
+  for (const id of ids.slice(1)) state = tabsReducer(state, { type: "open", location: JSON.parse(id) });
+  state = tabsReducer(state, { type: "layout", layout });
+  assert.equal(state.active, ids[2]);
+  state = tabsReducer(state, { type: "focus", id: ids[1] });
+  assert.ok(state.layout);
+  state = tabsReducer(state, { type: "close", id: ids[1] });
+  assert.equal(state.active, ids[0]);
+  assert.equal(state.recent.at(-1), ids[0]);
+  assert.equal(state.tabs.find(tab => tab.id === ids[0])?.visited, true);
+  state = tabsReducer(state, { type: "open", location: { view: "note", id: "c" } });
+  assert.equal(state.active, ids[2]);
+  assert.equal(state.tabs.length, 3);
+  assert.ok(state.layout);
+  const restored = restoreTabs(JSON.stringify({ version: 2, locations: ids.map(id => JSON.parse(id)), active: ids[1], layout }), () => true, { view: "home" });
+  assert.equal(tabsReducer(restored, { type: "close", id: ids[1] }).active, ids[0], "unvisited siblings are preferred over another pane on close");
+});
 
 test("workspace sessions stay isolated by vault and recover from unavailable destinations", async () => {
   localStorage.clear();
@@ -831,4 +888,155 @@ test("workspace sessions stay isolated by vault and recover from unavailable des
     assert.deepEqual(workspace!.location, { view: "journal" });
     assert.equal(workspace!.state.tabs.length, 1);
   } finally { await app.unmount(); localStorage.clear(); }
+});
+
+test("docking preserves mounted page state, tab order, keyboard moves and close behavior", async () => {
+  // Dockview needs layout observers; jsdom has no layout engine. Give the
+  // workspace a fixed viewport while exercising the real React adapter/API.
+  const globals = ["ResizeObserver", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle"] as const;
+  const previous = globals.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
+  class ResizeObserverStub {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  Object.assign(globalThis, {
+    ResizeObserver: ResizeObserverStub,
+    requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window),
+    cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
+    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
+  });
+  const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+  const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+  Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get() { return 1100; } });
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get() { return 800; } });
+  let ui: Awaited<ReturnType<typeof mount>> | undefined;
+  try {
+    const { WorkspaceLayout } = await import("../app/components/WorkspaceLayout");
+    const { useReducer } = await import("react");
+    const locations: NavigationLocation[] = ["a", "b", "c"].map(id => ({ view: "note", id }));
+    const ids = locations.map(locationKey);
+    let state = restoreTabs(JSON.stringify({ version: 1, locations, active: ids[1] }), () => true, { view: "home" });
+    function Probe() {
+      const [current, dispatch] = useReducer(tabsReducer, state);
+      state = current;
+      return <WorkspaceLayout state={current} dispatch={dispatch} disabled={false}
+        canOpenPage={page => page.vaultId === "vault"}
+        label={tab => tab.location.view === "note" ? tab.location.id : "Home"}
+        icon={() => null}
+        render={tab => <input data-page={tab.id} defaultValue="draft" />} />;
+    }
+    const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
+    ui = await mount(<StrictMode><Probe /></StrictMode>);
+    await settle();
+    const tab = (id: string) => Array.from(ui!.host.querySelectorAll<HTMLElement>(".dv-tab")).find(e => e.dataset.tabPanelId === id)!;
+    const order = () => Array.from(ui!.host.querySelectorAll(".dv-tab")).map(e => e.getAttribute("aria-label"));
+    assert.deepEqual(order(), ["a", "b", "c"], "v1 sessions keep their tab order");
+    const b = ui.host.querySelector("input")!;
+    assert.equal(b.dataset.page, ids[1], "restored inactive pages mount lazily");
+    await act(async () => key(tab(ids[1]), "ArrowLeft"));
+    await settle();
+    const a = Array.from(ui.host.querySelectorAll("input")).find(e => e.dataset.page === ids[0])!;
+    a.value = "unsaved local state";
+    await act(async () => {
+      tab(ids[0]).dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    });
+    const split = Array.from(document.querySelectorAll<HTMLButtonElement>("[role=menuitem]")).find(e => e.textContent === "Split right")!;
+    assert.equal(split.disabled, false);
+    await act(async () => split.click());
+    await settle();
+    assert.equal(ui.host.querySelectorAll(".dv-groupview").length, 2);
+    assert.ok(a.isConnected && b.isConnected, "docking keeps both mounted editors alive");
+    assert.equal(a.value, "unsaved local state");
+    assert.equal(layoutPanes(state.layout).length, 2, "layout is synchronized to persistence");
+    await act(async () => {
+      tab(ids[1]).dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowRight", altKey: true, bubbles: true, cancelable: true }));
+    });
+    await settle();
+    assert.deepEqual(order(), ["c", "b", "a"], "Alt+Right moves a tab one place");
+    await act(async () => key(tab(ids[0]), "Delete"));
+    await settle();
+    assert.equal(ui.host.querySelectorAll(".dv-groupview").length, 1, "closing the last tab collapses its pane");
+    assert.equal(state.tabs.some(t => t.id === ids[0]), false, "native close cannot reopen a removed tab");
+    assert.equal(a.isConnected, false);
+    assert.ok(b.isConnected);
+
+    const source = document.createElement("button");
+    document.body.append(source);
+    try {
+      const data = new Map<string, string>();
+      const transfer = {
+        effectAllowed: "none",
+        getData: (type: string) => data.get(type) ?? "",
+        setData: (type: string, value: string) => data.set(type, value),
+      } as unknown as DataTransfer;
+      const drag = (element: Element, type: string, x = 500) => {
+        const event = new dom.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: 400 });
+        Object.defineProperty(event, "dataTransfer", { value: transfer });
+        element.dispatchEvent(event);
+      };
+      const surface = ui.host.querySelector(".workspace-layout-viewport")!;
+      const target = ui.host.querySelector<HTMLElement>(".dv-content-container")!;
+      target.getBoundingClientRect = () => new dom.window.DOMRect(0, 0, 1100, 800);
+      Object.defineProperty(target, "offsetWidth", { value: 1100 });
+      Object.defineProperty(target, "offsetHeight", { value: 800 });
+      writePageDrag(transfer, { id: "d", vaultId: "another-vault" });
+      await act(async () => drag(source, "dragstart"));
+      assert.equal(surface.hasAttribute("data-tab-dragging"), false, "another vault cannot start a workspace drag");
+      writePageDrag(transfer, { id: "d", vaultId: "vault" });
+      await act(async () => drag(source, "dragstart"));
+      assert.equal(surface.hasAttribute("data-tab-dragging"), true, "page drags shield editor content");
+      await act(async () => drag(source, "dragend"));
+      assert.equal(surface.hasAttribute("data-tab-dragging"), false, "cancellation restores editor interaction");
+      const drop = async (x: number) => {
+        await act(async () => {
+          drag(source, "dragstart");
+          drag(target, "dragenter", x);
+          drag(target, "dragover", x);
+          drag(target, "drop", x);
+          drag(source, "dragend");
+        });
+        await settle();
+      };
+      await drop(500);
+      const dId = locationKey({ view: "note", id: "d" });
+      assert.equal(state.active, dId);
+      assert.equal(state.tabs.length, 3, "dropping an unopened page creates a tab");
+      assert.equal(surface.hasAttribute("data-tab-dragging"), false);
+      const d = Array.from(ui.host.querySelectorAll("input")).find(e => e.dataset.page === dId)!;
+      d.value = "keep this editor";
+      await drop(1095);
+      assert.equal(state.tabs.length, 3, "dragging an open page moves its single existing tab");
+      assert.equal(ui.host.querySelectorAll(".dv-groupview").length, 2);
+      assert.ok(d.isConnected);
+      assert.equal(d.value, "keep this editor");
+    } finally { source.remove(); }
+  } finally {
+    await ui?.unmount();
+    globals.forEach((name, index) => {
+      if (previous[index]) Object.defineProperty(globalThis, name, previous[index]!);
+      else Reflect.deleteProperty(globalThis, name);
+    });
+    if (width) Object.defineProperty(HTMLElement.prototype, "clientWidth", width);
+    else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+    if (height) Object.defineProperty(HTMLElement.prototype, "clientHeight", height);
+    else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
+  }
+});
+
+test("page drag data requires a page and vault identity and ignores ordinary text", () => {
+  const values = new Map<string, string>();
+  const transfer = {
+    getData: (type: string) => values.get(type) ?? "",
+    setData: (type: string, value: string) => values.set(type, value),
+  } as unknown as DataTransfer;
+  writePageDrag(transfer, { id: "page", vaultId: "vault" });
+  assert.deepEqual(readPageDrag(transfer), { id: "page", vaultId: "vault" });
+  values.set(PAGE_DRAG_TYPE, "page");
+  assert.equal(readPageDrag(transfer), null);
+  values.set(PAGE_DRAG_TYPE, JSON.stringify({ id: "page" }));
+  assert.equal(readPageDrag(transfer), null);
+  values.delete(PAGE_DRAG_TYPE);
+  values.set("text/plain", "page");
+  assert.equal(readPageDrag(transfer), null);
 });

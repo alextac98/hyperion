@@ -4,7 +4,8 @@ import { VaultSetup } from "./components/VaultSetup";
 import { Dialog } from "./components/Dialog";
 import { requireDesktop } from "./platform/runtime";
 import { useWorkspaceTabs } from "./hooks/useWorkspaceTabs";
-import { WorkspaceTabBar } from "./components/WorkspaceTabBar";
+import { WorkspaceLayout } from "./components/WorkspaceLayout";
+import { layoutPanes } from "./application/workspace-layout";
 import { useMouseNavigation } from "./hooks/useMouseNavigation";
 import { uiStorage } from "./lib/ui-storage";
 import { UpdateControls } from "./components/UpdateControls";
@@ -243,10 +244,12 @@ export default function HyperionApp() {
     setPageSearchQuery("");
     setMoreOpen(false);
     setPageContextMenu(null);
+  }, [tabState.active]);
+  useEffect(() => {
     const ids = new Set(tabState.tabs.map((tab) => tab.id));
     for (const id of tabStores.current.keys())
       if (!ids.has(id)) tabStores.current.delete(id);
-  }, [tabState.active, tabState.tabs]);
+  }, [tabState.tabs]);
   useEffect(() => {
     tabStores.current.clear();
   }, [vaultId]);
@@ -283,15 +286,16 @@ export default function HyperionApp() {
       } else if (event.ctrlKey && event.key === "Tab") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        const index = tabState.tabs.findIndex(
-          (tab) => tab.id === tabState.active,
+        const pane = layoutPanes(tabState.layout).find((pane) =>
+          pane.views.includes(tabState.active),
         );
+        const ids = pane?.views ?? tabState.tabs.map((tab) => tab.id);
+        const index = ids.indexOf(tabState.active);
         const next =
-          (index + (event.shiftKey ? -1 : 1) + tabState.tabs.length) %
-          tabState.tabs.length;
+          (index + (event.shiftKey ? -1 : 1) + ids.length) % ids.length;
         dispatchTab({
           type: "focus",
-          id: tabState.tabs[next].id,
+          id: ids[next],
         });
       } else if (command && event.key.toLowerCase() === "t") {
         event.preventDefault();
@@ -827,7 +831,7 @@ export default function HyperionApp() {
     if (!pageSearchOpen) return;
     const frame = requestAnimationFrame(() => {
       const editor = document.querySelector<HTMLElement>(
-        ".workspace-panel:not([hidden]) .note-workspace .blocksuite-mount",
+        '.workspace-panel[data-workspace-active="true"] .note-workspace .blocksuite-mount',
       );
       const matches = editor ? findTextMatches(editor, pageSearchQuery) : [];
       pageSearchMatchesRef.current = matches;
@@ -1568,45 +1572,6 @@ export default function HyperionApp() {
       </aside>
 
       <section className="workspace">
-        <WorkspaceTabBar
-          state={tabState}
-          dispatch={dispatchTab}
-          disabled={operationBusy}
-          label={({ location }) =>
-            location.view === "note"
-              ? notes.find((note) => note.id === location.id)?.title ||
-                "Untitled"
-              : location.view === "template"
-                ? templates.find((template) => template.id === location.id)
-                    ?.name || "Template"
-                : location.view === "tags"
-                  ? location.tag
-                    ? `#${location.tag}`
-                    : "Tags"
-                  : {
-                      home: "Home",
-                      journal: "Journal",
-                      templates: "Templates",
-                      archive: "Archive",
-                      trash: "Trash",
-                    }[location.view]
-          }
-          icon={({ location }) => {
-            const note =
-              location.view === "note"
-                ? notes.find((note) => note.id === location.id)
-                : undefined;
-            return note ? (
-              <PageIcon note={note} size={14} />
-            ) : location.view === "home" ? (
-              <House size={14} />
-            ) : location.view === "journal" ? (
-              <CalendarBlank size={14} />
-            ) : (
-              <Stack size={14} />
-            );
-          }}
-        />
         <header className="topbar">
           <div className="topbar-left">
             {!sidebarOpen && (
@@ -1808,9 +1773,52 @@ export default function HyperionApp() {
 
         <div className="content-shell">
           <section className="main-content">
-            {tabState.tabs
-              .filter((tab) => tab.visited)
-              .map((tab) => {
+            <WorkspaceLayout
+              state={tabState}
+              dispatch={dispatchTab}
+              disabled={operationBusy}
+              canOpenPage={(page) =>
+                page.vaultId === vaultId &&
+                notes.some(
+                  (note) =>
+                    note.id === page.id && !note.trashed && !note.archived,
+                )
+              }
+              label={({ location }) =>
+                location.view === "note"
+                  ? notes.find((note) => note.id === location.id)?.title ||
+                    "Untitled"
+                  : location.view === "template"
+                    ? templates.find((template) => template.id === location.id)
+                        ?.name || "Template"
+                    : location.view === "tags"
+                      ? location.tag
+                        ? `#${location.tag}`
+                        : "Tags"
+                      : {
+                          home: "Home",
+                          journal: "Journal",
+                          templates: "Templates",
+                          archive: "Archive",
+                          trash: "Trash",
+                        }[location.view]
+              }
+              icon={({ location }) => {
+                const note =
+                  location.view === "note"
+                    ? notes.find((note) => note.id === location.id)
+                    : undefined;
+                return note ? (
+                  <PageIcon note={note} size={14} />
+                ) : location.view === "home" ? (
+                  <House size={14} />
+                ) : location.view === "journal" ? (
+                  <CalendarBlank size={14} />
+                ) : (
+                  <Stack size={14} />
+                );
+              }}
+              render={(tab, visible) => {
                 const location = tab.location;
                 const view = location.view;
                 const activeNote =
@@ -1835,11 +1843,20 @@ export default function HyperionApp() {
                   <div
                     key={`${vaultId}:${tab.id}`}
                     id={`panel-${tab.id}`}
-                    role="tabpanel"
-                    aria-labelledby={`tab-${tab.id}`}
                     className="workspace-panel"
-                    hidden={!selected}
-                    inert={!selected}
+                    hidden={!visible}
+                    inert={!visible}
+                    data-workspace-active={
+                      selected && visible ? "true" : undefined
+                    }
+                    onPointerDownCapture={() => {
+                      if (!selected && !operationBusy)
+                        dispatchTab({ type: "focus", id: tab.id });
+                    }}
+                    onFocusCapture={() => {
+                      if (!selected && !operationBusy)
+                        dispatchTab({ type: "focus", id: tab.id });
+                    }}
                   >
                     {view === "note" && activeNote ? (
                       <>
@@ -1885,7 +1902,7 @@ export default function HyperionApp() {
                           </div>
 
                           <BlockEditor
-                            active={selected && !pageComparison}
+                            active={selected && visible && !pageComparison}
                             key={`${vaultId}:${activeNote.id}`}
                             document={activeNote}
                             preferences={preferences}
@@ -1967,7 +1984,7 @@ export default function HyperionApp() {
                           />
                         </div>
                         <BlockEditor
-                          active={selected && !pageComparison}
+                          active={selected && visible && !pageComparison}
                           key={`${vaultId}:${templateDocumentId(activeTemplate.id)}`}
                           document={{
                             ...activeTemplatePage,
@@ -2013,6 +2030,7 @@ export default function HyperionApp() {
                       />
                     ) : view === "journal" ? (
                       <JournalView
+                        active={selected && visible}
                         entries={journalEntries}
                         onSelect={selectNote}
                         onOpenDate={(dateKey) => void openJournalDate(dateKey)}
@@ -2048,7 +2066,8 @@ export default function HyperionApp() {
                     )}
                   </div>
                 );
-              })}
+              }}
+            />
           </section>
 
           {detailsOpen && view === "note" && activeNote && (

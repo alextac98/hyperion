@@ -8,8 +8,7 @@ import type {
 import type { NoteRecord } from "../lib/local-database";
 import { comparePageOrder, descendantIds } from "../lib/page-tree";
 import { PageIcon } from "./PageIcon";
-
-const PAGE_DRAG_TYPE = "application/x-hyperion-page";
+import { readPageDrag, writePageDrag } from "../application/page-drag";
 
 export function SidebarSectionHeading({
   label,
@@ -92,9 +91,9 @@ export function SidebarOrganizer({
 
   const beginDrag = (event: React.DragEvent<HTMLElement>, noteId: string) => {
     draggedIdRef.current = noteId;
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData(PAGE_DRAG_TYPE, noteId);
-    event.dataTransfer.setData("text/plain", noteId);
+    const note = notes.find((note) => note.id === noteId);
+    if (!note) return;
+    writePageDrag(event.dataTransfer, note);
     const row = event.currentTarget.closest(".organizer-page-row");
     if (row) event.dataTransfer.setDragImage(row, 16, 16);
     setDraggedId(noteId);
@@ -108,9 +107,7 @@ export function SidebarOrganizer({
   };
 
   const draggedPageId = (event: React.DragEvent<HTMLElement>) =>
-    event.dataTransfer.getData(PAGE_DRAG_TYPE) ||
-    event.dataTransfer.getData("text/plain") ||
-    draggedIdRef.current;
+    readPageDrag(event.dataTransfer)?.id || draggedIdRef.current;
 
   const dropPlacement = (
     event: React.DragEvent<HTMLElement>,
@@ -221,7 +218,7 @@ export function SidebarOrganizer({
             onDragStart={(event) => beginDrag(event, note.id)}
             onDragEnd={clearDrag}
             onClick={() => onOpenNote(note.id)}
-            title={`${note.title} · Drag to move · Right-click for actions`}
+            title={`${note.title} · Drag to move or open in a pane · Right-click for actions`}
           >
             <PageIcon
               note={note}

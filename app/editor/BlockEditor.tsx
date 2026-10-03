@@ -30,12 +30,14 @@ export function BlockEditor({
       if (dispatcherRef.current) dispatcherRef.current.active = false;
       return;
     }
+    if (dispatcherRef.current) dispatcherRef.current.active = true;
     const restoreSelection = () => {
       const range = selectionRef.current;
       if (
         !range ||
         !range.startContainer.isConnected ||
-        document.activeElement?.matches('[role="tab"]') ||
+        document.activeElement?.closest('[role="tab"]') ||
+        mountRef.current?.contains(document.activeElement) ||
         document.querySelector("dialog[open]")
       )
         return;
@@ -97,7 +99,7 @@ export function BlockEditor({
         const { viewport, scope } = view.renderPageEditor(store);
         dispatcherRef.current = scope.event;
         mount.replaceChildren(viewport);
-        if (!activeRef.current) scope.event.active = false;
+        scope.event.active = activeRef.current;
         const syncTheme = () => {
           viewport.dataset.theme =
             document.documentElement.dataset.theme ?? "light";

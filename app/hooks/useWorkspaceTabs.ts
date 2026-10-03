@@ -38,9 +38,10 @@ export function useWorkspaceTabs(vaultId: string, ready: boolean) {
       uiStorage.setItem(
         `hyperion:tabs:${vaultId}`,
         JSON.stringify({
-          version: 1,
+          version: 2,
           locations: state.tabs.map((tab) => tab.location),
           active: state.active,
+          layout: state.layout,
         }),
       );
     } catch {
