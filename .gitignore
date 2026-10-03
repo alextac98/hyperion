@@ -3,6 +3,7 @@
 # dependencies
 /node_modules
 /.pnpm-store/
+/.hyperion-dev/
 /.pnp
 .pnp.*
 .yarn/*

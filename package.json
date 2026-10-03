@@ -16,6 +16,7 @@
     "dev:web": "pnpm build:electron && node scripts/run-browser.mjs",
     "dev:desktop": "pnpm build:electron && node scripts/run-electron.mjs",
     "dev:electron": "pnpm dev:desktop",
+    "dev:reset": "pnpm build:electron && node scripts/reset-development.mjs",
     "build": "pnpm build:web",
     "build:web": "pnpm check:web && vite build",
     "build:electron": "node scripts/build-electron.mjs",

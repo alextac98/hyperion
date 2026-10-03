@@ -1,16 +1,24 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
+import { join } from "node:path";
 
-/** Resolve once at launch, so switching branches cannot retarget a running app. */
+/** Resolve once at launch; the worktree owns its data regardless of branch name. */
 export function developmentInstance(cwd: string, branchOverride?: string) {
+  const git = (...args: string[]) =>
+    execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  let root = cwd;
+  try {
+    root = git("rev-parse", "--show-toplevel");
+  } catch {
+    // Explicit branch labels also support standalone development fixtures.
+  }
+  root = realpathSync(root);
   let branch = branchOverride?.trim();
   if (!branch) {
-    const git = (...args: string[]) =>
-      execFileSync("git", args, {
-        cwd,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      }).trim();
     try {
       branch =
         git("branch", "--show-current") ||
@@ -21,9 +29,15 @@ export function developmentInstance(cwd: string, branchOverride?: string) {
       );
     }
   }
-  const slug = branch.replace(/[^a-zA-Z0-9_-]+/g, "-").slice(0, 48) || "branch";
-  const hash = createHash("sha256").update(branch).digest("hex").slice(0, 12);
-  return { branch, key: `${slug}-${hash}` };
+  const directory = join(root, ".hyperion-dev");
+  return {
+    branch,
+    root,
+    directory,
+    profileDirectory: join(directory, "profile"),
+    desktopDirectory: join(directory, "desktop"),
+    browserDirectory: join(directory, "browser"),
+  };
 }
 
 /** The renderer and IPC allowlist must use the same local development origin. */

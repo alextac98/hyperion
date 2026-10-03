@@ -1,9 +1,9 @@
-// Browser ports can be reused by a different branch after a server stops.
-// Keep UI preferences separate even when two branches share that browser origin.
+// Browser ports can be reused by a different worktree after a server stops.
+// The server persists this namespace in its data directory until a reset.
 function keyFor(key: string) {
-  const branch =
-    import.meta.env?.DEV && window.hyperionBrowserDevelopment?.branch;
-  return branch ? `hyperion:browser:${JSON.stringify(branch)}:${key}` : key;
+  const storageKey =
+    import.meta.env?.DEV && window.hyperionBrowserDevelopment?.storageKey;
+  return storageKey ? `hyperion:browser:${storageKey}:${key}` : key;
 }
 export const uiStorage = {
   getItem(key: string) {

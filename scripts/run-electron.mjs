@@ -46,7 +46,9 @@ try {
       );
     });
     environment.HYPERION_DEV_URL = url;
-    console.log(`Hyperion branch: ${instance.branch}\nRenderer: ${url}`);
+    console.log(
+      `Hyperion branch: ${instance.branch}\nWorktree: ${instance.root}\nRenderer: ${url}`,
+    );
     if (!stopping) {
       child = spawn(executable, [".", ...process.argv.slice(2)], {
         cwd: process.cwd(),

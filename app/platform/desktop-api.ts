@@ -80,6 +80,10 @@ export interface HyperionDesktopApi extends HyperionDataApi {
 declare global {
   interface Window {
     hyperionDesktop?: HyperionDesktopApi;
-    hyperionBrowserDevelopment?: { token: string; branch: string };
+    hyperionBrowserDevelopment?: {
+      token: string;
+      branch: string;
+      storageKey: string;
+    };
   }
 }
