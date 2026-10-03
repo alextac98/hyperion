@@ -44,14 +44,36 @@ membership and lifecycle flags are domain records. IDs survive renames and moves
 UI-only preferences such as the open page and sidebar width remain localStorage
 values and are not knowledge data. Vault preferences remain in SQLite.
 
-Workspace tabs use the reducer in `app/application/workspace-tabs.ts` and the
-`useWorkspaceTabs` hook. A destination has one tab per vault; navigation opens or
-focuses it. Tab order and active destination are versioned UI storage, separate
-from knowledge data. Back/Forward remains workspace-wide. Restored tabs mount
-lazily; visited panels remain mounted until closed, preserving editor undo and
-scroll state. Hidden panels are inert and their editor event dispatchers are
-deactivated. Closing a panel does not discard its document's queued saves.
-This prototype does not evict inactive editors, so memory grows with visited tabs.
+Workspace tabs use the reducer in `app/application/workspace-tabs.ts`, the
+`useWorkspaceTabs` hook, and Dockview's MIT-licensed React adapter in
+`app/components/WorkspaceLayout.tsx`. A destination has one tab per vault;
+navigation opens it in the focused pane or focuses its existing tab and pane.
+Drag tabs to reorder, move between panes, or split a pane on any of its four
+edges. Dividers resize adjacent panes. Empty panes collapse. New splits require
+room for two 320×240 panes; when the window shrinks below the layout's minimum
+footprint, the workspace scrolls. `workspace-layout.ts` validates saved layouts
+and computes their minimum size recursively.
+
+Pages dragged from the Notes tree use a shared payload
+containing the page and vault IDs. Dropping into the workspace opens the page at
+that position or moves its existing tab, without changing its parent page.
+During tab/page drags, a transparent hit target over each live editor routes the
+gesture to Dockview, preventing editor insertion indicators and content drops.
+Normal file and text drops continue to reach the editor.
+
+Tab order, active destination, pane selections, splits, and sizes are versioned
+UI storage, separate from knowledge data. Version 1 tab sessions migrate to a
+single pane. Back/Forward remains workspace-wide; Ctrl+Tab cycles tabs within
+the focused pane. F6/Shift+F6 cycles panes. Focused tabs support arrows, Home/End,
+Alt+arrows to reorder, Delete to close, and Shift+F10 for the split/move menu.
+The shared toolbar, Details/History, and page search follow the focused pane.
+
+Restored tabs mount lazily; visited panels remain mounted until closed.
+Dockview's `always` renderer keeps editors in a stable DOM container when moved
+between panes, preserving undo and scroll state. Hidden panels are inert; only
+the focused editor's event dispatcher is active. Closing a panel does not discard
+its document's queued saves. Inactive editors are not evicted, so memory grows
+with visited tabs.
 
 The application shell composes feature views and dialogs from `app/components`.
 Pure page mutation rules live in `app/application/page-operations.ts`; hierarchy

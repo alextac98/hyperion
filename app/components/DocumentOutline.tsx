@@ -29,7 +29,7 @@ export function DocumentOutline({ store }: { store: EditorStore | null }) {
               style={{ paddingLeft: `${(heading.level - 1) * 10}px` }}
               onClick={() => {
                 const editor = document.querySelector<HTMLElement>(
-                  ".workspace-panel:not([hidden]) .note-workspace .blocksuite-mount",
+                  '.workspace-panel[data-workspace-active="true"] .note-workspace .blocksuite-mount',
                 );
                 if (editor) revealHeading(editor, heading.id);
               }}

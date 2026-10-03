@@ -29,10 +29,12 @@ const JOURNAL_MONTHS = [
 ];
 
 export function JournalView({
+  active = true,
   entries,
   onSelect,
   onOpenDate,
 }: {
+  active?: boolean;
   entries: NoteRecord[];
   onSelect: (id: string) => void;
   onOpenDate: (dateKey: string) => void;
@@ -112,6 +114,7 @@ export function JournalView({
   });
 
   useEffect(() => {
+    if (!active) return;
     const focusJournalSearch = (event: KeyboardEvent) => {
       if (
         !(event.metaKey || event.ctrlKey) ||
@@ -125,7 +128,7 @@ export function JournalView({
     };
     window.addEventListener("keydown", focusJournalSearch);
     return () => window.removeEventListener("keydown", focusJournalSearch);
-  }, []);
+  }, [active]);
 
   useEffect(() => {
     if (!monthPickerOpen) return;
