@@ -9,6 +9,8 @@ const result = await build({
   export * from './blocks/document.ts';
   export * from './blocks/retired.ts';
   export * from './blocks/date/definition.ts';
+  export * from './blocks/meeting/definition.ts';
+  export * from './blocks/meeting/notes.ts';
   export * from './blocks/date/inline.ts';
   export { remapDocument, restoreDocument, documentMetadata, assetReferences } from './electron/data-format.ts';
   export { pageChanges } from './app/lib/page-diff.ts';
@@ -28,6 +30,10 @@ const {
   Y,
   createBlockRegistry,
   dateDefinition,
+  meetingDefinition,
+  initialMeetingDate,
+  migrateMeetingNotes,
+  recordingKeys,
   isCalendarDate,
   parseCalendarDate,
   localToday,
@@ -585,4 +591,110 @@ test("import and restore convert legacy dates and preserve adjacent inline dates
     restored.destroy();
   }
   doc.destroy();
+});
+
+
+test("new meetings use the journal's calendar date or today's local date", () => {
+  const now = new Date(2030, 5, 5, 23, 59);
+  assert.equal(initialMeetingDate(undefined, now), "2030-06-05");
+  assert.equal(initialMeetingDate("2024-02-29", now), "2024-02-29");
+  assert.equal(initialMeetingDate("2031-12-31", now), "2031-12-31");
+  assert.equal(initialMeetingDate("", now), "2030-06-05");
+  assert.equal(initialMeetingDate("2025-02-29", now), "2030-06-05");
+  assert.equal(
+    initialMeetingDate(undefined, new Date(2030, 5, 6, 0, 1)),
+    "2030-06-06",
+  );
+});
+
+test("meeting text, recording assets, and reserved summary survive portable data and history", () => {
+  const props = { ...meetingDefinition.defaults(), title: "Weekly planning", date: "2030-06-15", notes: "**Ship** the draft", transcript: "Alex: ready to review", references: { assets: { "audio-00000001": "second-asset", "audio-00000000": "first-asset" } }, recording: { name: "planning.webm", mimeType: "audio/webm", durationSeconds: 12, startedAt: "2030-06-15T10:00:00Z", state: "ready" } };
+  assert.equal(meetingDefinition.validate(props), true);
+  const sharedReferences = new Y.Map(); const sharedDoc = new Y.Doc(); sharedDoc.getMap("root").set("references", sharedReferences); sharedReferences.set("assets", new Y.Map(Object.entries(props.references.assets)));
+  assert.equal(meetingDefinition.validate({ ...props, references: sharedReferences }), true); sharedDoc.destroy();
+  assert.deepEqual(recordingKeys(props), ["first-asset", "second-asset"]);
+  const block = { id: "meeting", flavour: "hyperion:meeting", version: 1, props, children: [] };
+  assert.equal(isBlockAvailable(block), true);
+  assert.match(projectBlock(block).text, /Weekly planning\n2030-06-15\n\*\*Ship\*\* the draft\nAlex: ready to review/);
+  assert.deepEqual(projectBlock(block).outline, { title: "Weekly planning", level: 2 });
+  const doc = fixture("hyperion:meeting");
+  const value = doc.getMap("blocks").get("date");
+  for (const [key, prop] of Object.entries(props)) value.set(`prop:${key}`, prop);
+  assert.deepEqual(new Set(assetReferences(Y.encodeStateAsUpdate(doc))), new Set(["first-asset", "second-asset"]));
+  const restored = new Y.Doc();
+  Y.applyUpdate(restored, restoreDocument(Y.encodeStateAsUpdate(doc), Y.encodeStateAsUpdate(doc)));
+  assert.deepEqual(readBlock("date", restored.getMap("blocks").get("date")).props.references, props.references);
+  assert.equal(documentMetadata(Y.encodeStateAsUpdate(doc)).body.includes("Alex: ready to review"), true);
+  doc.destroy(); restored.destroy();
+});
+
+test("meeting validation rejects invalid dates, recordings, and asset slots", () => {
+  const props = meetingDefinition.defaults();
+  assert.equal(meetingDefinition.validate(props), true);
+  for (const patch of [{ date: "2030-02-30" }, { notes: 3 }, { recording: {} }, { references: { assets: ["key"] } }, { references: { assets: { recording: 7 } } }, { recording: { name: "x", mimeType: "audio/webm", startedAt: "now", durationSeconds: -1, state: "ready" } }]) {
+    assert.equal(meetingDefinition.validate({ ...props, ...patch }), false);
+  }
+});
+
+test("legacy meeting notes become editable blocks once, preserving text and existing children", () => {
+  const doc = fixture("hyperion:meeting");
+  const blocks = doc.getMap("blocks");
+  const meeting = blocks.get("date");
+  const legacy = "**Launch** on Friday\n\n- Follow up\n";
+  for (const [key, value] of Object.entries({ ...meetingDefinition.defaults(), notes: legacy }))
+    meeting.set(`prop:${key}`, value);
+  // A pre-existing block ID must never be overwritten by initialization.
+  blocks.set("date:notes", new Y.Map([
+    ["sys:flavour", "affine:note"], ["sys:version", 7],
+    ["sys:children", Y.Array.from(["future-child"])], ["prop:title", "Keep me"],
+  ]));
+  meeting.get("sys:children").push(["date:notes"]);
+  const futureNote = blocks.get("date:notes").toJSON();
+  assert.equal(migrateMeetingNotes(blocks), true);
+  assert.equal(meeting.get("prop:notes"), "");
+  assert.deepEqual(blocks.get("date:notes").toJSON(), futureNote);
+  const noteId = meeting.get("sys:children").get(0);
+  const note = blocks.get(noteId);
+  assert.equal(note.get("sys:flavour"), "affine:note");
+  const paragraphs = note.get("sys:children").toArray().map(id => blocks.get(id));
+  assert.equal(paragraphs.map(block => block.get("prop:text").toString()).join("\n"), legacy);
+  const before = Y.encodeStateAsUpdate(doc);
+  assert.equal(migrateMeetingNotes(blocks), false);
+  assert.deepEqual(Y.encodeStateAsUpdate(doc), before);
+  // Rich notes and their formatting follow the existing portable-data/history path.
+  paragraphs[0].get("prop:text").format(0, 10, { bold: true });
+  const restored = new Y.Doc();
+  Y.applyUpdate(restored, restoreDocument(before, Y.encodeStateAsUpdate(doc)));
+  assert.deepEqual(restored.getMap("blocks").get(paragraphs[0].get("sys:id")).get("prop:text").toDelta(), paragraphs[0].get("prop:text").toDelta());
+  assert.match(readDocumentMetadata(blocks).body, /Launch/);
+  doc.destroy(); restored.destroy();
+});
+
+test("meeting note initialization preserves rich children and leaves future or invalid blocks intact", () => {
+  for (const version of [1, 2]) {
+    const doc = fixture("hyperion:meeting", version);
+    const blocks = doc.getMap("blocks");
+    const meeting = blocks.get("date");
+    for (const [key, value] of Object.entries(meetingDefinition.defaults()))
+      meeting.set(`prop:${key}`, value);
+    if (version === 2) {
+      const before = Y.encodeStateAsUpdate(doc);
+      assert.equal(migrateMeetingNotes(blocks), false);
+      assert.deepEqual(Y.encodeStateAsUpdate(doc), before);
+    } else {
+      assert.equal(migrateMeetingNotes(blocks), true);
+      const note = blocks.get(meeting.get("sys:children").get(0));
+      const paragraph = blocks.get(note.get("sys:children").get(0));
+      paragraph.get("prop:text").insert(0, "Rich notes", { italic: true });
+      meeting.set("prop:notes", "Additional legacy notes");
+      assert.equal(migrateMeetingNotes(blocks), true);
+      assert.equal(note.get("sys:children").length, 2);
+      assert.deepEqual(paragraph.get("prop:text").toDelta(), [{ insert: "Rich notes", attributes: { italic: true } }]);
+      meeting.set("prop:notes", 7);
+      const before = Y.encodeStateAsUpdate(doc);
+      assert.equal(migrateMeetingNotes(blocks), false);
+      assert.deepEqual(Y.encodeStateAsUpdate(doc), before);
+    }
+    doc.destroy();
+  }
 });

@@ -21,6 +21,23 @@ const pageExtensions = viewManager.get("page");
 export function renderPageEditor(store: Store) {
   const scope = new BlockStdScope({ store, extensions: [...supportedExtensions(pageExtensions), ...customBlockViews(store), ...customBlockInsertion(), inlineDateSpec, inlineDateMenu] });
   configureInlineDates(scope);
+  // RangeBinding can finish an earlier selection update after notes are hidden.
+  // Keep that delayed page update from clearing or replacing a native field's caret.
+  const meetingControlFocused = () => {
+    const active = document.activeElement;
+    return active instanceof Element && scope.host.contains(active) && active.matches(
+      '.meeting-title, .meeting-date, textarea[aria-label="Meeting transcript"]',
+    );
+  };
+  const range = scope.range;
+  const clearRange = range.clear.bind(range);
+  range.clear = () => {
+    if (!meetingControlFocused()) clearRange();
+  };
+  const syncTextSelection = range.syncTextSelectionToRange.bind(range);
+  range.syncTextSelectionToRange = selection => {
+    if (!meetingControlFocused()) syncTextSelection(selection);
+  };
   const getView = scope.getView.bind(scope);
   scope.getView = flavour => retiredBlockFlavours.has(flavour) ? null : getView(flavour) ?? literal`hyperion-unavailable-block`;
   applyInsertionPolicy(scope);
@@ -49,6 +66,9 @@ export function renderPageEditor(store: Store) {
         (!event.metaKey && !event.ctrlKey) ||
         event.altKey ||
         event.shiftKey ||
+        (event.target instanceof Element && event.target.closest(
+          'input, textarea, select, [data-range-sync-exclude="true"]',
+        )) ||
         !event.composedPath().some((target) => target === editorContainer)
       ) {
         return;
@@ -62,8 +82,12 @@ export function renderPageEditor(store: Store) {
         model?: { text?: { length: number } };
       };
 
+      const selectionContainer = event.target instanceof Element
+        ? event.target.closest(".meeting-notes-editor") ?? editorContainer
+        : editorContainer;
+
       const textBlocks = Array.from(
-        editorContainer.querySelectorAll<HTMLElement>(".inline-editor"),
+        selectionContainer.querySelectorAll<HTMLElement>(".inline-editor"),
       ).reduce<TextBlockElement[]>((blocks, inlineEditor) => {
         const block = inlineEditor.closest<HTMLElement>(
           "[data-block-id]",

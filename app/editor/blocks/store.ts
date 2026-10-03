@@ -2,20 +2,44 @@ import { inlineDateAdapters } from "../inline-date-adapters";
 import { migrateInlineDates } from "../../../blocks/date/inline";
 import {
   BlockSchemaExtension,
+  BlockSchemaIdentifier,
   defineBlockSchema,
   type Doc,
+  type ExtensionType,
 } from "@blocksuite/affine/store";
 import { AffineSchemas } from "@blocksuite/affine/schemas";
+import { NoteBlockModel, NoteBlockSchema } from "@blocksuite/affine/model";
 import { blockRegistry } from "../../../blocks/registry";
 import {
   removeRetiredBlocks,
   retiredBlockFlavours,
 } from "../../../blocks/retired";
 import { migrateBlocks } from "../../../blocks/document";
+import { migrateMeetingNotes } from "../../../blocks/meeting/notes";
 
-export function blockStoreExtensions() {
+class PageNoteBlockModel extends NoteBlockModel {
+  override isPageBlock() {
+    // Backspace at the start of meeting notes must not merge them into the page title.
+    return this.parent?.flavour !== "hyperion:meeting" && super.isPageBlock();
+  }
+}
+
+export function blockStoreExtensions(): ExtensionType[] {
   return [
     ...inlineDateAdapters,
+    {
+      setup(container) {
+        // A regular note accepts all page blocks and keeps upstream editing behavior.
+        container.override(BlockSchemaIdentifier("affine:note"), () => ({
+          ...NoteBlockSchema,
+          model: {
+            ...NoteBlockSchema.model,
+            parent: [...NoteBlockSchema.model.parent!, "hyperion:meeting"],
+            toModel: () => new PageNoteBlockModel(),
+          },
+        }));
+      },
+    },
     ...[...blockRegistry.values()].map((definition) =>
       BlockSchemaExtension(
         defineBlockSchema({
@@ -54,6 +78,7 @@ export function openBlockStore(doc: Doc) {
   removeRetiredBlocks(doc.yBlocks);
   migrateInlineDates(doc.yBlocks);
   migrateBlocks(doc.yBlocks);
+  migrateMeetingNotes(doc.yBlocks);
   const unknown = new Map<string, number>();
   for (const value of doc.yBlocks.values()) {
     const flavour = value.get("sys:flavour");

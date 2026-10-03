@@ -5,7 +5,10 @@ import { observeMetadata } from "./metadata-subscription";
 
 type Props = {
   active?: boolean;
-  document: Pick<NoteRecord, "id" | "vaultId" | "title" | "body">;
+  document: Pick<
+    NoteRecord,
+    "id" | "vaultId" | "title" | "body" | "kind" | "journalDate"
+  >;
   preferences: VaultPreferences;
   onChange: (patch: Pick<NoteRecord, "title" | "body">) => void;
   onReady?: () => void;
@@ -159,6 +162,12 @@ export function BlockEditor({
         {
           "--hyperion-editor-font-size": `${preferences.editorFontSize}px`,
         } as React.CSSProperties
+      }
+      data-meeting-tab={preferences.meetingDefaultTab}
+      data-journal-date={
+        editorDocument.kind === "journal"
+          ? editorDocument.journalDate ?? undefined
+          : undefined
       }
       spellCheck={preferences.spellcheck}
     >

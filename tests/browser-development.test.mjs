@@ -26,6 +26,11 @@ async function fixture(context, options = {}) {
       root,
       configFile: false,
       logLevel: "silent",
+      server: {
+        allowedHosts: (options.allowedOrigins ?? []).map(
+          (origin) => new URL(origin).hostname,
+        ),
+      },
       plugins: [
         browserDevelopmentPlugin({
           directory,
@@ -396,4 +401,66 @@ test("SSH forwarding can use a different loopback host and port", async (context
     ).status,
     403,
   );
+});
+
+test("explicit remote origins permit same-origin sessions and reject mismatched hosts and origins", async (context) => {
+  const origin = "http://desktop.example:3000";
+  const api = await fixture(context, { allowedOrigins: [origin] });
+  const clientId = randomUUID();
+  const headers = { Host: "desktop.example:3000", Origin: origin };
+  assert.equal(
+    (await api.request("acquire", { clientId }, headers)).status,
+    200,
+  );
+  assert.equal(
+    (
+      await api.request(
+        "rpc",
+        { clientId, method: "storageInfo", args: [] },
+        headers,
+      )
+    ).status,
+    200,
+  );
+  for (const invalid of [
+    { Host: "desktop.example:3001", Origin: origin },
+    { Host: "desktop.example:3000", Origin: "http://other.example:3000" },
+    { Host: "other.example:3000", Origin: "http://other.example:3000" },
+  ])
+    assert.equal(
+      (await api.request("heartbeat", { clientId }, invalid)).status,
+      403,
+    );
+  assert.equal(
+    (await api.request("heartbeat", { clientId, token: "wrong" }, headers))
+      .status,
+    403,
+  );
+  await api.request("release", { clientId }, headers);
+  assert.equal((await client(api).acquire()).status, 200);
+});
+
+test("remote HTTP bootstrap supplies UUIDs when the native secure-context API is absent", async (context) => {
+  const { runInNewContext } = await import("node:vm");
+  const api = await fixture(context);
+  const html = await (await fetch(api.url)).text();
+  const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const browser = {
+    window: {},
+    crypto: {
+      getRandomValues(bytes) {
+        for (let index = 0; index < bytes.length; index++) bytes[index] = index;
+        return bytes;
+      },
+    },
+  };
+  runInNewContext(source, browser);
+  assert.equal(
+    browser.crypto.randomUUID(),
+    "00010203-0405-4607-8809-0a0b0c0d0e0f",
+  );
+  const native = () => "native";
+  browser.crypto.randomUUID = native;
+  runInNewContext(source, browser);
+  assert.equal(browser.crypto.randomUUID, native);
 });

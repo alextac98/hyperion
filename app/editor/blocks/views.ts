@@ -11,6 +11,8 @@ import { html } from "lit";
 import { EmbedOptionProvider } from "@blocksuite/affine/shared/services";
 import { blockRegistry, isBlockAvailable } from "../../../blocks/registry";
 import { readBlock } from "../../../blocks/document";
+import { migrateMeetingNotes } from "../../../blocks/meeting/notes";
+import { initialMeetingDate } from "../../../blocks/meeting/definition";
 import { UnavailableBlock } from "./unavailable";
 import { retiredBlockFlavours, canInsertSlashItem } from "./insertion-policy";
 
@@ -107,12 +109,22 @@ export function customBlockInsertion() {
               )
                 return;
               store.captureSync();
+              const props = definition.defaults();
+              if (definition.flavour === "hyperion:meeting")
+                props.date = initialMeetingDate(
+                  std.host.closest<HTMLElement>("[data-journal-date]")?.dataset
+                    .journalDate,
+                );
               const id = store.addBlock(
                 definition.flavour,
-                definition.defaults(),
+                props,
                 parent,
                 parent.children.indexOf(model) + 1,
               );
+              if (definition.flavour === "hyperion:meeting")
+                store.transact(() =>
+                  migrateMeetingNotes(store.doc.yBlocks, id),
+                );
               store.captureSync();
               activateInsertedBlock(std, id);
             },
