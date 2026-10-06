@@ -1,22 +1,103 @@
 .content-shell { position: relative; }
 
-.page-context-toggle {
-  display: inline-flex;
-  min-height: 32px;
+.note-menu-count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stay in the page margin while the editor scrolls, without taking text space. */
+.mini-document-outline {
+  position: sticky;
+  top: 24px;
+  z-index: 8;
+  display: none;
+  width: 44px;
+  height: 0;
+  margin: 0 14px 0 auto;
+}
+.mini-outline-trigger {
+  display: grid;
+  width: 44px;
+  min-height: 44px;
+  padding: 9px 8px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+.mini-outline-marks {
+  display: grid;
+  width: 28px;
+  height: clamp(20px, calc(var(--mini-outline-count) * 10px), 180px);
+  grid-template-rows: repeat(var(--mini-outline-count), minmax(0, 1fr));
   align-items: center;
-  gap: 6px;
-  padding: 6px 9px;
-  border-radius: var(--radius-control);
+  justify-items: end;
+}
+.mini-outline-mark {
+  display: block;
+  width: calc(32px - var(--outline-level) * 4px);
+  height: 1px;
+  max-height: 100%;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-faint) 42%, transparent);
+}
+.mini-outline-mark[data-level="1"],
+.mini-outline-mark[data-level="2"] { height: 2px; }
+.mini-outline-mark[data-current="true"] { background: var(--accent); }
+.mini-outline-trigger:hover .mini-outline-mark,
+.mini-outline-trigger:focus-visible .mini-outline-mark { background: var(--text-soft); }
+.mini-outline-trigger:hover .mini-outline-mark[data-current="true"],
+.mini-outline-trigger:focus-visible .mini-outline-mark[data-current="true"] { background: var(--accent); }
+.mini-outline-popover {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 280px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+.mini-outline-popover[hidden] { display: none; }
+.mini-outline-title { padding: 13px 14px 8px; color: var(--text-faint); font-size: var(--font-size-caption); }
+.mini-outline-list {
+  max-height: min(360px, var(--mini-outline-list-height, 60vh));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 0 7px 7px;
+  list-style: none;
+}
+.mini-outline-list button {
+  display: block;
+  width: 100%;
+  min-height: 30px;
+  padding: 7px 9px 7px calc(9px + (var(--outline-level) - 1) * 12px);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-soft);
   font-size: var(--font-size-caption);
+  line-height: 1.4;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
-.page-context-toggle:hover { background: var(--hover); }
-.page-context-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
-.page-context-toggle em { font-style: normal; font-variant-numeric: tabular-nums; }
+.mini-outline-list button[data-level="1"] { color: var(--text); font-size: var(--font-size-ui); font-weight: 600; }
+.mini-outline-list button[data-level="2"] { color: var(--text); font-weight: 550; }
+.mini-outline-list button:hover,
+.mini-outline-list button:focus-visible { background: var(--hover); color: var(--text); }
+.mini-outline-list button[aria-current="location"] { background: var(--accent-soft); color: var(--accent-text); }
+
+/* Only show marks when the pane has enough margin for the chosen text width. */
+@container (min-width: 900px) {
+  .mini-document-outline { display: block; }
+}
+@container (max-width: 1139px) {
+  .blocksuite-mount.width-wide > .mini-document-outline { display: none; }
+}
 
 .page-context-drawer {
-  z-index: 15;
+  /* Keep the drawer below the toolbar so its page menu remains clickable. */
+  z-index: 11;
   display: flex;
   width: 290px;
   min-width: 0;
@@ -54,13 +135,9 @@
 .page-tag-form button { display: grid; width: 27px; height: 27px; flex: 0 0 auto; place-items: center; background: transparent; color: var(--text-soft); }
 .page-tag-form button:disabled { opacity: .5; cursor: default; }
 
-@media (max-width: 1120px) {
-  .page-context-toggle > span { display: none; }
-  .page-context-toggle { padding-inline: 8px; }
-}
 @media (max-width: 900px) {
   .page-context-drawer { position: absolute; inset: 0 0 0 auto; width: min(320px, 100%); box-shadow: var(--shadow-lg); }
-  .page-context-scrim { position: absolute; z-index: 14; inset: 0; display: block; width: 100%; height: 100%; background: color-mix(in srgb, var(--text) 12%, transparent); }
+  .page-context-scrim { position: absolute; z-index: 10; inset: 0; display: block; width: 100%; height: 100%; background: color-mix(in srgb, var(--text) 12%, transparent); }
 }
 @media (max-width: 480px) {
   .topbar { gap: 4px; }
@@ -68,8 +145,8 @@
   .page-tags { padding-inline: 24px; }
 }
 @media (pointer: coarse) {
+  .mini-outline-list button { min-height: 44px; }
   .page-context-header .icon-button { width: 40px; height: 40px; }
-  .page-context-toggle { min-height: 40px; }
   .page-tags .tag-pill { height: 34px; padding-right: 3px; }
   .page-tags .tag-pill button { width: 30px; height: 30px; margin: 0; }
   .page-tags .add-tag { height: 36px; }

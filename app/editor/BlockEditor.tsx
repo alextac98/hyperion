@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { NoteRecord, VaultPreferences } from "../lib/local-database";
 import { openEditor, type EditorStore } from "./editor-client";
 import { observeMetadata } from "./metadata-subscription";
+import { MiniDocumentOutline } from "../components/MiniDocumentOutline";
 
 type Props = {
   active?: boolean;
@@ -86,6 +87,7 @@ export function BlockEditor({
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [metadataMount, setMetadataMount] = useState<HTMLElement | null>(null);
+  const [editorStore, setEditorStore] = useState<EditorStore | null>(null);
 
   useEffect(() => {
     callbacksRef.current = { onChange, onReady, onStoreReady };
@@ -142,6 +144,7 @@ export function BlockEditor({
           callbacksRef.current.onChange(metadata);
         }
         setLoading(false);
+        setEditorStore(store);
         callbacksRef.current.onStoreReady?.(store);
         callbacksRef.current.onReady?.();
       })
@@ -195,6 +198,9 @@ export function BlockEditor({
             Try again
           </button>
         </div>
+      )}
+      {!loading && !error && (
+        <MiniDocumentOutline store={editorStore} editorRef={mountRef} active={active} />
       )}
       <div ref={mountRef} className="blocksuite-mount-inner" />
       {metadataMount && belowTitle && createPortal(belowTitle, metadataMount)}

@@ -1205,6 +1205,10 @@ export default function HyperionApp() {
   };
 
   const openPageContext = (next: PageContextView) => {
+    // The menu item unmounts, so keep a connected trigger for drawer focus return.
+    document.querySelector<HTMLButtonElement>(".topbar-more > button")?.focus({
+      preventScroll: true,
+    });
     if (pageContext.view !== next) togglePageContext(next);
     else setMoreOpen(false);
   };
@@ -1742,35 +1746,6 @@ export default function HyperionApp() {
                 Retry save
               </button>
             )}
-            {view === "note" && (
-              <>
-                <button
-                  className="page-context-toggle"
-                  aria-label="Toggle outline"
-                  title="Outline"
-                  aria-pressed={pageContext.view === "outline"}
-                  aria-controls="page-context-drawer"
-                  onClick={() => togglePageContext("outline")}
-                >
-                  <ListBullets size={18} />
-                  <span>Outline</span>
-                </button>
-                <button
-                  className="page-context-toggle"
-                  aria-label="Toggle connections"
-                  title={
-                    connectionCount ? `Connections (${connectionCount})` : "Connections"
-                  }
-                  aria-pressed={pageContext.view === "connections"}
-                  aria-controls="page-context-drawer"
-                  onClick={() => togglePageContext("connections")}
-                >
-                  <Link size={18} />
-                  <span>Connections</span>
-                  {connectionCount > 0 && <em>{connectionCount}</em>}
-                </button>
-              </>
-            )}
             {view === "note" && activeNote && (
               <div className="more-wrap topbar-more">
                 <button
@@ -1784,6 +1759,17 @@ export default function HyperionApp() {
                 </button>
                 {moreOpen && (
                   <div className="popover note-menu">
+                    <button onClick={() => openPageContext("outline")}>
+                      <ListBullets size={17} /> Outline
+                    </button>
+                    <button onClick={() => openPageContext("connections")}>
+                      <Link size={17} /> Connections
+                      {connectionCount > 0 && (
+                        <span className="note-menu-count" aria-hidden="true">
+                          {connectionCount}
+                        </span>
+                      )}
+                    </button>
                     <button onClick={() => openPageContext("history")}>
                       <ClockCounterClockwise size={17} /> Version history
                     </button>
