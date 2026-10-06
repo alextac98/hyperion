@@ -1199,11 +1199,6 @@ export default function HyperionApp() {
     pageContext.toggle(next);
   };
 
-  const dismissPageContext = () => {
-    setComparison(null);
-    closePageContext();
-  };
-
   const openPageContext = (next: PageContextView) => {
     // The menu item unmounts, so keep a connected trigger for drawer focus return.
     document.querySelector<HTMLButtonElement>(".topbar-more > button")?.focus({
@@ -2139,7 +2134,7 @@ export default function HyperionApp() {
               pinned={pageContext.pinned}
               busy={operationBusy}
               onPin={pageContext.togglePin}
-              onClose={dismissPageContext}
+              onClose={closePageContext}
             >
               {pageContext.view === "outline" ? (
                 <DocumentOutline store={editorStore} />

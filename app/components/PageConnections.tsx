@@ -1,6 +1,7 @@
 import { ArrowRight, X } from "@phosphor-icons/react";
 import type { NoteRecord } from "../lib/local-database";
 import { pageIconText } from "../lib/local-database";
+import { pageLinkMatches } from "../lib/page-links";
 import { PageIcon } from "./PageIcon";
 
 export function pageConnections(note: NoteRecord, notes: NoteRecord[]) {
@@ -16,16 +17,16 @@ export function pageConnections(note: NoteRecord, notes: NoteRecord[]) {
 }
 
 export function backlinkExcerpt(source: NoteRecord, targetId: string) {
-  const text = source.body.replace(/\s+/g, " ").trim();
-  for (const link of source.links) {
-    if (link.targetId !== targetId || link.kind !== "inline") continue;
-    const index = text.indexOf(`[[${link.label}]]`);
-    if (index < 0) continue;
-    const start = Math.max(0, index - 50);
-    const end = Math.min(text.length, index + link.label.length + 85);
-    return `${start ? "…" : ""}${text.slice(start, end)}${end < text.length ? "…" : ""}`;
-  }
-  return "";
+  const labels = new Set(source.links
+    .filter((link) => link.targetId === targetId && link.kind === "inline")
+    .map((link) => link.label.trim().toLocaleLowerCase()));
+  const match = pageLinkMatches(source.body).find((link) =>
+    labels.has(link.label.toLocaleLowerCase()));
+  if (!match) return "";
+  const start = Math.max(0, match.index - 50);
+  const end = Math.min(source.body.length, match.index + match.length + 80);
+  const passage = source.body.slice(start, end).replace(/\s+/g, " ").trim();
+  return `${start ? "…" : ""}${passage}${end < source.body.length ? "…" : ""}`;
 }
 
 export function PageConnections({

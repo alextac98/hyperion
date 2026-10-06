@@ -12,6 +12,7 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 import { act, StrictMode, useState } from "react";
 import { createBlankNote } from "../app/lib/local-database";
+import { reconcilePageLinks } from "../app/lib/page-links";
 import { movePage, patchPage } from "../app/application/page-operations";
 import { buildNoteSearchIndex, searchNotes } from "../app/lib/note-search";
 import { ancestorPath, descendantIds } from "../app/lib/page-tree";
@@ -762,6 +763,24 @@ test("connections show the actual backlink passage and omit empty sections", asy
   assert.equal(ui.host.querySelectorAll("section").length, 1);
   assert.equal(ui.host.textContent!.includes("Links from this page"), false);
   await ui.unmount();
+});
+
+test("backlink excerpts preserve recognized padded and repeated-whitespace wiki links", async () => {
+  const target = page("target", "Project  notes");
+  for (const mention of ["[[ Project  notes ]]", "[[\tProject  notes\t]]", "[[PROJECT  NOTES]]"]) {
+    const source = reconcilePageLinks({
+      ...page("source", "Source"),
+      body: `An unrelated [[Other]] comes first.\nReturn to ${mention} for the next experiment.`,
+    }, [target]);
+    assert.equal(source.links[0]?.targetId, target.id);
+    const passage = `Return to ${mention.replace(/\s+/g, " ")} for the next experiment.`;
+    assert.ok(backlinkExcerpt(source, target.id).includes(passage));
+    const ui = await mount(<PageConnections note={target} notes={[target, source]} onSelect={() => {}} onChange={() => {}} />);
+    try { assert.ok(ui.host.querySelector(".connection-text small")?.textContent?.includes(passage)); }
+    finally { await ui.unmount(); }
+  }
+  const invalid = reconcilePageLinks({ ...page("source"), body: "Not a link: [[Project\n notes]]" }, [target]);
+  assert.equal(backlinkExcerpt(invalid, target.id), "");
 });
 
 test("page tags normalize additions, reject duplicates, and support keyboard cancellation", async () => {

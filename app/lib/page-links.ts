@@ -16,8 +16,16 @@ function uniqueStrings(values: string[]) {
   });
 }
 
+export function pageLinkMatches(body: string) {
+  return [...body.matchAll(WIKI_LINK_PATTERN)].map((match) => ({
+    label: match[1].trim(),
+    index: match.index,
+    length: match[0].length,
+  })).filter((match) => match.label);
+}
+
 export function pageLinkLabels(body: string) {
-  return uniqueStrings([...body.matchAll(WIKI_LINK_PATTERN)].map((match) => match[1].trim()));
+  return uniqueStrings(pageLinkMatches(body).map((match) => match.label));
 }
 
 export function normalizePageIdentity(note: NoteRecord): NoteRecord {
