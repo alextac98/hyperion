@@ -57,6 +57,7 @@ import type {
 import { movePage, patchPage } from "./application/page-operations";
 import { ComposerDialog } from "./components/ComposerDialog";
 import { HyperionMark } from "./components/HyperionMark";
+import { DevelopmentBlueprint } from "./components/DevelopmentBlueprint";
 import { JournalView } from "./components/JournalView";
 import {
   ArchiveView,
@@ -132,6 +133,7 @@ const DEFAULT_SIDEBAR_WIDTH = 272;
 const MIN_SIDEBAR_WIDTH = 224;
 const MAX_SIDEBAR_WIDTH = 420;
 const SIDEBAR_WIDTH_STORAGE_KEY = "hyperion:sidebar-width";
+const IS_DEVELOPMENT_BUILD = import.meta.env?.DEV ?? false;
 
 function clampSidebarWidth(width: number) {
   return Math.round(
@@ -1333,8 +1335,12 @@ export default function HyperionApp() {
           onClick={() => setSidebarOpen(false)}
         />
       )}
-      <aside className={`sidebar${sidebarOpen ? " sidebar-open" : ""}`}>
+      <aside
+        className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${IS_DEVELOPMENT_BUILD ? " sidebar-development" : ""}`}
+        aria-label={IS_DEVELOPMENT_BUILD ? "Sidebar (development build)" : undefined}
+      >
         <div className="workspace-header">
+          {IS_DEVELOPMENT_BUILD && <DevelopmentBlueprint />}
           <div className="vault-switcher-wrap">
             <button
               className="workspace-button"

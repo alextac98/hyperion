@@ -1,0 +1,109 @@
+/* The blueprint scene identifies dev servers and fades into the current theme. */
+.sidebar-development {
+  --development-blue: #174b84;
+  --development-ink: #f4faff;
+  --development-ink-soft: #d6e7f4;
+}
+
+/* Inherit the normal header's height and padding; this is decoration only. */
+.sidebar-development .workspace-header {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    var(--development-blue) 0%,
+    var(--development-blue) 86%,
+    var(--panel) 100%
+  );
+}
+
+.sidebar-development .workspace-button,
+.sidebar-development .workspace-header > .icon-button {
+  position: relative;
+  color: var(--development-ink);
+}
+
+.sidebar-development .workspace-copy span {
+  color: var(--development-ink-soft);
+}
+
+.sidebar-development .workspace-button:hover,
+.sidebar-development .workspace-header > .icon-button:hover {
+  background: #f4faff1a;
+}
+
+.sidebar-development .workspace-button:focus-visible,
+.sidebar-development .workspace-header > .icon-button:focus-visible {
+  outline-color: var(--development-ink);
+}
+
+.development-blueprint {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-image:
+    linear-gradient(#d5eeff16 1px, transparent 1px),
+    linear-gradient(90deg, #d5eeff16 1px, transparent 1px);
+  background-size: 16px 16px;
+  mask-image: linear-gradient(180deg, #000 0%, #000 52%, transparent 100%);
+  pointer-events: none;
+}
+
+.development-blueprint::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--development-blue) 0%,
+    #174b84e8 34%,
+    transparent 69%
+  );
+  content: "";
+}
+
+.development-blueprint-window {
+  position: absolute;
+  top: 5px;
+  right: 29px;
+  display: grid;
+  width: 52px;
+  height: 30px;
+  place-items: center;
+  transform: rotate(-7deg);
+  border: 1px solid #bce4ff;
+  border-radius: 3px;
+  color: #c8eaff;
+}
+
+.development-blueprint-window::before {
+  position: absolute;
+  inset: 6px 0 auto;
+  height: 1px;
+  background: #bce4ff;
+  content: "";
+}
+
+.development-blueprint-window svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 6px;
+}
+
+.development-blueprint-dimension {
+  position: absolute;
+  top: 44px;
+  right: 25px;
+  width: 70px;
+  height: 6px;
+  border-top: 1px solid #bce4ff88;
+  border-right: 1px solid #bce4ff88;
+  border-left: 1px solid #bce4ff88;
+}
+
+.development-blueprint-square {
+  position: absolute;
+  top: 4px;
+  right: 10px;
+  width: 14px;
+  height: 14px;
+  border: 1px dashed #bce4ff99;
+}
