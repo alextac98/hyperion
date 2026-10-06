@@ -97,6 +97,7 @@ export type VaultPreferences = {
   editorWidth: "compact" | "comfortable" | "wide";
   spellcheck: boolean;
   meetingDefaultTab: "notes" | "transcript" | "summary";
+  // Retained for compatibility with existing vault exports. Page context is UI state.
   showDetails: boolean;
   notesView: NotesViewPreference;
   defaultTemplateIds: Record<TemplatePurpose, string | null>;
@@ -129,7 +130,7 @@ export const DEFAULT_PREFERENCES: Omit<VaultPreferences, "vaultId"> = {
   editorWidth: "comfortable",
   spellcheck: true,
   meetingDefaultTab: "notes",
-  showDetails: true,
+  showDetails: false,
   notesView: "table",
   defaultTemplateIds: { note: null, journal: null },
 };

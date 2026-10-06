@@ -194,21 +194,6 @@
   background: var(--line);
 }
 
-.details-panel {
-  width: 260px;
-  flex: 0 0 auto;
-  overflow-y: auto;
-  padding: 28px 18px;
-  border-left: 1px solid var(--line);
-  background: var(--bg);
-}
-
-.details-panel section + section {
-  margin-top: 30px;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
-}
-
 .details-title {
   display: flex;
   align-items: center;
@@ -319,51 +304,9 @@
   white-space: nowrap;
 }
 
-.details-tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.details-tag-list form {
-  min-width: 100px;
-  flex: 1;
-}
-
-.details-tag-list input {
-  width: 100%;
-  height: 27px;
-  padding: 0 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text);
-  font-size: var(--font-size-caption);
-  outline: 0;
-}
-
-.details-tag-list input:focus,
 .details-link-select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
-.details-add-button {
-  display: inline-flex;
-  height: 27px;
-  align-items: center;
-  gap: 4px;
-  padding: 0 7px;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-faint);
-  font-size: var(--font-size-caption);
-}
-
-.details-add-button:hover {
-  background: var(--hover);
-  color: var(--text);
 }
 
 .details-link-list {
@@ -438,60 +381,6 @@
   font-size: var(--font-size-caption);
   outline: 0;
 }
-
-.details-empty {
-  display: flex;
-  min-height: 118px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 15px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius-control);
-  text-align: center;
-}
-
-.details-empty p {
-  margin: 10px 0 4px;
-  color: var(--text-soft);
-  font-size: var(--font-size-ui);
-  font-weight: 560;
-}
-
-.details-empty small {
-  max-width: 180px;
-  overflow: hidden;
-  color: var(--text-faint);
-  font-size: var(--font-size-caption);
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.details-inline-empty {
-  margin: 0 2px;
-  color: var(--text-faint);
-  font-size: var(--font-size-caption);
-  line-height: 1.55;
-}
-
-.linked-rings {
-  position: relative;
-  width: 28px;
-  height: 18px;
-}
-
-.linked-rings i {
-  position: absolute;
-  top: 2px;
-  width: 17px;
-  height: 13px;
-  border: 1.5px solid var(--text-faint);
-  border-radius: 50%;
-}
-
-.linked-rings i:first-child { left: 0; }
-.linked-rings i:last-child { right: 0; }
 
 .details-properties dl,
 .details-properties dd {

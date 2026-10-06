@@ -591,9 +591,8 @@ void (async () => {
     );
     await saved();
     // A read-only history preview uses the same registry and disables edits.
-    await js(
-      `Array.from(document.querySelectorAll('.details-tabs button')).find(button=>button.textContent==='History').click()`,
-    );
+    await js(`document.querySelector('[aria-label="More page actions"]').click()`);
+    await js(`Array.from(document.querySelectorAll('.note-menu button')).find(button=>button.textContent.includes('Version history')).click()`);
     await until(
       () =>
         js(

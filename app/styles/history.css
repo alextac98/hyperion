@@ -36,11 +36,9 @@
 .settings-content { overflow-y: auto; min-height: 360px; }
 
 /* Page-scoped history stays beside the document. */
-.details-tabs, .comparison-tabs { display: flex; gap: 4px; padding: 4px; border-radius: var(--radius-control); background: var(--panel); }
-.details-tabs { margin-bottom: 22px; }
-.details-tabs button, .comparison-tabs button { flex: 1; padding: 8px 10px; border: 0; border-radius: 5px; color: var(--text-soft); background: transparent; font-size: var(--font-size-ui); }
-.details-tabs button[aria-pressed="true"], .comparison-tabs button[aria-pressed="true"] { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px #0001; }
-.details-panel.history-open { display: block; width: 280px; }
+.comparison-tabs { display: flex; gap: 4px; padding: 4px; border-radius: var(--radius-control); background: var(--panel); }
+.comparison-tabs button { flex: 1; padding: 8px 10px; border: 0; border-radius: 5px; color: var(--text-soft); background: transparent; font-size: var(--font-size-ui); }
+.comparison-tabs button[aria-pressed="true"] { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px #0001; }
 .page-history { font-size: var(--font-size-ui); }
 .history-retention, .page-history nav > p { color: var(--text-faint); line-height: 1.6; }
 .page-history form { display: grid; gap: 8px; margin: 18px 0 24px; }

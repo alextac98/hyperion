@@ -1,19 +1,9 @@
-import { useEffect, useState } from "react";
-import {
-  readDocumentOutline,
-  revealHeading,
-  type OutlineEntry,
-} from "../editor/document-outline";
+import { revealHeading } from "../editor/document-outline";
 import type { EditorStore } from "../editor/editor-client";
+import { useDocumentOutline } from "../hooks/useDocumentOutline";
 
 export function DocumentOutline({ store }: { store: EditorStore | null }) {
-  const [headings, setHeadings] = useState<OutlineEntry[]>([]);
-  useEffect(() => {
-    const refresh = () => setHeadings(readDocumentOutline(store?.root ?? null));
-    refresh();
-    const subscription = store?.slots.blockUpdated.subscribe(refresh);
-    return () => subscription?.unsubscribe();
-  }, [store]);
+  const headings = useDocumentOutline(store);
 
   return (
     <section>

@@ -2,12 +2,17 @@ import { SidebarOrganizer } from "../app/components/SidebarOrganizer";
 import { UpdateControls } from "../app/components/UpdateControls";
 import type { UpdateState } from "../electron/updates";
 import type { HyperionDesktopApi } from "../app/platform/desktop-api";
-import { NoteDetails } from "../app/components/NoteDetails";
+import { PageConnections, backlinkExcerpt } from "../app/components/PageConnections";
+import { PageTags } from "../app/components/PageTags";
+import { MiniDocumentOutline } from "../app/components/MiniDocumentOutline";
+import type { EditorStore } from "../app/editor/editor-client";
+import { usePageContext } from "../app/hooks/usePageContext";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 import { act, StrictMode, useState } from "react";
 import { createBlankNote } from "../app/lib/local-database";
+import { reconcilePageLinks } from "../app/lib/page-links";
 import { movePage, patchPage } from "../app/application/page-operations";
 import { buildNoteSearchIndex, searchNotes } from "../app/lib/note-search";
 import { ancestorPath, descendantIds } from "../app/lib/page-tree";
@@ -362,7 +367,155 @@ test("outline navigation scrolls to the selected block and focuses its text", ()
   revealHeading(root, "heading");
   assert.ok(scrolled);
   assert.equal(document.activeElement?.textContent, "Heading");
+  assert.equal(window.getSelection()?.anchorNode?.textContent, "Heading");
+  assert.equal(window.getSelection()?.isCollapsed, true);
   root.remove();
+});
+
+test("outline navigation focuses BlockSuite's outer editable root and moves its caret", () => {
+  const root = document.createElement("div");
+  root.innerHTML = '<affine-page-root contenteditable="true" tabindex="0"><div data-block-id="target"><div contenteditable="true">Target heading</div></div></affine-page-root>';
+  document.body.append(root);
+  let options: ScrollIntoViewOptions | undefined;
+  root.querySelector<HTMLElement>('[data-block-id]')!.scrollIntoView = value => { options = value as ScrollIntoViewOptions; };
+  const previousMatchMedia = window.matchMedia;
+  window.matchMedia = (() => ({ matches: true })) as unknown as typeof window.matchMedia;
+  try {
+    revealHeading(root, "target");
+    assert.equal(document.activeElement, root.firstElementChild);
+    assert.equal(window.getSelection()?.anchorNode?.textContent, "Target heading");
+    assert.equal(window.getSelection()?.isCollapsed, true);
+    assert.equal(options?.behavior, "auto", "navigation respects reduced motion");
+  } finally { root.remove(); window.matchMedia = previousMatchMedia; }
+});
+
+function outlineStore(levels: number[]) {
+  const listeners = new Set<() => void>();
+  const children = levels.map((level, index): OutlineBlock => ({
+    id: `heading-${index}`,
+    flavour: "affine:paragraph",
+    props: { type: `h${level}`, text: `Heading ${index + 1}` },
+  }));
+  const root: OutlineBlock = { id: "root", flavour: "affine:page", children };
+  const store = {
+    root,
+    slots: { blockUpdated: { subscribe(callback: () => void) {
+      listeners.add(callback);
+      return { unsubscribe: () => listeners.delete(callback) };
+    } } },
+  } as unknown as EditorStore;
+  return { store, children, listeners, refresh: () => listeners.forEach(callback => callback()) };
+}
+
+test("mini outline preserves every heading level and updates when headings change or disappear", async () => {
+  const source = outlineStore([1, 2, 3, 4, 5, 6]);
+  const ui = await mount(<StrictMode><MiniDocumentOutline store={source.store} editorRef={{ current: null }} active={false} /></StrictMode>);
+  try {
+    const marks = () => Array.from(ui.host.querySelectorAll<HTMLElement>(".mini-outline-mark"));
+    assert.deepEqual(marks().map(mark => mark.dataset.level), ["1", "2", "3", "4", "5", "6"]);
+    const labels = Array.from(ui.host.querySelectorAll<HTMLButtonElement>(".mini-outline-list button"));
+    assert.deepEqual(labels.map(button => button.getAttribute("aria-label")), [1, 2, 3, 4, 5, 6].map((level, index) => `Heading ${index + 1}, heading level ${level}`));
+    assert.equal(source.listeners.size, 1, "Strict Mode keeps one subscription");
+    await act(async () => {
+      source.children[2].props = { type: "h1", text: "Renamed section" };
+      source.refresh();
+    });
+    assert.equal(marks()[2].dataset.level, "1");
+    assert.equal(ui.host.querySelectorAll(".mini-outline-list button")[2].textContent, "Renamed section");
+    await act(async () => { source.children.splice(1); source.refresh(); });
+    assert.equal(ui.host.querySelector("nav"), null, "one heading does not need a mini outline");
+  } finally { await ui.unmount(); }
+  assert.equal(source.listeners.size, 0);
+});
+
+test("mini outline supports focus, Escape, outside dismissal and navigation in its own editor", async () => {
+  const source = outlineStore([2, 4]);
+  const other = document.createElement("div");
+  other.innerHTML = '<div data-block-id="heading-1"><div contenteditable="true" tabindex="0">Other editor</div></div>';
+  const editor = document.createElement("div");
+  editor.innerHTML = '<div data-block-id="heading-1"><div contenteditable="true" tabindex="0">Selected section</div></div>';
+  document.body.append(other, editor);
+  let scrolled = 0;
+  (other.firstElementChild as HTMLElement).scrollIntoView = () => assert.fail("navigated the wrong editor");
+  (editor.firstElementChild as HTMLElement).scrollIntoView = () => { scrolled++; };
+  const ui = await mount(<MiniDocumentOutline store={source.store} editorRef={{ current: editor }} active={false} />);
+  try {
+    const trigger = ui.host.querySelector<HTMLButtonElement>(".mini-outline-trigger")!;
+    const popover = ui.host.querySelector<HTMLElement>(".mini-outline-popover")!;
+    assert.equal(popover.hidden, true);
+    await act(async () => trigger.focus());
+    assert.equal(popover.hidden, false);
+    const entries = ui.host.querySelectorAll<HTMLButtonElement>(".mini-outline-list button");
+    await act(async () => { entries[1].focus(); key(entries[1], "Escape"); });
+    assert.equal(popover.hidden, true);
+    assert.equal(document.activeElement, trigger);
+    await act(async () => trigger.click());
+    assert.equal(popover.hidden, false);
+    await act(async () => document.body.dispatchEvent(new dom.window.Event("pointerdown", { bubbles: true })));
+    assert.equal(popover.hidden, true);
+    await act(async () => { trigger.click(); entries[1].click(); });
+    assert.equal(scrolled, 1);
+    assert.equal(document.activeElement?.textContent, "Selected section");
+    assert.equal(popover.hidden, true);
+    assert.equal(entries[1].getAttribute("aria-current"), "location");
+  } finally { await ui.unmount(); other.remove(); editor.remove(); }
+});
+
+test("mini outline follows scrolling and releases its observers when inactive", async () => {
+  const source = outlineStore([1, 2, 3]);
+  const previousObserver = window.ResizeObserver;
+  let observing = 0;
+  let resize = () => {};
+  window.ResizeObserver = class {
+    targets = 0;
+    constructor(callback: () => void) { resize = callback; }
+    observe() { observing++; this.targets++; }
+    disconnect() { observing -= this.targets; this.targets = 0; }
+    unobserve() {}
+  } as unknown as typeof ResizeObserver;
+  const scroller = document.createElement("div");
+  scroller.style.overflowY = "auto";
+  const editor = document.createElement("div");
+  editor.innerHTML = source.children.map(block => `<div data-block-id="${block.id}"></div>`).join("");
+  scroller.append(editor);
+  document.body.append(scroller);
+  let offset = 0;
+  Array.from(editor.children).forEach((block, index) => {
+    block.getBoundingClientRect = () => ({ top: 120 + index * 300 - offset } as DOMRect);
+  });
+  let setActive!: (active: boolean) => void;
+  function Harness() {
+    const [active, change] = useState(true);
+    setActive = change;
+    return <MiniDocumentOutline store={source.store} editorRef={{ current: editor }} active={active} />;
+  }
+  const ui = await mount(<Harness />);
+  const nextFrame = () => new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
+  const current = () => ui.host.querySelector(".mini-outline-list [aria-current]")?.textContent;
+  try {
+    await act(nextFrame);
+    assert.equal(current(), "Heading 1");
+    await act(async () => { offset = 700; scroller.dispatchEvent(new dom.window.Event("scroll")); await nextFrame(); });
+    assert.equal(current(), "Heading 3");
+    await act(async () => { offset = 0; resize(); await nextFrame(); });
+    assert.equal(current(), "Heading 1");
+    assert.equal(observing, 2);
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 600 });
+    await act(async () => {
+      offset = 100;
+      scroller.scrollTop = 400;
+      scroller.dispatchEvent(new dom.window.Event("scroll"));
+      await nextFrame();
+    });
+    assert.equal(current(), "Heading 3", "the final section stays current at the bottom of the page");
+    await act(async () => ui.host.querySelector<HTMLButtonElement>(".mini-outline-trigger")!.click());
+    await act(async () => setActive(false));
+    assert.equal(observing, 0);
+    assert.equal(ui.host.querySelector<HTMLElement>(".mini-outline-popover")!.hidden, true);
+    await act(async () => { offset = 700; scroller.dispatchEvent(new dom.window.Event("scroll")); await nextFrame(); });
+    assert.equal(current(), "Heading 3");
+  } finally { await ui.unmount(); scroller.remove(); window.ResizeObserver = previousObserver; }
 });
 
 test("leaving an editor before the debounce expires publishes its final metadata once", () => {
@@ -522,7 +675,7 @@ test("in-page search keeps correct offsets after Unicode case folding and treats
   );
 });
 
-test("details remove the source page's manual link without changing the target", async () => {
+test("connections remove the source page's manual link without changing the target", async () => {
   const target = page("target", "Target");
   const source = {
     ...page("source", "Source"),
@@ -532,10 +685,9 @@ test("details remove the source page's manual link without changing the target",
   };
   const changes: unknown[] = [];
   const ui = await mount(
-    <NoteDetails
+    <PageConnections
       note={source}
       notes={[source, target]}
-      store={null}
       onSelect={() => {}}
       onChange={(patch) => changes.push(patch)}
     />,
@@ -548,6 +700,115 @@ test("details remove the source page's manual link without changing the target",
   assert.deepEqual(changes, [{ links: [] }]);
   assert.equal(source.links.length, 1);
   await ui.unmount();
+});
+
+test("page context closes on navigation, persists pins per vault, and remembers closing after restart", async () => {
+  localStorage.clear();
+  let context!: ReturnType<typeof usePageContext>;
+  let navigate!: (id: string) => void;
+  let switchVault!: (id: string) => void;
+  function Harness() {
+    const [vaultId, setVaultId] = useState("context-a");
+    const [noteId, setNoteId] = useState("one");
+    navigate = setNoteId;
+    switchVault = setVaultId;
+    context = usePageContext(vaultId, noteId, true);
+    return <span>{context.view ?? "closed"}</span>;
+  }
+  let ui = await mount(<StrictMode><Harness /></StrictMode>);
+  try {
+    assert.equal(context.view, null);
+    await act(async () => context.toggle("outline"));
+    assert.equal(context.view, "outline");
+    await act(async () => navigate("two"));
+    assert.equal(context.view, null);
+    await act(async () => navigate("one"));
+    assert.equal(context.view, null, "returning to a page does not reopen unpinned context");
+    await act(async () => context.toggle("connections"));
+    await act(async () => context.togglePin());
+    await act(async () => navigate("two"));
+    assert.equal(context.view, "connections");
+    await ui.unmount();
+    ui = await mount(<StrictMode><Harness /></StrictMode>);
+    assert.equal(context.view, "connections");
+    assert.equal(context.pinned, true);
+    await act(async () => switchVault("context-b"));
+    assert.equal(context.view, null);
+    await act(async () => context.toggle("history"));
+    await act(async () => context.togglePin());
+    await act(async () => switchVault("context-a"));
+    assert.equal(context.view, "connections");
+    await act(async () => context.close());
+    await ui.unmount();
+    ui = await mount(<StrictMode><Harness /></StrictMode>);
+    assert.equal(context.view, null);
+    assert.equal(context.pinned, false);
+    await act(async () => switchVault("context-b"));
+    assert.equal(context.view, "history", "closing one vault's context preserves another vault's pin");
+    await act(async () => context.toggle("outline"));
+    assert.equal(context.pinned, true, "switching the pinned view keeps it pinned");
+    await act(async () => context.toggle("outline"));
+    assert.equal(context.view, null);
+    assert.equal(context.pinned, false);
+  } finally { await ui.unmount(); localStorage.clear(); }
+});
+
+test("connections show the actual backlink passage and omit empty sections", async () => {
+  const target = page("target", "Target");
+  const source = { ...page("source", "Source"), body: "Connect this question to [[Target]] before returning to the project.", links: [{ targetId: target.id, label: target.title, kind: "inline" as const }] };
+  assert.match(backlinkExcerpt(source, target.id), /question to \[\[Target\]\]/);
+  assert.equal(backlinkExcerpt({ ...source, links: [{ ...source.links[0], kind: "manual" }] }, target.id), "");
+  const ui = await mount(<PageConnections note={target} notes={[target, source]} onSelect={() => {}} onChange={() => {}} />);
+  assert.match(ui.host.textContent!, /Connect this question to \[\[Target\]\]/);
+  assert.equal(ui.host.querySelectorAll("section").length, 1);
+  assert.equal(ui.host.textContent!.includes("Links from this page"), false);
+  await ui.unmount();
+});
+
+test("backlink excerpts preserve recognized padded and repeated-whitespace wiki links", async () => {
+  const target = page("target", "Project  notes");
+  for (const mention of ["[[ Project  notes ]]", "[[\tProject  notes\t]]", "[[PROJECT  NOTES]]"]) {
+    const source = reconcilePageLinks({
+      ...page("source", "Source"),
+      body: `An unrelated [[Other]] comes first.\nReturn to ${mention} for the next experiment.`,
+    }, [target]);
+    assert.equal(source.links[0]?.targetId, target.id);
+    const passage = `Return to ${mention.replace(/\s+/g, " ")} for the next experiment.`;
+    assert.ok(backlinkExcerpt(source, target.id).includes(passage));
+    const ui = await mount(<PageConnections note={target} notes={[target, source]} onSelect={() => {}} onChange={() => {}} />);
+    try { assert.ok(ui.host.querySelector(".connection-text small")?.textContent?.includes(passage)); }
+    finally { await ui.unmount(); }
+  }
+  const invalid = reconcilePageLinks({ ...page("source"), body: "Not a link: [[Project\n notes]]" }, [target]);
+  assert.equal(backlinkExcerpt(invalid, target.id), "");
+});
+
+test("page tags normalize additions, reject duplicates, and support keyboard cancellation", async () => {
+  const changes: Partial<import("../app/lib/local-database").NoteRecord>[] = [];
+  const note = { ...page("tagged"), tags: ["ideas"] };
+  const ui = await mount(<PageTags note={note} onChange={patch => changes.push(patch)} />);
+  try {
+    const add = ui.host.querySelector<HTMLButtonElement>('[aria-label="Add tag"]')!;
+    const enter = async (value: string) => {
+      await act(async () => add.click());
+      const input = ui.host.querySelector<HTMLInputElement>('input')!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(input, value);
+        input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+      });
+      await act(async () => ui.host.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })));
+    };
+    await enter(" #Reading ");
+    assert.deepEqual(changes, [{ tags: ["ideas", "reading"] }]);
+    await enter("IDEAS");
+    assert.equal(changes.length, 1);
+    await act(async () => add.click());
+    await act(async () => key(ui.host.querySelector("input")!, "Escape"));
+    assert.equal(ui.host.querySelector("input"), null);
+    assert.equal(document.activeElement, add);
+    await act(async () => ui.host.querySelector<HTMLButtonElement>('[aria-label="Remove tag ideas"]')!.click());
+    assert.deepEqual(changes[1], { tags: [] });
+  } finally { await ui.unmount(); }
 });
 
 test("editor initialization overlaps view loading and reuses preloaded modules", async () => {

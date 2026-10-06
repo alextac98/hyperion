@@ -82,7 +82,7 @@ export function makeStarterPages(vaultId: string): StarterPage[] {
         },
         {
           type: "text",
-          text: "Next: [[Connect your ideas]]. You can open linked pages from Page links in the details panel.",
+          text: "Next: [[Connect your ideas]]. Open Connections to follow linked pages.",
         },
       ],
     },
@@ -97,7 +97,7 @@ export function makeStarterPages(vaultId: string): StarterPage[] {
         { type: "h2", text: "Leave a trail" },
         {
           type: "text",
-          text: "Write a page title inside double brackets, like [[Make it yours]]. Open the details panel to follow it under Page links. On the other page, Backlinks shows which pages point to it.",
+          text: "Write a page title inside double brackets, like [[Make it yours]]. Open Connections to follow it under Links from this page. On the other page, Pages that link here shows which pages point to it.",
         },
         {
           type: "text",

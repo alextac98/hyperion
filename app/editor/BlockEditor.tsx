@@ -1,7 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { NoteRecord, VaultPreferences } from "../lib/local-database";
 import { openEditor, type EditorStore } from "./editor-client";
 import { observeMetadata } from "./metadata-subscription";
+import { MiniDocumentOutline } from "../components/MiniDocumentOutline";
 
 type Props = {
   active?: boolean;
@@ -13,6 +15,7 @@ type Props = {
   onChange: (patch: Pick<NoteRecord, "title" | "body">) => void;
   onReady?: () => void;
   onStoreReady?: (store: EditorStore) => void;
+  belowTitle?: ReactNode;
 };
 
 export function BlockEditor({
@@ -22,6 +25,7 @@ export function BlockEditor({
   onChange,
   onReady,
   onStoreReady,
+  belowTitle,
 }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef(active);
@@ -82,6 +86,8 @@ export function BlockEditor({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [metadataMount, setMetadataMount] = useState<HTMLElement | null>(null);
+  const [editorStore, setEditorStore] = useState<EditorStore | null>(null);
 
   useEffect(() => {
     callbacksRef.current = { onChange, onReady, onStoreReady };
@@ -100,6 +106,10 @@ export function BlockEditor({
       .then(({ runtime, view, store }) => {
         if (cancelled) return;
         const { viewport, scope } = view.renderPageEditor(store);
+        const metadataSlot = document.createElement("div");
+        metadataSlot.className = "page-metadata-slot";
+        viewport.querySelector("doc-title")?.after(metadataSlot);
+        setMetadataMount(metadataSlot);
         dispatcherRef.current = scope.event;
         mount.replaceChildren(viewport);
         scope.event.active = activeRef.current;
@@ -134,6 +144,7 @@ export function BlockEditor({
           callbacksRef.current.onChange(metadata);
         }
         setLoading(false);
+        setEditorStore(store);
         callbacksRef.current.onStoreReady?.(store);
         callbacksRef.current.onReady?.();
       })
@@ -157,7 +168,7 @@ export function BlockEditor({
 
   return (
     <div
-      className={`blocksuite-mount width-${preferences.editorWidth}${loading ? " editor-loading" : ""}`}
+      className={`blocksuite-mount width-${preferences.editorWidth}${loading ? " editor-loading" : ""}${belowTitle ? " has-page-metadata" : ""}`}
       style={
         {
           "--hyperion-editor-font-size": `${preferences.editorFontSize}px`,
@@ -188,7 +199,11 @@ export function BlockEditor({
           </button>
         </div>
       )}
+      {!loading && !error && (
+        <MiniDocumentOutline store={editorStore} editorRef={mountRef} active={active} />
+      )}
       <div ref={mountRef} className="blocksuite-mount-inner" />
+      {metadataMount && belowTitle && createPortal(belowTitle, metadataMount)}
     </div>
   );
 }
