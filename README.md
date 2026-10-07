@@ -17,7 +17,7 @@ bundled Chromium runtime. SQLite stores all knowledge data locally.
 ## Current capabilities
 
 - BlockSuite editor with rich text, slash commands,
-  headings, lists, to-dos, callouts, code, LaTeX, tables, inline dates,
+  headings, lists, to-dos, callouts, columns, code, LaTeX, tables, inline dates,
   images, attachments, bookmarks, and supported embeds
 - First-run setup with a vault name, save location, and optional editable starter guide
 - Independent vault folders with creation, opening, switching, moving, JSON backup,

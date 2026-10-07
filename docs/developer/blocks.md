@@ -40,6 +40,27 @@ Respect `store.readonly` for history previews. Group a discrete action with
 Use accessible labels and keyboard-operable controls. Views can implement
 `onInsert()` to focus or open their controls.
 
+## Columns interaction
+
+`/columns` inserts a layout with two equal-width columns. Each column contains
+ordinary page blocks, including rich text, headings, lists, tables and attachments.
+Use **Add column** for up to four columns. **Remove last column** moves all of
+its blocks into the previous column, preserving their order, IDs, formatting and
+nested content. Both actions support undo/redo. Drag blocks between columns with
+the usual grip, or move the entire layout together. Click an empty column to start
+writing in it again. Columns stack vertically when the available block width is
+520px or less, including narrow workspace panes and nested layouts.
+
+The `hyperion:columns` definition has ordered `affine:note` children; their content
+uses the existing persistence, search, outline, history and portable data paths.
+Nested notes cannot merge into the page title on Backspace. Layout controls are
+hidden in read-only history and drag previews.
+
+`pnpm test:columns` exercises insertion, column limits, content-preserving removal,
+dragging between columns, undo/redo, native typing, responsive layout, indexing,
+reopening and read-only history. It requires a graphical desktop session (or Xvfb
+on Linux) and runs as part of `pnpm test:integration`.
+
 ## Meeting interaction
 
 `/meeting` inserts a `hyperion:meeting` block with a title/date and three tabs:

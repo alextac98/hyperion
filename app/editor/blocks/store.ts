@@ -19,8 +19,8 @@ import { migrateMeetingNotes } from "../../../blocks/meeting/notes";
 
 class PageNoteBlockModel extends NoteBlockModel {
   override isPageBlock() {
-    // Backspace at the start of meeting notes must not merge them into the page title.
-    return this.parent?.flavour !== "hyperion:meeting" && super.isPageBlock();
+    // Nested notes must not merge into the page title when Backspace is pressed.
+    return this.parent?.flavour === "affine:page" && super.isPageBlock();
   }
 }
 
@@ -34,7 +34,11 @@ export function blockStoreExtensions(): ExtensionType[] {
           ...NoteBlockSchema,
           model: {
             ...NoteBlockSchema.model,
-            parent: [...NoteBlockSchema.model.parent!, "hyperion:meeting"],
+            parent: [
+              ...NoteBlockSchema.model.parent!,
+              "hyperion:meeting",
+              "hyperion:columns",
+            ],
             toModel: () => new PageNoteBlockModel(),
           },
         }));
