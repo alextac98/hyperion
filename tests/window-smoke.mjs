@@ -445,6 +445,7 @@ async function run() {
     );
 
     // A return acknowledges the destination before removing the page tab/window.
+    source.hide();
     await js(
       destination,
       `${editor}.doc.root.props.title.insert('Returned ', 0)`,
@@ -465,6 +466,7 @@ async function run() {
       ),
     );
     assert.equal(source.isDestroyed(), false);
+    assert.equal(source.isVisible(), true, "Returning a page must reveal its primary window");
     console.log(
       "PASS: returning a page saves its pending edit, focuses the primary, and closes the empty page window",
     );

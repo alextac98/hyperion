@@ -310,6 +310,9 @@ function registerDesktopHandlers() {
       throw new Error("The main window is busy. Try again once it finishes.");
     state.detaching = true;
     try {
+      // Resume rendering before awaiting the destination's acknowledgement.
+      if (primary.isMinimized()) primary.restore();
+      primary.show();
       await new Promise<void>((resolve, reject) => {
         const token = randomUUID();
         const timeout = setTimeout(() => {
