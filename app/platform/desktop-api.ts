@@ -1,4 +1,9 @@
 import type { UpdateState } from "../../electron/updates";
+import type {
+  DetachedTabRequest,
+  EditorUpdate,
+  WindowSession,
+} from "../../electron/window-session";
 import type { NoteRecord, VaultRecord } from "../lib/local-database";
 export type RevisionCapture = PageRevision & {
   captureStatus: "created" | "named" | "reused";
@@ -61,6 +66,13 @@ export interface HyperionDataApi {
 
 export interface HyperionDesktopApi extends HyperionDataApi {
   openFeedback(): Promise<void>;
+  windowSession(): Promise<WindowSession>;
+  detachTab(request: DetachedTabRequest): Promise<void>;
+  workspaceReady(vaultId: string): Promise<void>;
+  onEditorUpdate(callback: (update: EditorUpdate) => void): () => void;
+  onRepositoryChanged(
+    callback: (request: RepositoryRequest) => void,
+  ): () => void;
   onNavigate(callback: (direction: "back" | "forward") => void): () => void;
   updateState(): Promise<UpdateState>;
   checkForUpdates(): Promise<UpdateState>;

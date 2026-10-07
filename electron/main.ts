@@ -1,4 +1,12 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  screen,
+  shell,
+  type IpcMainInvokeEvent,
+} from "electron";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
@@ -11,6 +19,11 @@ import type { RepositoryRequest } from "./database.js";
 import { VaultLibrary } from "./vault-library.js";
 import { developmentInstance, developmentRendererUrl } from "./development.js";
 import { feedbackIssueUrl } from "./feedback.js";
+import {
+  detachedTabRequest,
+  type WindowSession,
+  type DetachedTabRequest,
+} from "./window-session.js";
 
 const updatePreview = !app.isPackaged && Boolean(process.env.HYPERION_UPDATE_PREVIEW);
 const useBuiltRenderer = app.isPackaged || process.env.HYPERION_TEST_RENDERER === "1";
@@ -74,10 +87,82 @@ const channels = {
 let mainWindow: BrowserWindow | null = null;
 let database: VaultLibrary | null = null;
 let updateCheckStarted = false;
-let closeToken: string | null = null;
-let closeApproved = false;
-let quitting = false;
-let rendererReady = false;
+type WindowState = {
+  session: WindowSession;
+  rendererReady: boolean;
+  closeApproved: boolean;
+  pending?: {
+    token: string;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  };
+  ready?: { resolve: () => void; reject: (error: Error) => void };
+  detaching: boolean;
+};
+const windows = new Map<BrowserWindow, WindowState>();
+let quitApproved = false;
+let preparingQuit = false;
+
+function senderWindow(event: IpcMainInvokeEvent) {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window || !windows.has(window))
+    throw new Error("Unknown application window");
+  return window;
+}
+function senderState(event: IpcMainInvokeEvent) {
+  return windows.get(senderWindow(event))!;
+}
+function senderVault(event: IpcMainInvokeEvent) {
+  return senderState(event).session.vaultId ?? undefined;
+}
+function broadcast(channel: string, value: unknown, except?: BrowserWindow) {
+  for (const window of windows.keys())
+    if (window !== except && !window.isDestroyed())
+      window.webContents.send(channel, value);
+}
+function requireExclusiveVault(
+  vaultId: string | undefined,
+  owner: BrowserWindow,
+) {
+  if (
+    vaultId &&
+    [...windows].some(
+      ([window, state]) =>
+        window !== owner && state.session.vaultId === vaultId,
+    )
+  )
+    throw new Error(
+      "This operation removes or replaces saved data. Close the other windows showing this vault and try again.",
+    );
+}
+function prepareWindow(window: BrowserWindow): Promise<void> {
+  const state = windows.get(window);
+  if (!state || state.closeApproved || !state.rendererReady)
+    return Promise.resolve();
+  if (state.pending)
+    return Promise.reject(
+      new Error(
+        "This window is already preparing to close. Try again once saving finishes.",
+      ),
+    );
+  return new Promise((resolve, reject) => {
+    const token = randomUUID();
+    state.pending = { token, resolve, reject };
+    window.webContents.send(channels.prepareClose, token);
+  });
+}
+async function prepareAllWindows() {
+  if ([...windows.values()].some((state) => state.detaching))
+    throw new Error("Wait for the tab to finish moving before quitting.");
+  const results = await Promise.allSettled(
+    [...windows.keys()].map(prepareWindow),
+  );
+  const failure = results.find((result) => result.status === "rejected");
+  if (failure?.status === "rejected") {
+    for (const state of windows.values()) state.closeApproved = false;
+    throw failure.reason;
+  }
+}
 
 function showAppMessageBox(options: Electron.MessageBoxOptions) {
   return mainWindow
@@ -94,11 +179,24 @@ const updateDriver = updatePreview ? createUpdatePreview(
     app.quit();
   },
 ) : autoUpdater;
-const updates = createUpdates(updateDriver, updatePreview && previewInstalled ? previewVersion : app.getVersion(),
-  updatePreview ? null : !app.isPackaged ? "Updates are available in the installed desktop app."
-    : process.platform === "linux" && !process.env.APPIMAGE ? "Run the AppImage to use in-app updates." : null,
-  state => { if (state.status === "error") closeApproved = false; if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("hyperion:update-state", { ...state, preview: updatePreview }); });
-let installRequested = false;
+const updates = createUpdates(
+  updateDriver,
+  updatePreview && previewInstalled ? previewVersion : app.getVersion(),
+  updatePreview
+    ? null
+    : !app.isPackaged
+      ? "Updates are available in the installed desktop app."
+      : process.platform === "linux" && !process.env.APPIMAGE
+        ? "Run the AppImage to use in-app updates."
+        : null,
+  (state) => {
+    if (state.status === "error") {
+      quitApproved = false;
+      for (const state of windows.values()) state.closeApproved = false;
+    }
+    broadcast("hyperion:update-state", { ...state, preview: updatePreview });
+  },
+);
 function registerAutoUpdater() {
   if (updateCheckStarted) return;
   updateCheckStarted = true;
@@ -148,107 +246,275 @@ function registerDesktopHandlers() {
     systemVersion: process.getSystemVersion(),
     arch: process.arch,
   })));
-  handle("hyperion:update-state", () => ({ ...updates.getState(), ...(updatePreview ? { preview: true } : {}) }));
+  handle("hyperion:window-session", (event) => senderState(event).session);
+  handle("hyperion:workspace-ready", (event, vaultId) => {
+    const state = senderState(event);
+    if (vaultId !== state.session.vaultId)
+      throw new Error("Unexpected workspace vault");
+    state.ready?.resolve();
+    state.ready = undefined;
+  });
+  handle("hyperion:detach-tab", async (event, value) => {
+    const source = senderWindow(event);
+    const state = senderState(event);
+    if (state.detaching || state.pending || preparingQuit)
+      throw new Error("Wait for the current window operation to finish.");
+    const request = detachedTabRequest.parse(value);
+    if (request.vaultId !== state.session.vaultId)
+      throw new Error("The tab belongs to a different vault.");
+    assertAvailableLocation(request);
+    state.detaching = true;
+    try {
+      await createWindow(request);
+    } finally {
+      state.detaching = false;
+    }
+    if (source.isDestroyed()) throw new Error("The source window was closed.");
+  });
+  handle("hyperion:update-state", () => ({
+    ...updates.getState(),
+    ...(updatePreview ? { preview: true } : {}),
+  }));
   handle("hyperion:update-check", () => updates.check());
   handle("hyperion:update-download", () => updates.download());
-  handle("hyperion:update-manual", () => shell.openExternal("https://github.com/alextac98/hyperion/releases/latest"));
-  handle("hyperion:update-install", () => {
-    if (!rendererReady || closeToken || !updates.prepareInstall()) return updates.getState();
-    installRequested = true;
-    closeToken = randomUUID();
-    mainWindow?.webContents.send(channels.prepareClose, closeToken);
+  handle("hyperion:update-manual", () =>
+    shell.openExternal("https://github.com/alextac98/hyperion/releases/latest"),
+  );
+  handle("hyperion:update-install", async () => {
+    if (preparingQuit || !updates.prepareInstall()) return updates.getState();
+    preparingQuit = true;
+    try {
+      await prepareAllWindows();
+      quitApproved = true;
+      updates.install();
+    } catch {
+      updates.saveFailed();
+    } finally {
+      preparingQuit = false;
+    }
     return updates.getState();
   });
-  handle(channels.repositoryExecute, (_event, request) => (
-    databaseInstance().repositoryExecute(request as RepositoryRequest)
-  ));
-  handle(channels.storageInfo, () => databaseInstance().storageInfo());
-  handle(channels.createBackup, (_event, automatic) => databaseInstance().createBackup(automatic === true));
-  handle(channels.listBackups, () => databaseInstance().listBackups());
-  handle(channels.showBackupFolder, async () => {
-    const folder = join(databaseInstance().storageInfo().directory, "backups");
+  handle(channels.repositoryExecute, (event, value) => {
+    const request = value as RepositoryRequest;
+    const state = senderState(event);
+    const record = (request.note ??
+      request.template ??
+      request.collection ??
+      request.preferences ??
+      request.vault) as Record<string, unknown> | undefined;
+    const vaultId =
+      request.vaultId ??
+      record?.vaultId ??
+      (request.operation === "updateVault" ? record?.id : undefined) ??
+      state.session.vaultId;
+    const scoped = vaultId ? { ...request, vaultId } : request;
+    if (
+      ["closeVault", "deleteVault", "deleteNote", "deleteTemplate"].includes(request.operation) ||
+      (request.operation === "restoreRevision" && request.asCopy !== true)
+    )
+      requireExclusiveVault(
+        String(request.operation === "deleteVault" ? request.id : vaultId),
+        senderWindow(event),
+      );
+    const result = databaseInstance().repositoryExecute(scoped);
+    if (request.operation === "selectVault")
+      state.session.vaultId = String(request.vaultId);
+    if (
+      !/^(list|get|initialize|selectVault|vaultSetup|suggest|export|capture)/.test(
+        request.operation,
+      )
+    )
+      broadcast("hyperion:repository-changed", scoped, senderWindow(event));
+    return result;
+  });
+  handle(channels.storageInfo, (event) =>
+    databaseInstance().storageInfo(senderVault(event)),
+  );
+  handle(channels.createBackup, (event, automatic) =>
+    databaseInstance().createBackup(automatic === true, senderVault(event)),
+  );
+  handle(channels.listBackups, (event) =>
+    databaseInstance().listBackups(senderVault(event)),
+  );
+  handle(channels.showBackupFolder, async (event) => {
+    const folder = join(
+      databaseInstance().storageInfo(senderVault(event)).directory,
+      "backups",
+    );
     mkdirSync(folder, { recursive: true });
-    const error = await shell.openPath(folder); if (error) throw new Error(error);
+    const error = await shell.openPath(folder);
+    if (error) throw new Error(error);
   });
-  handle(channels.restoreBackup, async () => {
-    const source = await dialog.showOpenDialog({ title: "Choose a Hyperion database backup", properties: ["openFile"], filters: [{ name: "Hyperion SQLite backup", extensions: ["sqlite3"] }] });
+  handle(channels.restoreBackup, async (event) => {
+    const source = await dialog.showOpenDialog({
+      title: "Choose a Hyperion database backup",
+      properties: ["openFile"],
+      filters: [{ name: "Hyperion SQLite backup", extensions: ["sqlite3"] }],
+    });
     if (source.canceled || !source.filePaths[0]) return null;
-    const target = await dialog.showOpenDialog({ title: "Restore into a separate folder", properties: ["openDirectory", "createDirectory"] });
+    const target = await dialog.showOpenDialog({
+      title: "Restore into a separate folder",
+      properties: ["openDirectory", "createDirectory"],
+    });
     if (target.canceled || !target.filePaths[0]) return null;
-    return databaseInstance().restoreBackup(source.filePaths[0], target.filePaths[0]);
+    return databaseInstance().restoreBackup(
+      source.filePaths[0],
+      target.filePaths[0],
+      senderVault(event),
+    );
   });
-  handle(channels.rendererReady, () => { rendererReady = true; });
-  handle(channels.closeReady, async (_event, token, error) => {
-    if (token !== closeToken) return;
-    closeToken = null;
+  handle(channels.rendererReady, (event) => {
+    senderState(event).rendererReady = true;
+  });
+  handle(channels.closeReady, (event, token, error) => {
+    const state = senderState(event);
+    if (!state.pending || token !== state.pending.token) return;
+    const pending = state.pending;
+    state.pending = undefined;
     if (error) {
-      quitting = false;
-      if (installRequested) { installRequested = false; updates.saveFailed(); }
-      await showAppMessageBox({ type: "error", message: "Hyperion could not finish saving", detail: String(error) + "\nYour window will remain open. Retry saving before closing.", buttons: ["Keep working"] });
+      pending.reject(new Error(String(error)));
       return;
     }
-    closeApproved = true;
-    if (installRequested) { installRequested = false; updates.install(); if (updates.getState().status === "error") closeApproved = false; return; }
-    if (quitting) app.quit(); else mainWindow?.close();
+    state.closeApproved = true;
+    pending.resolve();
   });
-  handle(channels.chooseStorageLocation, async () => {
-    const current = databaseInstance().storageInfo();
+  handle(channels.chooseStorageLocation, async (event) => {
+    const window = senderWindow(event);
+    const vaultId = senderVault(event);
+    requireExclusiveVault(vaultId, window);
+    const current = databaseInstance().storageInfo(vaultId);
     const options: Electron.OpenDialogOptions = {
       title: "Move this vault to an empty folder",
       defaultPath: current.directory,
       properties: ["openDirectory", "createDirectory"],
     };
-    const result = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
-      : await dialog.showOpenDialog(options);
+    const result = await dialog.showOpenDialog(window, options);
     const selected = result.filePaths[0];
     return result.canceled || !selected
       ? null
-      : databaseInstance().moveVault(selected);
+      : databaseInstance().moveVault(selected, vaultId);
   });
   handle(channels.chooseVaultDirectory, async () => {
-    const result = await dialog.showOpenDialog({ title: "Choose an empty folder for your new vault", properties: ["openDirectory", "createDirectory"] });
-    return result.canceled ? null : result.filePaths[0] ?? null;
+    const result = await dialog.showOpenDialog({
+      title: "Choose an empty folder for your new vault",
+      properties: ["openDirectory", "createDirectory"],
+    });
+    return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   handle(channels.openVault, async () => {
-    const result = await dialog.showOpenDialog({ title: "Open an existing Hyperion vault folder", properties: ["openDirectory"] });
-    return result.canceled || !result.filePaths[0] ? null : databaseInstance().openVault(result.filePaths[0]);
+    const result = await dialog.showOpenDialog({
+      title: "Open an existing Hyperion vault folder",
+      properties: ["openDirectory"],
+    });
+    return result.canceled || !result.filePaths[0]
+      ? null
+      : databaseInstance().openVault(result.filePaths[0]);
   });
-  handle(channels.showVaultFolder, async () => {
-    const error = await shell.openPath(databaseInstance().storageInfo().directory);
+  handle(channels.showVaultFolder, async (event) => {
+    const error = await shell.openPath(
+      databaseInstance().storageInfo(senderVault(event)).directory,
+    );
     if (error) throw new Error(error);
   });
-  handle(channels.editorPull, (_event, vaultId, documentId) => (
-    databaseInstance().editorPull(String(vaultId), String(documentId))
-  ));
-  handle(channels.editorPush, (_event, vaultId, documentId, data) => (
-    databaseInstance().editorPush(String(vaultId), String(documentId), String(data))
-  ));
-  handle(channels.editorDelete, (_event, vaultId, documentId) => (
-    databaseInstance().editorDelete(String(vaultId), String(documentId))
-  ));
-  handle(channels.assetGet, (_event, vaultId, key) => (
-    databaseInstance().assetGet(String(vaultId), String(key))
-  ));
-  handle(channels.assetSet, (_event, vaultId, key, mimeType, data) => (
-    databaseInstance().assetSet(String(vaultId), String(key), String(mimeType), String(data))
-  ));
-  handle(channels.assetDelete, (_event, vaultId, key) => (
-    databaseInstance().assetDelete(String(vaultId), String(key))
-  ));
-  handle(channels.assetList, (_event, vaultId) => databaseInstance().assetList(String(vaultId)));
+  handle(channels.editorPull, (_event, vaultId, documentId) =>
+    databaseInstance().editorPull(String(vaultId), String(documentId)),
+  );
+  handle(channels.editorPush, (event, vaultId, documentId, data) => {
+    databaseInstance().editorPush(
+      String(vaultId),
+      String(documentId),
+      String(data),
+    );
+    broadcast(
+      "hyperion:editor-update",
+      { vaultId, documentId, data },
+      senderWindow(event),
+    );
+  });
+  handle(channels.editorDelete, (event, vaultId, documentId) => {
+    requireExclusiveVault(String(vaultId), senderWindow(event));
+    return databaseInstance().editorDelete(String(vaultId), String(documentId));
+  });
+  handle(channels.assetGet, (_event, vaultId, key) =>
+    databaseInstance().assetGet(String(vaultId), String(key)),
+  );
+  handle(channels.assetSet, (_event, vaultId, key, mimeType, data) =>
+    databaseInstance().assetSet(
+      String(vaultId),
+      String(key),
+      String(mimeType),
+      String(data),
+    ),
+  );
+  handle(channels.assetDelete, (_event, vaultId, key) =>
+    databaseInstance().assetDelete(String(vaultId), String(key)),
+  );
+  handle(channels.assetList, (_event, vaultId) =>
+    databaseInstance().assetList(String(vaultId)),
+  );
   handle(channels.localAiStatus, () => ({
     available: false,
     executionTarget: "native",
-    reason: "The native local-AI boundary is ready; no voice model provider is bundled yet.",
+    reason:
+      "The native local-AI boundary is ready; no voice model provider is bundled yet.",
   }));
 }
 
-async function createWindow() {
-  const windowTitle = updatePreview ? `${applicationName} — Update preview (simulated)` : applicationName;
+function assertAvailableLocation(request: DetachedTabRequest) {
+  const { location, vaultId } = request;
+  // This also verifies that the vault is still registered and accessible.
+  const notes = databaseInstance().repositoryExecute({
+    operation: "listNotes",
+    vaultId,
+  }) as Array<{ id: string; archived: boolean; trashed: boolean }>;
+  if (
+    location.view === "note" &&
+    !notes.some(
+      (note) => note.id === location.id && !note.archived && !note.trashed,
+    )
+  )
+    throw new Error("This page is no longer available.");
+  if (location.view === "template") {
+    const templates = databaseInstance().repositoryExecute({
+      operation: "listTemplates",
+      vaultId,
+    }) as Array<{ id: string }>;
+    if (!templates.some((template) => template.id === location.id))
+      throw new Error("This template is no longer available.");
+  }
+}
+
+async function createWindow(detached?: DetachedTabRequest) {
+  const point =
+    detached?.position ??
+    (detached ? screen.getCursorScreenPoint() : undefined);
+  const area = point
+    ? screen.getDisplayNearestPoint(point).workArea
+    : undefined;
+  const width = area ? Math.min(1100, area.width) : 1440;
+  const height = area ? Math.min(820, area.height) : 940;
+  const windowTitle = updatePreview
+    ? `${applicationName} — Update preview (simulated)`
+    : applicationName;
   const window = new BrowserWindow({
-    width: 1440,
-    height: 940,
+    width,
+    height,
+    ...(point && area
+      ? {
+          x: Math.round(
+            Math.max(
+              area.x,
+              Math.min(point.x - 160, area.x + area.width - width),
+            ),
+          ),
+          y: Math.round(
+            Math.max(
+              area.y,
+              Math.min(point.y - 32, area.y + area.height - height),
+            ),
+          ),
+        }
+      : {}),
     minWidth: 940,
     minHeight: 640,
     show: false,
@@ -263,9 +529,37 @@ async function createWindow() {
       spellcheck: true,
     },
   });
+  const state: WindowState = {
+    session: {
+      id: detached ? randomUUID() : "main",
+      vaultId: detached?.vaultId ?? null,
+      location: detached?.location ?? null,
+    },
+    rendererReady: false,
+    closeApproved: false,
+    detaching: false,
+  };
+  windows.set(window, state);
+  // The source tab is retained until the destination has restored its workspace.
+  const workspaceReady = detached
+    ? new Promise<void>((resolve, reject) => {
+        state.ready = { resolve, reject };
+      })
+    : Promise.resolve();
+  const readyTimeout = detached
+    ? setTimeout(
+        () =>
+          state.ready?.reject(
+            new Error(
+              "The new window did not finish opening. Your tab remains in its original window.",
+            ),
+          ),
+        30_000,
+      )
+    : undefined;
 
   if (!app.isPackaged) {
-    window.on("page-title-updated", event => {
+    window.on("page-title-updated", (event) => {
       event.preventDefault();
       window.setTitle(windowTitle);
     });
@@ -273,14 +567,20 @@ async function createWindow() {
   // Windows/Linux mouse thumb buttons arrive as native browser commands.
   window.on("app-command", (_event, command) => {
     if (command === "browser-backward" || command === "browser-forward") {
-      window.webContents.send("hyperion:navigate", command === "browser-backward" ? "back" : "forward");
+      window.webContents.send(
+        "hyperion:navigate",
+        command === "browser-backward" ? "back" : "forward",
+      );
     }
   });
   // macOS mouse drivers (including Logi Options+) can emit native swipes
   // instead of DOM thumb-button events or Windows/Linux browser commands.
   window.on("swipe", (_event, direction) => {
     if (direction === "left" || direction === "right") {
-      window.webContents.send("hyperion:navigate", direction === "left" ? "back" : "forward");
+      window.webContents.send(
+        "hyperion:navigate",
+        direction === "left" ? "back" : "forward",
+      );
     }
   });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -288,22 +588,50 @@ async function createWindow() {
     if (!isTrustedRendererUrl(url)) event.preventDefault();
   });
   window.once("ready-to-show", () => window.show());
-  window.webContents.on("did-start-loading", () => { rendererReady = false; });
-  window.on("close", event => {
-    if (closeApproved || !rendererReady) return;
+  window.webContents.on("did-start-loading", () => {
+    state.rendererReady = false;
+    state.closeApproved = false;
+  });
+  window.on("close", (event) => {
+    if (state.closeApproved || !state.rendererReady) return;
     event.preventDefault();
-    if (!closeToken) { closeToken = randomUUID(); window.webContents.send(channels.prepareClose, closeToken); }
+    if (state.pending || state.detaching || preparingQuit) return;
+    void prepareWindow(window).then(
+      () => window.close(),
+      (error) => {
+        void dialog.showMessageBox(window, {
+          type: "error",
+          message: "Hyperion could not finish saving",
+          detail: `${String(error)}\nYour window will remain open. Retry saving before closing.`,
+          buttons: ["Keep working"],
+        });
+      },
+    );
   });
   window.on("closed", () => {
-    closeApproved = false; closeToken = null;
-    if (mainWindow === window) mainWindow = null;
+    state.ready?.reject(
+      new Error("The new window was closed before its workspace opened."),
+    );
+    state.pending?.resolve();
+    windows.delete(window);
+    if (mainWindow === window) mainWindow = windows.keys().next().value ?? null;
   });
 
-  mainWindow = window;
-  if (useBuiltRenderer) {
-    await window.loadFile(join(currentDirectory, "../dist/index.html"));
-  } else {
-    await window.loadURL(developmentUrl);
+  mainWindow ??= window;
+  try {
+    // Observe an early workspace failure while the page is still loading.
+    await Promise.all([
+      useBuiltRenderer
+        ? window.loadFile(join(currentDirectory, "../dist/index.html"))
+        : window.loadURL(developmentUrl),
+      workspaceReady,
+    ]);
+    return window;
+  } catch (error) {
+    if (!window.isDestroyed()) window.destroy();
+    throw error;
+  } finally {
+    clearTimeout(readyTimeout);
   }
 }
 
@@ -353,9 +681,27 @@ app.whenReady().then(async () => {
   app.quit();
 });
 
-app.on("before-quit", event => {
-  quitting = true;
-  if (mainWindow && !closeApproved) { event.preventDefault(); mainWindow.close(); }
+app.on("before-quit", (event) => {
+  if (quitApproved || windows.size === 0) return;
+  event.preventDefault();
+  if (preparingQuit) return;
+  preparingQuit = true;
+  void prepareAllWindows().then(
+    () => {
+      quitApproved = true;
+      preparingQuit = false;
+      app.quit();
+    },
+    (error) => {
+      preparingQuit = false;
+      void showAppMessageBox({
+        type: "error",
+        message: "Hyperion could not finish saving",
+        detail: `${String(error)}\nYour windows will remain open.`,
+        buttons: ["Keep working"],
+      });
+    },
+  );
 });
 app.on("will-quit", () => {
   database?.close();

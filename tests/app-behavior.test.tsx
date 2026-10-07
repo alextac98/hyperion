@@ -1103,7 +1103,8 @@ test("workspace tabs restore only available unique destinations and lazily visit
   assert.equal(pruned.tabs[0].visited, true);
 });
 
-import { useWorkspaceTabs } from "../app/hooks/useWorkspaceTabs";
+import { useWorkspaceTabs, windowTabsKey, rememberRestoredPage } from "../app/hooks/useWorkspaceTabs";
+import type { WindowSession } from "../electron/window-session";
 import { canSplitPane, layoutMinimum, layoutPanes, restoreLayout } from "../app/application/workspace-layout";
 
 function splitSession() {
@@ -1175,6 +1176,41 @@ test("pane focus and close preserve layout and choose a remaining tab in the sam
   assert.equal(tabsReducer(restored, { type: "close", id: ids[1] }).active, ids[0], "unvisited siblings are preferred over another pane on close");
 });
 
+test("detached workspaces start with only the transferred tab and persist independently of the primary window", async () => {
+  localStorage.clear();
+  const session: WindowSession = { id: "detached", vaultId: "vault", location: { view: "note", id: "transferred" } };
+  let source: ReturnType<typeof useWorkspaceTabs>;
+  let destination: ReturnType<typeof useWorkspaceTabs>;
+  function Probe() {
+    source = useWorkspaceTabs("vault", true);
+    destination = useWorkspaceTabs("vault", true, session);
+    return null;
+  }
+  const ui = await mount(<Probe />);
+  try {
+    await act(async () => {
+      source.restore("vault", () => true, { view: "home" });
+      destination.restore("vault", () => true, { view: "home" });
+    });
+    assert.deepEqual(destination!.state.tabs.map(tab => tab.location), [session.location]);
+    await act(async () => source.open({ view: "note", id: "source-only" }));
+    await act(async () => destination.open({ view: "note", id: "destination-only" }));
+    assert.equal(windowTabsKey("vault", { ...session, id: "main" }), "hyperion:tabs:vault");
+    assert.deepEqual(JSON.parse(localStorage.getItem(windowTabsKey("vault"))!).locations,
+      [{ view: "home" }, { view: "note", id: "source-only" }]);
+    assert.deepEqual(JSON.parse(localStorage.getItem(windowTabsKey("vault", session))!).locations,
+      [session.location, { view: "note", id: "destination-only" }]);
+    await act(async () => destination.restore("vault", () => true, { view: "home" }));
+    assert.deepEqual(destination!.location, { view: "note", id: "destination-only" }, "reload restores this window's current session");
+    await act(async () => destination.restore("vault", location => location.view !== "note", { view: "home" }));
+    assert.deepEqual(destination!.location, { view: "home" }, "missing transferred pages recover to Home");
+    rememberRestoredPage("vault", "restored-copy", session);
+    await act(async () => destination.restore("vault", () => true, { view: "home" }));
+    assert.deepEqual(destination!.location, { view: "note", id: "restored-copy" }, "restoring a copy opens it after reload in the requesting window");
+    assert.equal(JSON.parse(localStorage.getItem(windowTabsKey("vault"))!).active, locationKey({ view: "note", id: "source-only" }), "restore must preserve the other window's active tab");
+  } finally { await ui.unmount(); }
+});
+
 test("workspace sessions stay isolated by vault and recover from unavailable destinations", async () => {
   localStorage.clear();
   let workspace: ReturnType<typeof useWorkspaceTabs>;
@@ -1232,6 +1268,7 @@ test("docking preserves mounted page state, tab order, keyboard moves and close 
       const [current, dispatch] = useReducer(tabsReducer, state);
       state = current;
       return <WorkspaceLayout state={current} dispatch={dispatch} disabled={false}
+        onDetach={() => { throw new Error("An in-window drop must not detach a tab"); }}
         canOpenPage={page => page.vaultId === "vault"}
         label={tab => tab.location.view === "note" ? tab.location.id : "Home"}
         icon={() => null}

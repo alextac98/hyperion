@@ -5,7 +5,8 @@ import { errorMessage } from "./lib/error-message";
 import { flushSync } from "react-dom";
 import { VaultSetup } from "./components/VaultSetup";
 import { Dialog } from "./components/Dialog";
-import { requireDesktop } from "./platform/runtime";
+import { requireDesktop, desktop, desktopWindow } from "./platform/runtime";
+import type { WorkspaceTab } from "./application/workspace-tabs";
 import { useWorkspaceTabs } from "./hooks/useWorkspaceTabs";
 import { usePageContext, type PageContextView } from "./hooks/usePageContext";
 import { WorkspaceLayout } from "./components/WorkspaceLayout";
@@ -199,7 +200,7 @@ export default function HyperionApp() {
   const [preferences, setPreferences] = useState(FALLBACK_PREFERENCES);
   const [loading, setLoading] = useState(true);
   const [vaultReady, setVaultReady] = useState(false);
-  const workspace = useWorkspaceTabs(vaultId, vaultReady && !loading);
+  const workspace = useWorkspaceTabs(vaultId, vaultReady && !loading, desktopWindow);
   const {
     open: openTab,
     restore: restoreWorkspace,
@@ -207,6 +208,8 @@ export default function HyperionApp() {
     dispatch: dispatchTab,
   } = workspace;
   const { location } = workspace;
+  const currentVaultKey = desktopWindow && desktopWindow.id !== "main"
+    ? `hyperion:current-vault:${desktopWindow.id}` : "hyperion:current-vault";
   const view = location.view;
   const activeId = location.view === "note" ? location.id : "";
   const activeTemplateId = location.view === "template" ? location.id : "";
@@ -509,7 +512,7 @@ export default function HyperionApp() {
           },
           target ? { view: "note", id: target.id } : { view: "home" },
         );
-        uiStorage.setItem("hyperion:current-vault", nextVaultId);
+        uiStorage.setItem(currentVaultKey, nextVaultId);
         setVaultMenuOpen(false);
         setEditorStore(null);
         setVaultSetupOpen(false);
@@ -519,7 +522,7 @@ export default function HyperionApp() {
         setLoading(false);
       }
     },
-    [setNotes, setTemplates, restoreWorkspace],
+    [setNotes, setTemplates, restoreWorkspace, currentVaultKey],
   );
 
   useEffect(() => {
@@ -542,7 +545,7 @@ export default function HyperionApp() {
           setLoading(false);
           return;
         }
-        const remembered = uiStorage.getItem("hyperion:current-vault");
+        const remembered = uiStorage.getItem(currentVaultKey) ?? desktopWindow?.vaultId;
         const target = storedVaults.some((vault) => vault.id === remembered)
           ? remembered!
           : (storedVaults[0]?.id ?? DEFAULT_VAULT_ID);
@@ -557,7 +560,54 @@ export default function HyperionApp() {
     return () => {
       cancelled = true;
     };
-  }, [loadVault]);
+  }, [loadVault, currentVaultKey]);
+
+  useEffect(() => {
+    if (!loading && vaultReady) void desktop?.workspaceReady(vaultId).catch(error => setDataError(errorMessage(error)));
+  }, [loading, vaultReady, vaultId]);
+
+  useEffect(() => {
+    if (!desktop || loading || !vaultReady) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      if (disposed) return;
+      // Do not replace local records while their newer values are still queued.
+      if (saves.getState() !== "saved") {
+        timer = setTimeout(refresh, 100);
+        return;
+      }
+      void Promise.all([
+        knowledgeRepository.listNotes(vaultId),
+        knowledgeRepository.listTemplates(vaultId),
+        knowledgeRepository.listVaults(),
+        knowledgeRepository.getPreferences(vaultId),
+      ]).then(([notes, templates, vaults, preferences]) => {
+        if (disposed || saves.getState() !== "saved") {
+          if (!disposed) timer = setTimeout(refresh, 100);
+          return;
+        }
+        setNotes(notes);
+        setTemplates(templates);
+        setVaults(vaults);
+        setPreferences(preferences);
+      }).catch(error => { if (!disposed) setDataError(errorMessage(error)); });
+    };
+    const unsubscribe = desktop.onRepositoryChanged(request => {
+      if (request.vaultId !== vaultId && !["createVault", "updateVault", "importVault"].includes(request.operation)) return;
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 50);
+    });
+    return () => { disposed = true; clearTimeout(timer); unsubscribe(); };
+  }, [vaultId, loading, vaultReady, setNotes, setTemplates]);
+
+  const detachTab = desktop ? (tab: WorkspaceTab, position?: { x: number; y: number }) => {
+    void dataOperation(async () => {
+      await requireDesktop().detachTab({ vaultId, location: tab.location, position });
+      await flushAll();
+      dispatchTab({ type: "close", id: tab.id });
+    }).catch(error => setDataError(errorMessage(error)));
+  } : undefined;
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -588,6 +638,8 @@ export default function HyperionApp() {
 
   const updateNoteById = useCallback(
     (id: string, patch: Partial<NoteRecord>, immediate = false) => {
+      const current = readNotes().find(note => note.id === id);
+      if (current && Object.entries(patch).every(([key, value]) => current[key as keyof NoteRecord] === value)) return;
       const result = patchPage(
         readNotes(),
         id,
@@ -615,6 +667,7 @@ export default function HyperionApp() {
       const current = readTemplates();
       const template = current.find((item) => item.id === id);
       if (!template) return;
+      if (Object.entries(patch).every(([key, value]) => template[key as keyof TemplateRecord] === value)) return;
       const updated = {
         ...template,
         ...patch,
@@ -1817,6 +1870,7 @@ export default function HyperionApp() {
         <div className="content-shell">
           <section className="main-content">
             <WorkspaceLayout
+              onDetach={detachTab}
               state={tabState}
               dispatch={dispatchTab}
               disabled={operationBusy}

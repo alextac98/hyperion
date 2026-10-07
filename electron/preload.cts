@@ -24,8 +24,34 @@ const channels = {
   localAiStatus: "hyperion:local-ai-status",
 } as const;
 
+const closeCallbacks = new Set<() => Promise<void>>();
+ipcRenderer.on(channels.prepareClose, (_event, token: string) => {
+  // A window acknowledges once, after every save participant has finished.
+  void Promise.allSettled([...closeCallbacks].map(callback => Promise.resolve().then(callback)))
+    .then(results => {
+      const failure = results.find(result => result.status === "rejected");
+      const error = failure?.status === "rejected"
+        ? (failure.reason instanceof Error ? failure.reason.message : String(failure.reason)) || "Saving failed"
+        : null;
+      return ipcRenderer.invoke(channels.closeReady, token, error);
+    });
+});
+
 contextBridge.exposeInMainWorld("hyperionDesktop", Object.freeze({
   openFeedback: () => ipcRenderer.invoke("hyperion:feedback-open"),
+  windowSession: () => ipcRenderer.invoke("hyperion:window-session"),
+  detachTab: (request: unknown) => ipcRenderer.invoke("hyperion:detach-tab", request),
+  workspaceReady: (vaultId: string) => ipcRenderer.invoke("hyperion:workspace-ready", vaultId),
+  onEditorUpdate: (callback: (update: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, update: unknown) => callback(update);
+    ipcRenderer.on("hyperion:editor-update", listener);
+    return () => ipcRenderer.removeListener("hyperion:editor-update", listener);
+  },
+  onRepositoryChanged: (callback: (request: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, request: unknown) => callback(request);
+    ipcRenderer.on("hyperion:repository-changed", listener);
+    return () => ipcRenderer.removeListener("hyperion:repository-changed", listener);
+  },
   onNavigate: (callback: (direction: "back" | "forward") => void) => {
     const listener = (_event: Electron.IpcRendererEvent, direction: unknown) => {
       if (direction === "back" || direction === "forward") callback(direction);
@@ -50,13 +76,9 @@ contextBridge.exposeInMainWorld("hyperionDesktop", Object.freeze({
   restoreBackup: () => ipcRenderer.invoke(channels.restoreBackup),
   showBackupFolder: () => ipcRenderer.invoke(channels.showBackupFolder),
   onPrepareClose: (callback: () => Promise<void>) => {
-    const listener = (_event: Electron.IpcRendererEvent, token: string) => {
-      void callback().then(() => ipcRenderer.invoke(channels.closeReady, token, null),
-        (error: unknown) => ipcRenderer.invoke(channels.closeReady, token, error instanceof Error ? error.message : String(error)));
-    };
-    ipcRenderer.on(channels.prepareClose, listener);
+    closeCallbacks.add(callback);
     void ipcRenderer.invoke(channels.rendererReady);
-    return () => ipcRenderer.removeListener(channels.prepareClose, listener);
+    return () => closeCallbacks.delete(callback);
   },
   chooseStorageLocation: () => ipcRenderer.invoke(channels.chooseStorageLocation),
   chooseVaultDirectory: () => ipcRenderer.invoke(channels.chooseVaultDirectory),

@@ -27,3 +27,5 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm check:desktop
+      - name: Native window integration
+        run: xvfb-run -a node scripts/run-electron-test.mjs tests/window-smoke.mjs --no-sandbox

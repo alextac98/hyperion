@@ -47,6 +47,7 @@ type Props = {
   label: (tab: WorkspaceTab) => string;
   icon: (tab: WorkspaceTab) => ReactNode;
   render: (tab: WorkspaceTab, visible: boolean) => ReactNode;
+  onDetach?: (tab: WorkspaceTab, position?: { x: number; y: number }) => void;
 };
 const WorkspaceContext = createContext<Props | null>(null);
 function useWorkspace() {
@@ -135,7 +136,7 @@ function WorkspaceTabMenu({
   api,
   close,
 }: IContextMenuItemComponentProps) {
-  const { dispatch, disabled } = useWorkspace();
+  const { dispatch, disabled, state, onDetach } = useWorkspace();
   const menu = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     menu.current
@@ -199,6 +200,20 @@ function WorkspaceTabMenu({
         items[next]?.focus();
       }}
     >
+      {onDetach && (
+        <button
+          role="menuitem"
+          disabled={disabled}
+          onClick={() =>
+            run(() => {
+              const tab = state.tabs.find((tab) => tab.id === panel.id);
+              if (tab) onDetach(tab);
+            })
+          }
+        >
+          Move to new window
+        </button>
+      )}
       {split("left", "Split left")}
       {split("right", "Split right")}
       {split("top", "Split above")}
@@ -307,9 +322,17 @@ export function WorkspaceLayout(props: Props) {
     let disposed = false;
     const dragSurface = viewport.current;
     let dragging: "native" | "pointer" | null = null;
+    let draggedTab: {
+      id: string;
+      pointerId: number;
+      element: HTMLElement;
+    } | null = null;
     let draggedPage: PageDrag | null = null;
     let dragCleanup = 0;
     const endTabDrag = () => {
+      if (draggedTab?.element.hasPointerCapture?.(draggedTab.pointerId))
+        draggedTab.element.releasePointerCapture(draggedTab.pointerId);
+      draggedTab = null;
       dragging = null;
       dragSurface?.removeAttribute("data-tab-dragging");
       // Native event listeners can run microtasks between capture and bubble.
@@ -317,11 +340,41 @@ export function WorkspaceLayout(props: Props) {
       window.clearTimeout(dragCleanup);
       dragCleanup = window.setTimeout(() => {
         draggedPage = null;
+        if (!disposed && latest.current.onDetach)
+          api.updateOptions({ dndStrategy: "pointer" });
       }, 0);
     };
-    const endPointerDrag = () => {
+    const endPointerDrag = (event: PointerEvent) => {
       // HTML dragstart itself causes pointercancel; only end pointer-based drags here.
-      if (dragging === "pointer") endTabDrag();
+      if (dragging !== "pointer") return;
+      if (draggedTab && event.pointerId !== draggedTab.pointerId) return;
+      if (
+        event.type === "pointerup" &&
+        draggedTab &&
+        !latest.current.disabled &&
+        (event.clientX < 0 ||
+          event.clientY < 0 ||
+          event.clientX >= window.innerWidth ||
+          event.clientY >= window.innerHeight)
+      ) {
+        const tab = latest.current.state.tabs.find(
+          (tab) => tab.id === draggedTab!.id,
+        );
+        if (tab)
+          latest.current.onDetach?.(tab, {
+            x: event.screenX,
+            y: event.screenY,
+          });
+      }
+      endTabDrag();
+    };
+    const cancelTabDrag = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || !draggedTab) return;
+      event.preventDefault();
+      // End Dockview's pointer controller as well as our own capture.
+      window.dispatchEvent(
+        new PointerEvent("pointercancel", { pointerId: draggedTab.pointerId }),
+      );
     };
     const beginPageDrag = (event: DragEvent) => {
       window.clearTimeout(dragCleanup);
@@ -336,6 +389,9 @@ export function WorkspaceLayout(props: Props) {
         return;
       draggedPage = page;
       dragging = "native";
+      // Sidebar pages still use the native drag payload. Enable native drop
+      // targets for that gesture, then restore captured tab drags when it ends.
+      if (latest.current.onDetach) api.updateOptions({ dndStrategy: "auto" });
       dragSurface?.setAttribute("data-tab-dragging", "true");
     };
     const fit = () => {
@@ -462,13 +518,23 @@ export function WorkspaceLayout(props: Props) {
           });
         }
       }),
-      api.onWillDragPanel(({ nativeEvent }) => {
+      api.onWillDragPanel(({ nativeEvent, panel }) => {
         if (latest.current.disabled || nativeEvent.defaultPrevented) return;
         window.clearTimeout(dragCleanup);
         draggedPage = null;
         dragging = nativeEvent.type.startsWith("pointer")
           ? "pointer"
           : "native";
+        if (dragging === "pointer" && latest.current.onDetach) {
+          const element = Array.from(
+            dragSurface?.querySelectorAll<HTMLElement>(".dv-tab") ?? [],
+          ).find((element) => element.dataset.tabPanelId === panel.id);
+          if (element) {
+            const pointerId = (nativeEvent as PointerEvent).pointerId;
+            draggedTab = { id: panel.id, pointerId, element };
+            element.setPointerCapture?.(pointerId);
+          }
+        }
         dragSurface?.setAttribute("data-tab-dragging", "true");
       }),
       api.onWillDragGroup((event) => event.nativeEvent.preventDefault()),
@@ -479,6 +545,7 @@ export function WorkspaceLayout(props: Props) {
     window.addEventListener("dragend", endTabDrag, true);
     window.addEventListener("pointerup", endPointerDrag, true);
     window.addEventListener("pointercancel", endPointerDrag, true);
+    window.addEventListener("keydown", cancelTabDrag, true);
     const observer = new ResizeObserver(publish);
     if (viewport.current) observer.observe(viewport.current);
     constrain();
@@ -493,6 +560,7 @@ export function WorkspaceLayout(props: Props) {
       window.removeEventListener("dragend", endTabDrag, true);
       window.removeEventListener("pointerup", endPointerDrag, true);
       window.removeEventListener("pointercancel", endPointerDrag, true);
+      window.removeEventListener("keydown", cancelTabDrag, true);
       endTabDrag();
       window.clearTimeout(dragCleanup);
       schedule.current = () => {};
@@ -594,6 +662,7 @@ export function WorkspaceLayout(props: Props) {
       >
         <div className="workspace-layout-canvas" ref={canvas}>
           <DockviewReact
+            dndStrategy={props.onDetach ? "pointer" : "auto"}
             components={components}
             onReady={onReady}
             theme={theme}
