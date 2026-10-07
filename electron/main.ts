@@ -10,6 +10,7 @@ import { createUpdatePreview } from "./update-preview.js";
 import type { RepositoryRequest } from "./database.js";
 import { VaultLibrary } from "./vault-library.js";
 import { developmentInstance, developmentRendererUrl } from "./development.js";
+import { feedbackIssueUrl } from "./feedback.js";
 
 const updatePreview = !app.isPackaged && Boolean(process.env.HYPERION_UPDATE_PREVIEW);
 const useBuiltRenderer = app.isPackaged || process.env.HYPERION_TEST_RENDERER === "1";
@@ -141,6 +142,12 @@ function handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: 
 }
 
 function registerDesktopHandlers() {
+  handle("hyperion:feedback-open", () => shell.openExternal(feedbackIssueUrl({
+    version: app.getVersion(),
+    platform: process.platform,
+    systemVersion: process.getSystemVersion(),
+    arch: process.arch,
+  })));
   handle("hyperion:update-state", () => ({ ...updates.getState(), ...(updatePreview ? { preview: true } : {}) }));
   handle("hyperion:update-check", () => updates.check());
   handle("hyperion:update-download", () => updates.download());

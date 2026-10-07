@@ -60,6 +60,7 @@ export interface HyperionDataApi {
 }
 
 export interface HyperionDesktopApi extends HyperionDataApi {
+  openFeedback(): Promise<void>;
   onNavigate(callback: (direction: "back" | "forward") => void): () => void;
   updateState(): Promise<UpdateState>;
   checkForUpdates(): Promise<UpdateState>;

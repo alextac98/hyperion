@@ -23,6 +23,9 @@ bundled Chromium runtime. SQLite stores all knowledge data locally.
 - Independent vault folders with creation, opening, switching, moving, JSON backup,
   and restore
 - Automatic and named page versions with rich previews and restoration
+- Give feedback from the sidebar, setup screen, or a page's right-click menu;
+  GitHub opens with a short report template and app version, OS, and architecture
+  filled in. Submitting a public issue requires a GitHub account.
 - Verified database backups and complete portable vault exports, including assets and history
 - A SQLite database and backups in each vault folder, containing notes, rich
   editor documents, assets, and history; new vaults default to
