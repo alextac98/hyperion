@@ -28,4 +28,4 @@ jobs:
       - run: pnpm test
       - run: pnpm check:desktop
       - name: Native window integration
-        run: xvfb-run -a node scripts/run-electron-test.mjs tests/window-smoke.mjs --no-sandbox
+        run: xvfb-run -a -s '-screen 0 2300x1080x24' node scripts/run-electron-test.mjs tests/window-smoke.mjs --no-sandbox

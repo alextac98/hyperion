@@ -22,8 +22,12 @@ import { feedbackIssueUrl } from "./feedback.js";
 import {
   detachedTabRequest,
   tabDragRequest,
+  tabDragPosition,
+  tabDropTargets,
   type WindowSession,
   type DetachedTabRequest,
+  type TabDropTargets,
+  type TabDropTarget,
 } from "./window-session.js";
 import { createTabDragPreview } from "./tab-drag-preview.js";
 
@@ -101,7 +105,14 @@ type WindowState = {
   };
   ready?: { resolve: () => void; reject: (error: Error) => void };
   detaching: boolean;
-  drag?: { token: string; preview: ReturnType<typeof createTabDragPreview> };
+  focusOrder: number;
+  dropTargets: TabDropTargets;
+  drag?: {
+    token: string;
+    location: DetachedTabRequest["location"];
+    preview: ReturnType<typeof createTabDragPreview>;
+    position?: { x: number; y: number };
+  };
   navigation?: {
     token: string;
     resolve: () => void;
@@ -109,8 +120,93 @@ type WindowState = {
   };
 };
 const windows = new Map<BrowserWindow, WindowState>();
+let focusOrder = 0;
+let dropHint: { source: BrowserWindow; window: BrowserWindow; target: TabDropTarget } | null = null;
 let quitApproved = false;
 let preparingQuit = false;
+
+function clearTabDropHint() {
+  if (dropHint && !dropHint.window.isDestroyed())
+    dropHint.window.webContents.send("hyperion:tab-drop-hint", null);
+  dropHint = null;
+}
+
+function stopTabDrag(window: BrowserWindow) {
+  const state = windows.get(window);
+  state?.drag?.preview.dispose();
+  if (state) state.drag = undefined;
+  if (dropHint?.source === window || dropHint?.window === window) clearTabDropHint();
+}
+
+function tabDropDestination(source: BrowserWindow, point: { x: number; y: number }) {
+  // A window covering a tab strip must block that strip, even if it cannot
+  // receive the tab. The preview is not part of this application-window map.
+  const candidates = [...windows].sort((a, b) => b[1].focusOrder - a[1].focusOrder);
+  for (const [window, state] of candidates) {
+    if (window.isDestroyed() || !window.isVisible() || window.isMinimized()) continue;
+    const bounds = window.getBounds();
+    if (point.x < bounds.x || point.y < bounds.y || point.x >= bounds.x + bounds.width || point.y >= bounds.y + bounds.height) continue;
+    if (window === source) return null;
+    const content = window.getContentBounds();
+    const zoom = window.webContents.getZoomFactor();
+    const x = (point.x - content.x) / zoom;
+    const y = (point.y - content.y) / zoom;
+    const strip = state.dropTargets.targets.find(({ rect }) =>
+      x >= rect.x && y >= rect.y && x < rect.x + rect.width && y < rect.y + rect.height);
+    if (!strip) return null;
+    const before = strip.tabs.findIndex(tab => x < tab.midpoint);
+    return { window, target: { groupId: strip.groupId, index: before < 0 ? strip.tabs.length : before } };
+  }
+  return null;
+}
+
+function canReceiveTab(destination: WindowState, vaultId: string | null) {
+  return destination.workspaceLoaded && !destination.navigation && !destination.pending && !destination.detaching
+    && !destination.dropTargets.disabled && !preparingQuit
+    && (destination.session.kind === "primary" || destination.session.vaultId === vaultId);
+}
+
+function updateTabDropHint(source: BrowserWindow) {
+  const state = windows.get(source);
+  const drag = state?.drag;
+  const candidate = drag?.position && (drag.location.view === "note" || drag.location.view === "template")
+    ? tabDropDestination(source, drag.position) : null;
+  const next = candidate && canReceiveTab(windows.get(candidate.window)!, state!.session.vaultId) ? candidate : null;
+  if (next && dropHint?.source === source && dropHint.window === next.window
+    && dropHint.target.groupId === next.target.groupId && dropHint.target.index === next.target.index) return;
+  clearTabDropHint();
+  if (next) {
+    dropHint = { source, ...next };
+    next.window.webContents.send("hyperion:tab-drop-hint", next.target);
+  }
+}
+
+async function openTabInWindow(window: BrowserWindow, request: DetachedTabRequest, target?: TabDropTarget) {
+  const state = windows.get(window)!;
+  if (state.session.kind === "page" && state.session.vaultId !== request.vaultId)
+    throw new Error("That page window belongs to a different vault. Your tab remains in its original window.");
+  if (!canReceiveTab(state, request.vaultId))
+    throw new Error("That window is busy. Try again once it finishes.");
+  // Resume rendering before awaiting the destination's acknowledgement.
+  if (window.isMinimized()) window.restore();
+  window.show();
+  await new Promise<void>((resolve, reject) => {
+    const token = randomUUID();
+    const timeout = setTimeout(() => {
+      if (state.navigation?.token === token) state.navigation = undefined;
+      reject(new Error("The destination did not finish opening the page. Your tab remains in its original window."));
+    }, 30_000);
+    state.navigation = {
+      token,
+      resolve: () => { clearTimeout(timeout); resolve(); },
+      reject: error => { clearTimeout(timeout); reject(error); },
+    };
+    window.webContents.send("hyperion:open-tab", { ...request, token, target });
+  });
+  if (window.isDestroyed()) throw new Error("The destination window was closed.");
+  if (window.isMinimized()) window.restore();
+  window.focus();
+}
 
 function senderWindow(event: IpcMainInvokeEvent) {
   const window = BrowserWindow.fromWebContents(event.sender);
@@ -161,10 +257,7 @@ function prepareWindow(window: BrowserWindow): Promise<void> {
   });
 }
 async function prepareAllWindows() {
-  for (const state of windows.values()) {
-    state.drag?.preview.dispose();
-    state.drag = undefined;
-  }
+  for (const window of windows.keys()) stopTabDrag(window);
   if ([...windows.values()].some((state) => state.detaching))
     throw new Error("Wait for the tab to finish moving before quitting.");
   const results = await Promise.allSettled(
@@ -266,25 +359,36 @@ function registerDesktopHandlers() {
   handle("hyperion:begin-tab-drag", async (event, value) => {
     const source = senderWindow(event);
     const state = senderState(event);
-    if (state.pending || state.detaching || preparingQuit) return false;
+    if (state.pending || state.detaching || state.navigation || preparingQuit) return false;
     const request = tabDragRequest.parse(value);
-    state.drag?.preview.dispose();
+    for (const window of windows.keys()) stopTabDrag(window);
     const preview = createTabDragPreview(source, request.rect);
-    state.drag = { token: request.token, preview };
+    state.drag = { token: request.token, location: request.location, preview };
     try {
       await preview.ready;
       return state.drag?.token === request.token && !preview.window.isDestroyed() && preview.window.isVisible();
     } catch (error) {
-      preview.dispose();
-      if (state.drag?.token === request.token) state.drag = undefined;
+      if (state.drag?.token === request.token) stopTabDrag(source);
+      else preview.dispose();
       throw error;
     }
   });
   handle("hyperion:end-tab-drag", (event, token) => {
     const state = senderState(event);
     if (!state.drag || state.drag.token !== token) return;
-    state.drag.preview.dispose();
-    state.drag = undefined;
+    stopTabDrag(senderWindow(event));
+  });
+  handle("hyperion:update-tab-drag", (event, value) => {
+    const state = senderState(event);
+    const request = tabDragPosition.parse(value);
+    if (!state.drag || state.drag.token !== request.token) return;
+    state.drag.position = request.position;
+    updateTabDropHint(senderWindow(event));
+  });
+  handle("hyperion:tab-drop-targets", (event, value) => {
+    senderState(event).dropTargets = tabDropTargets.parse(value);
+    for (const [window, state] of windows)
+      if (state.drag) updateTabDropHint(window);
   });
   handle("hyperion:open-tab-ready", (event, token, error) => {
     const state = senderState(event);
@@ -296,7 +400,7 @@ function registerDesktopHandlers() {
   });
   handle("hyperion:return-tab", async (event, value) => {
     const state = senderState(event);
-    if (state.session.kind !== "page" || state.detaching || state.pending || preparingQuit)
+    if (state.session.kind !== "page" || state.detaching || state.pending || state.navigation || preparingQuit)
       throw new Error("Wait for the current window operation to finish.");
     const request = detachedTabRequest.parse(value);
     if (request.vaultId !== state.session.vaultId)
@@ -305,30 +409,9 @@ function registerDesktopHandlers() {
     const primary = [...windows].find(([, state]) => state.session.kind === "primary")?.[0];
     if (!primary || primary.isDestroyed())
       throw new Error("The main window is no longer open.");
-    const destination = windows.get(primary)!;
-    if (!destination.workspaceLoaded || destination.navigation || destination.pending || destination.detaching)
-      throw new Error("The main window is busy. Try again once it finishes.");
     state.detaching = true;
     try {
-      // Resume rendering before awaiting the destination's acknowledgement.
-      if (primary.isMinimized()) primary.restore();
-      primary.show();
-      await new Promise<void>((resolve, reject) => {
-        const token = randomUUID();
-        const timeout = setTimeout(() => {
-          if (destination.navigation?.token === token)
-            destination.navigation = undefined;
-          reject(new Error("The main window did not finish opening the page. Your tab remains in this window."));
-        }, 30_000);
-        destination.navigation = {
-          token,
-          resolve: () => { clearTimeout(timeout); resolve(); },
-          reject: error => { clearTimeout(timeout); reject(error); },
-        };
-        primary.webContents.send("hyperion:open-tab", { ...request, token });
-      });
-      if (primary.isMinimized()) primary.restore();
-      primary.focus();
+      await openTabInWindow(primary, request);
     } finally {
       state.detaching = false;
     }
@@ -344,7 +427,7 @@ function registerDesktopHandlers() {
   handle("hyperion:detach-tab", async (event, value) => {
     const source = senderWindow(event);
     const state = senderState(event);
-    if (state.detaching || state.pending || preparingQuit)
+    if (state.detaching || state.pending || state.navigation || preparingQuit)
       throw new Error("Wait for the current window operation to finish.");
     const request = detachedTabRequest.parse(value);
     if (request.vaultId !== state.session.vaultId)
@@ -352,7 +435,9 @@ function registerDesktopHandlers() {
     assertAvailableLocation(request);
     state.detaching = true;
     try {
-      await createWindow(request);
+      const destination = request.position ? tabDropDestination(source, request.position) : null;
+      if (destination) await openTabInWindow(destination.window, request, destination.target);
+      else await createWindow(request);
     } finally {
       state.detaching = false;
     }
@@ -633,8 +718,11 @@ async function createWindow(detached?: DetachedTabRequest) {
     workspaceLoaded: false,
     closeApproved: false,
     detaching: false,
+    focusOrder: ++focusOrder,
+    dropTargets: { disabled: true, targets: [] },
   };
   windows.set(window, state);
+  window.on("focus", () => { state.focusOrder = ++focusOrder; });
   if (detached) window.setMenuBarVisibility(false);
   // The source tab is retained until the destination has restored its workspace.
   const workspaceReady = detached
@@ -685,8 +773,10 @@ async function createWindow(detached?: DetachedTabRequest) {
   });
   window.once("ready-to-show", () => window.show());
   window.webContents.on("did-start-loading", () => {
-    state.drag?.preview.dispose();
-    state.drag = undefined;
+    stopTabDrag(window);
+    state.dropTargets = { disabled: true, targets: [] };
+    state.navigation?.reject(new Error("The destination window reloaded before the page opened."));
+    state.navigation = undefined;
     state.rendererReady = false;
     state.workspaceLoaded = false;
     state.closeApproved = false;
@@ -715,7 +805,7 @@ async function createWindow(detached?: DetachedTabRequest) {
     }
     if (!state.rendererReady) return;
     event.preventDefault();
-    if (state.pending || state.detaching || preparingQuit) return;
+    if (state.pending || state.detaching || state.navigation || preparingQuit) return;
     void prepareWindow(window).then(
       () => window.close(),
       (error) => {
@@ -729,8 +819,8 @@ async function createWindow(detached?: DetachedTabRequest) {
     );
   });
   window.on("closed", () => {
-    state.drag?.preview.dispose();
-    state.navigation?.reject(new Error("The main window closed before the page opened."));
+    stopTabDrag(window);
+    state.navigation?.reject(new Error("The destination window closed before the page opened."));
     state.ready?.reject(
       new Error("The new window was closed before its workspace opened."),
     );

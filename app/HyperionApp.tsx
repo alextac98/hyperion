@@ -10,7 +10,8 @@ import type { WorkspaceTab, TabAction } from "./application/workspace-tabs";
 import type { NavigationLocation } from "./application/navigation-history";
 import { useWorkspaceTabs } from "./hooks/useWorkspaceTabs";
 import { usePageContext, type PageContextView } from "./hooks/usePageContext";
-import { WorkspaceLayout } from "./components/WorkspaceLayout";
+import { WorkspaceLayout, type WorkspaceLayoutHandle } from "./components/WorkspaceLayout";
+import { locationKey } from "./application/workspace-tabs";
 import { layoutPanes } from "./application/workspace-layout";
 import { useMouseNavigation } from "./hooks/useMouseNavigation";
 import { uiStorage } from "./lib/ui-storage";
@@ -192,6 +193,7 @@ function downloadJson(name: string, value: unknown) {
 }
 
 export default function HyperionApp() {
+  const workspaceLayout = useRef<WorkspaceLayoutHandle>(null);
   const isPageWindow = desktopWindow?.kind === "page";
   const [vaults, setVaults] = useState<VaultRecord[]>([]);
   const [vaultId, setVaultId] = useState(DEFAULT_VAULT_ID);
@@ -579,10 +581,18 @@ export default function HyperionApp() {
   }, [loadVault, currentVaultKey, isPageWindow]);
 
   useEffect(() => {
-    if (!desktop || isPageWindow) return;
+    if (!desktop) return;
     return desktop.onOpenTab(request => dataOperation(async () => {
-      if (request.vaultId !== vaultId) await loadVault(request.vaultId);
+      const switchingVault = request.vaultId !== vaultId;
+      if (switchingVault) {
+        if (isPageWindow) throw new Error("This page window belongs to a different vault.");
+        await loadVault(request.vaultId);
+      }
       flushSync(() => openTab(request.location));
+      if (request.target && !switchingVault) {
+        if (!workspaceLayout.current) throw new Error("The destination workspace is no longer open.");
+        flushSync(() => workspaceLayout.current!.placeTab(locationKey(request.location), request.target!));
+      }
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     }));
   }, [isPageWindow, vaultId, loadVault, openTab]);
@@ -1930,12 +1940,16 @@ export default function HyperionApp() {
         <div className="content-shell">
           <section className="main-content">
             <WorkspaceLayout
+              ref={workspaceLayout}
               onDetach={detachTab}
               canDetach={tab => tab.location.view === "note" || tab.location.view === "template"}
               pageWindow={isPageWindow}
               onReturn={isPageWindow ? returnTab : undefined}
               onBeginTabDrag={desktop?.beginTabDrag}
               onEndTabDrag={desktop?.endTabDrag}
+              onUpdateTabDrag={desktop?.updateTabDrag}
+              onUpdateTabDropTargets={desktop?.updateTabDropTargets}
+              onTabDropHint={desktop?.onTabDropHint}
               state={tabState}
               dispatch={dispatchTab}
               disabled={operationBusy}

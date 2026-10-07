@@ -4,11 +4,13 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useImperativeHandle,
   useRef,
   useState,
   useSyncExternalStore,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
 } from "react";
 import {
   DockviewReact,
@@ -22,7 +24,7 @@ import {
   type DockviewWillShowOverlayLocationEvent,
 } from "dockview-react";
 import { Plus, X } from "@phosphor-icons/react";
-import type { TabDragRequest } from "../../electron/window-session";
+import type { TabDragRequest, TabDropTarget, TabDropTargets } from "../../electron/window-session";
 import { locationKey } from "../application/workspace-tabs";
 import { readPageDrag, type PageDrag } from "../application/page-drag";
 import type {
@@ -41,6 +43,7 @@ import {
 } from "../application/workspace-layout";
 
 type Props = {
+  ref?: Ref<WorkspaceLayoutHandle>;
   state: WorkspaceTabs;
   dispatch: (action: TabAction) => void;
   disabled: boolean;
@@ -54,7 +57,28 @@ type Props = {
   onReturn?: (tab: WorkspaceTab) => void;
   onBeginTabDrag?: (request: TabDragRequest) => Promise<boolean>;
   onEndTabDrag?: (token: string) => Promise<void>;
+  onUpdateTabDrag?: (token: string, position: { x: number; y: number }) => Promise<void>;
+  onUpdateTabDropTargets?: (targets: TabDropTargets) => Promise<void>;
+  onTabDropHint?: (callback: (target: TabDropTarget | null) => void) => () => void;
 };
+export type WorkspaceLayoutHandle = { placeTab: (id: string, target: TabDropTarget) => void };
+
+function tabStrip(group: HTMLElement, viewport: HTMLElement) {
+  const header = group.querySelector<HTMLElement>(".dv-tabs-and-actions-container");
+  if (!header) return null;
+  const box = header.getBoundingClientRect();
+  const clip = viewport.getBoundingClientRect();
+  const actions = header.querySelector(".dv-right-actions-container")?.getBoundingClientRect();
+  const x = Math.max(0, box.left, clip.left);
+  const y = Math.max(0, box.top, clip.top);
+  const right = Math.min(window.innerWidth, box.right, clip.right, actions?.width ? actions.left : box.right);
+  const bottom = Math.min(window.innerHeight, box.bottom, clip.bottom);
+  if (right <= x || bottom <= y) return null;
+  return {
+    rect: { x, y, width: right - x, height: bottom - y },
+    tabs: Array.from(header.querySelectorAll<HTMLElement>(".dv-tab")),
+  };
+}
 const WorkspaceContext = createContext<Props | null>(null);
 function useWorkspace() {
   const context = useContext(WorkspaceContext);
@@ -261,16 +285,96 @@ function WorkspaceTabMenu({
 const components = { [WORKSPACE_COMPONENT]: WorkspacePanel };
 const theme = { name: "hyperion", className: "dockview-theme-hyperion" };
 
-export function WorkspaceLayout(props: Props) {
+export function WorkspaceLayout({ ref, ...props }: Props) {
   const latest = useRef(props);
   const viewport = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
+  const dropIndicator = useRef<HTMLDivElement>(null);
   const [api, setApi] = useState<DockviewApi>();
   const reconciling = useRef(false);
   const schedule = useRef(() => {});
   useLayoutEffect(() => {
     latest.current = props;
   });
+
+  useImperativeHandle(ref, () => ({
+    placeTab: (id, target) => {
+      const panel = api?.getPanel(id);
+      const group = api?.groups.find(group => group.id === target.groupId);
+      if (!panel || !group) throw new Error("The destination tab strip changed. Try dragging the tab again.");
+      panel.api.moveTo({ group, position: "center", index: target.index });
+      panel.api.setActive();
+      latest.current.dispatch({ type: "layout", layout: api!.toJSON() });
+    },
+  }), [api]);
+
+  const { state: { tabs }, disabled, onUpdateTabDropTargets, onTabDropHint } = props;
+  useEffect(() => {
+    if (!api || !viewport.current || !onUpdateTabDropTargets) return;
+    const surface = viewport.current;
+    const indicator = dropIndicator.current;
+    let frame = 0;
+    let hint: TabDropTarget | null = null;
+    let previous = "";
+    const paintHint = () => {
+      if (!indicator) return;
+      const group = api.groups.find(group => group.id === hint?.groupId);
+      const strip = group && tabStrip(group.element, surface);
+      indicator.hidden = !strip || disabled;
+      if (!strip || !hint) return;
+      const { rect, tabs } = strip;
+      const before = tabs[hint.index]?.getBoundingClientRect();
+      const last = tabs.at(-1)?.getBoundingClientRect();
+      const x = Math.max(rect.x + 1, Math.min(before?.left ?? last?.right ?? rect.x, rect.x + rect.width - 2));
+      Object.assign(indicator.style, {
+        left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px`,
+      });
+      indicator.style.setProperty("--tab-insertion-x", `${x - rect.x}px`);
+      indicator.dataset.tabDropGroup = hint.groupId;
+      indicator.dataset.tabDropIndex = String(hint.index);
+    };
+    const publish = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const targets = api.groups.flatMap(group => {
+          const strip = tabStrip(group.element, surface);
+          return strip ? [{ groupId: group.id, rect: strip.rect, tabs: strip.tabs.map(tab => {
+            const box = tab.getBoundingClientRect();
+            return { midpoint: box.left + box.width / 2 };
+          }) }] : [];
+        });
+        const data = { disabled, targets };
+        const serialized = JSON.stringify(data);
+        if (serialized !== previous) {
+          previous = serialized;
+          void onUpdateTabDropTargets!(data).catch(() => {});
+        }
+        paintHint();
+      });
+    };
+    const unsubscribe = onTabDropHint?.(target => { hint = target; paintHint(); });
+    const layout = api.onDidLayoutChange(publish);
+    const observer = new ResizeObserver(publish);
+    observer.observe(surface);
+    for (const group of api.groups) {
+      observer.observe(group.element);
+      for (const tab of group.element.querySelectorAll(".dv-tab")) observer.observe(tab);
+    }
+    surface.addEventListener("scroll", publish, true);
+    window.addEventListener("resize", publish);
+    publish();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      layout.dispose();
+      unsubscribe?.();
+      surface.removeEventListener("scroll", publish, true);
+      window.removeEventListener("resize", publish);
+      if (indicator) indicator.hidden = true;
+      void onUpdateTabDropTargets!({ disabled: true, targets: [] }).catch(() => {});
+    };
+  }, [api, tabs, disabled, onUpdateTabDropTargets, onTabDropHint]);
 
   const onReady = useCallback(({ api }: DockviewReadyEvent) => {
     const { state } = latest.current;
@@ -384,6 +488,10 @@ export function WorkspaceLayout(props: Props) {
       }
       endTabDrag();
     };
+    const movePointerDrag = (event: PointerEvent) => {
+      if (!draggedTab || event.pointerId !== draggedTab.pointerId) return;
+      void latest.current.onUpdateTabDrag?.(draggedTab.token, { x: event.screenX, y: event.screenY }).catch(() => {});
+    };
     const cancelTabDrag = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape" || !draggedTab) return;
       event.preventDefault();
@@ -413,8 +521,11 @@ export function WorkspaceLayout(props: Props) {
     const fit = () => {
       if (!viewport.current || !canvas.current) return;
       const minimum = layoutMinimum(api.toJSON());
-      const width = Math.max(viewport.current.clientWidth, minimum.width);
-      const height = Math.max(viewport.current.clientHeight, minimum.height);
+      // clientWidth/Height round fractional CSS pixels at non-default zoom.
+      // Rounding up can create scrollbars that then repeatedly resize the grid.
+      const bounds = viewport.current.getBoundingClientRect();
+      const width = Math.max(Math.min(viewport.current.clientWidth, Math.floor(bounds.width)), minimum.width);
+      const height = Math.max(Math.min(viewport.current.clientHeight, Math.floor(bounds.height)), minimum.height);
       canvas.current.style.width = `${width}px`;
       canvas.current.style.height = `${height}px`;
       if (api.width !== width || api.height !== height)
@@ -556,7 +667,7 @@ export function WorkspaceLayout(props: Props) {
             const width = Math.min(600, Math.round(Math.min(box.right, window.innerWidth) - x));
             const height = Math.min(100, Math.round(Math.min(box.bottom, window.innerHeight) - y));
             if (width > 0 && height > 0 && latest.current.onBeginTabDrag)
-              void latest.current.onBeginTabDrag({ token, rect: { x, y, width, height } }).then(visible => {
+              void latest.current.onBeginTabDrag({ token, location: latest.current.state.tabs.find(tab => tab.id === panel.id)!.location, rect: { x, y, width, height } }).then(visible => {
                 if (visible && draggedTab?.token === token)
                   document.body.setAttribute("data-native-tab-drag-preview", "true");
               }).catch(() => { /* Dockview's in-window preview remains available. */ });
@@ -571,6 +682,7 @@ export function WorkspaceLayout(props: Props) {
     window.addEventListener("drop", endTabDrag, true);
     window.addEventListener("dragend", endTabDrag, true);
     window.addEventListener("pointerup", endPointerDrag, true);
+    window.addEventListener("pointermove", movePointerDrag, true);
     window.addEventListener("pointercancel", endPointerDrag, true);
     window.addEventListener("keydown", cancelTabDrag, true);
     const observer = new ResizeObserver(publish);
@@ -586,6 +698,7 @@ export function WorkspaceLayout(props: Props) {
       window.removeEventListener("drop", endTabDrag, true);
       window.removeEventListener("dragend", endTabDrag, true);
       window.removeEventListener("pointerup", endPointerDrag, true);
+      window.removeEventListener("pointermove", movePointerDrag, true);
       window.removeEventListener("pointercancel", endPointerDrag, true);
       window.removeEventListener("keydown", cancelTabDrag, true);
       endTabDrag();
@@ -703,6 +816,7 @@ export function WorkspaceLayout(props: Props) {
             getTabContextMenuItems={() => [{ component: WorkspaceTabMenu }]}
           />
         </div>
+        <div className="window-tab-drop-indicator" ref={dropIndicator} hidden aria-hidden="true" />
       </div>
     </WorkspaceContext.Provider>
   );

@@ -50,7 +50,14 @@ async function run() {
       `Editor ${id} did not become active`,
     );
   const openPage = async (window, id) => {
-    await until(() => js(window, `Boolean(document.querySelector('[data-page-id="'+${JSON.stringify(id)}+'"] .organizer-page-link'))`), "Page navigation did not load");
+    await until(
+      () =>
+        js(
+          window,
+          `Boolean(document.querySelector('[data-page-id="'+${JSON.stringify(id)}+'"] .organizer-page-link'))`,
+        ),
+      "Page navigation did not load",
+    );
     await js(
       window,
       `document.querySelector('[data-page-id="'+${JSON.stringify(id)}+'"] .organizer-page-link').click()`,
@@ -65,14 +72,31 @@ async function run() {
   const box = tab.getBoundingClientRect(); return { x: Math.round(box.x + 24), y: Math.round(box.y + box.height / 2) };
 })()`,
     );
-  const mouse = (window, type, point) =>
+  const mouse = (window, type, point) => {
+    const bounds = window.getContentBounds();
+    const zoom = window.webContents.getZoomFactor();
+    const x = Math.round(point.x * zoom),
+      y = Math.round(point.y * zoom);
     window.webContents.sendInputEvent({
       type,
-      ...point,
+      x,
+      y,
+      globalX: bounds.x + x,
+      globalY: bounds.y + y,
       button: "left",
       clickCount: 1,
     });
+  };
   const beginDrag = async (window, id) => {
+    window.focus();
+    await until(
+      () => js(window, "!document.querySelector('.tab-close')?.disabled"),
+      "Window is still preparing its tabs",
+    );
+    await js(
+      window,
+      "new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))",
+    );
     const point = await tabCenter(window, id);
     mouse(window, "mouseMove", point);
     mouse(window, "mouseDown", point);
@@ -109,6 +133,70 @@ async function run() {
       `Array.from(document.querySelectorAll('[role=menuitem]')).find(button => button.textContent === 'Move to new window').click()`,
     );
   };
+
+  const pointForWindow = async (from, to, id, before = true) => {
+    const center = await tabCenter(to, id);
+    const box = await js(
+      to,
+      `(() => {
+      const tab = document.elementFromPoint(${center.x},${center.y}).closest('.dv-tab');
+      const rect = tab.getBoundingClientRect();
+      return {x: ${before} ? rect.left + 3 : rect.right - 3, y: rect.top + rect.height / 2};
+    })()`,
+    );
+    const targetBounds = to.getContentBounds();
+    const sourceBounds = from.getContentBounds();
+    const targetZoom = to.webContents.getZoomFactor();
+    const sourceZoom = from.webContents.getZoomFactor();
+    const point = {
+      x: Math.round(
+        (targetBounds.x + box.x * targetZoom - sourceBounds.x) / sourceZoom,
+      ),
+      y: Math.round(
+        (targetBounds.y + box.y * targetZoom - sourceBounds.y) / sourceZoom,
+      ),
+    };
+    return point;
+  };
+  const hoverWindow = async (from, to, id, before = true) => {
+    const point = await pointForWindow(from, to, id, before);
+    mouse(from, "mouseMove", point);
+    await until(
+      () =>
+        js(to, `!document.querySelector('.window-tab-drop-indicator').hidden`),
+      "Destination tab strip did not show its insertion marker",
+    );
+    return point;
+  };
+  const dropTab = async (from, to, id, anchor, before = true) => {
+    await beginDrag(from, id);
+    const point = await hoverWindow(from, to, anchor, before);
+    mouse(from, "mouseUp", point);
+    await activePage(to, id);
+    await until(
+      () =>
+        from.isDestroyed() ||
+        js(
+          from,
+          `!Array.from(document.querySelectorAll('.dv-tab')).some(tab => tab.dataset.tabPanelId === ${JSON.stringify(JSON.stringify({ view: "note", id }))})`,
+        ),
+      "Cross-window drop did not remove its source tab",
+    );
+    await until(
+      () =>
+        !dragPreview() &&
+        js(to, "document.querySelector('.window-tab-drop-indicator').hidden"),
+      "Cross-window drop left its preview or insertion marker behind",
+    );
+  };
+  const paneTabIds = (window, id) =>
+    js(
+      window,
+      `(() => {
+    const tab = Array.from(document.querySelectorAll('.dv-tab')).find(tab => tab.dataset.tabPanelId === ${JSON.stringify(JSON.stringify({ view: "note", id }))});
+    return Array.from(tab.closest('.dv-groupview').querySelectorAll('.dv-tab')).map(tab => JSON.parse(tab.dataset.tabPanelId).id ?? 'home');
+  })()`,
+    );
 
   try {
     await import(pathToFileURL(resolve("dist-electron/main.js")).href);
@@ -466,9 +554,237 @@ async function run() {
       ),
     );
     assert.equal(source.isDestroyed(), false);
-    assert.equal(source.isVisible(), true, "Returning a page must reveal its primary window");
+    assert.equal(
+      source.isVisible(),
+      true,
+      "Returning a page must reveal its primary window",
+    );
     console.log(
       "PASS: returning a page saves its pending edit, focuses the primary, and closes the empty page window",
+    );
+
+    // Drop into a particular split pane and position, then move between pages.
+    await detachFromMenu(source, noteId);
+    await until(() => {
+      destination = newWindow(source);
+      return Boolean(destination);
+    }, "Page did not detach for cross-window drops");
+    await activePage(destination, noteId);
+    destination.setBounds({ x: 1150, y: 60, width: 800, height: 800 });
+    await js(source, "document.querySelector('.tab-home').click()");
+    await until(
+      () => js(source, "document.querySelectorAll('.dv-tab').length>=2"),
+      "Primary did not open its Home tab",
+    );
+    const otherPoint = await tabCenter(source, otherId);
+    await js(
+      source,
+      `document.elementFromPoint(${otherPoint.x},${otherPoint.y}).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:${otherPoint.x},clientY:${otherPoint.y}}))`,
+    );
+    await js(
+      source,
+      "Array.from(document.querySelectorAll('[role=menuitem]')).find(button=>button.textContent==='Split right').click()",
+    );
+    await until(
+      () => js(source, "document.querySelectorAll('.dv-groupview').length===2"),
+      "Drop target did not split",
+    );
+    await dropTab(destination, source, noteId, otherId);
+    await until(
+      () => destination.isDestroyed(),
+      "An empty page source remained open after dropping into the primary",
+    );
+    assert.deepEqual(
+      await paneTabIds(source, otherId),
+      [noteId, otherId],
+      "Drop must insert before the hovered tab in its pane",
+    );
+    console.log(
+      "PASS: dropping a page onto the primary inserts it in the chosen split pane and closes the empty page window",
+    );
+
+    await detachFromMenu(source, noteId);
+    await until(() => {
+      destination = newWindow(source);
+      return Boolean(destination);
+    }, "First page did not detach");
+    await activePage(destination, noteId);
+    destination.setBounds({ x: 1100, y: 60, width: 520, height: 800 });
+    await detachFromMenu(source, otherId);
+    let secondPage;
+    await until(() => {
+      secondPage = applicationWindows().find(
+        (window) => window !== source && window !== destination,
+      );
+      return Boolean(secondPage);
+    }, "Second page did not detach");
+    await activePage(secondPage, otherId);
+    secondPage.setBounds({ x: 1680, y: 60, width: 520, height: 800 });
+    await dropTab(destination, secondPage, noteId, otherId);
+    await until(
+      () => destination.isDestroyed(),
+      "Empty page-to-page source did not close",
+    );
+    assert.deepEqual(await paneTabIds(secondPage, otherId), [noteId, otherId]);
+    assert.equal(
+      applicationWindows().length,
+      2,
+      "Dropping on a page must reuse that window",
+    );
+    console.log(
+      "PASS: page-to-page dragging reuses the destination window and preserves tab order",
+    );
+
+    // The primary still has a Home tab; the returning page goes after it.
+    const primaryTab = await js(
+      source,
+      "JSON.parse(document.querySelector('.dv-tab').dataset.tabPanelId)",
+    );
+    assert.equal(primaryTab.view, "home");
+    await beginDrag(secondPage, noteId);
+    const homeBox = await js(
+      source,
+      "(() => {const r=document.querySelector('.dv-tab').getBoundingClientRect();return{x:r.right-3,y:r.top+r.height/2}})()",
+    );
+    const a = source.getContentBounds(),
+      b = secondPage.getContentBounds();
+    const homeDrop = {
+      x: Math.round(a.x + homeBox.x - b.x),
+      y: Math.round(a.y + homeBox.y - b.y),
+    };
+    mouse(secondPage, "mouseMove", homeDrop);
+    await until(
+      () =>
+        js(
+          source,
+          "!document.querySelector('.window-tab-drop-indicator').hidden",
+        ),
+      "Primary did not highlight Home tab strip",
+    );
+    mouse(secondPage, "mouseUp", homeDrop);
+    await activePage(source, noteId);
+    await until(
+      () => js(secondPage, "document.querySelectorAll('.dv-tab').length===1"),
+      "Page source did not keep just its other tab",
+    );
+    assert.deepEqual(await paneTabIds(source, noteId), ["home", noteId]);
+    assert.equal(secondPage.isDestroyed(), false);
+
+    // Electron zoom changes the relationship between client and screen coordinates.
+    secondPage.webContents.setZoomFactor(1.25);
+    await wait(200);
+    await dropTab(source, secondPage, noteId, otherId, false);
+    assert.deepEqual(await paneTabIds(secondPage, otherId), [otherId, noteId]);
+    await openPage(source, noteId);
+    const count = await js(
+      source,
+      "document.querySelectorAll('.dv-tab').length",
+    );
+    await dropTab(secondPage, source, noteId, noteId);
+    assert.equal(
+      await js(source, "document.querySelectorAll('.dv-tab').length"),
+      count,
+      "Returning an already-open page must reuse its existing tab",
+    );
+    assert.deepEqual(await paneTabIds(source, noteId), ["home", noteId]);
+    console.log(
+      "PASS: dragging from primary to an existing page and back reuses windows and already-open tabs; a nonempty source stays open",
+    );
+
+    secondPage.webContents.setZoomFactor(1);
+    source.webContents.setZoomFactor(1);
+    await wait(200);
+
+    // Cancellation cleans the receiving window too, without moving either tab.
+    await beginDrag(secondPage, otherId);
+    const cancelledPoint = await hoverWindow(secondPage, source, noteId);
+    secondPage.webContents.sendInputEvent({
+      type: "keyDown",
+      keyCode: "Escape",
+    });
+    secondPage.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+    mouse(secondPage, "mouseUp", cancelledPoint);
+    await until(
+      () =>
+        !dragPreview() &&
+        js(
+          source,
+          "document.querySelector('.window-tab-drop-indicator').hidden",
+        ),
+      "Cancelled cross-window drag left a marker",
+    );
+    assert.equal(secondPage.isDestroyed(), false);
+    await activePage(secondPage, otherId);
+    assert.equal(applicationWindows().length, 2);
+    console.log(
+      "PASS: Escape cancels a cross-window drag and clears the destination insertion marker",
+    );
+
+    // A receiving renderer must acknowledge success before the source is removed.
+    await js(
+      secondPage,
+      `window.__failOpen = window.hyperionDesktop.onOpenTab(async () => { throw new Error('Injected tab opening failure'); }); true`,
+    );
+    await beginDrag(source, noteId);
+    const failedPoint = await hoverWindow(source, secondPage, otherId);
+    mouse(source, "mouseUp", failedPoint);
+    await until(
+      () =>
+        js(
+          source,
+          "document.querySelector('.data-error-banner')?.textContent.includes('Injected tab opening failure')",
+        ),
+      "Failed receiving-window acknowledgement was not surfaced",
+    );
+    await activePage(source, noteId);
+    assert.equal(applicationWindows().length, 2);
+    assert.ok(
+      await tabCenter(source, noteId),
+      "Failed drop removed the source tab",
+    );
+    await js(secondPage, "window.__failOpen()");
+    await until(
+      () => js(secondPage, "!document.querySelector('.tab-close').disabled"),
+      "Receiving window stayed busy after failure",
+    );
+
+    // A window that is still saving/closing cannot accept the page.
+    await js(
+      secondPage,
+      `window.__pendingClose = window.hyperionDesktop.onPrepareClose(() => new Promise(resolve => { window.__releaseClose = resolve; })); true`,
+    );
+    secondPage.close();
+    await until(
+      () => js(secondPage, "Boolean(window.__releaseClose)"),
+      "Page did not begin closing",
+    );
+    await beginDrag(source, noteId);
+    const busyPoint = await pointForWindow(source, secondPage, otherId);
+    mouse(source, "mouseMove", busyPoint);
+    await wait(100);
+    assert.equal(
+      await js(
+        secondPage,
+        "document.querySelector('.window-tab-drop-indicator').hidden",
+      ),
+      true,
+      "A closing window must not advertise accepting a tab",
+    );
+    mouse(source, "mouseUp", busyPoint);
+    await until(
+      () =>
+        js(
+          source,
+          "document.querySelector('.data-error-banner')?.textContent.includes('That window is busy')",
+        ),
+      "Busy receiving window did not preserve the source",
+    );
+    await activePage(source, noteId);
+    assert.equal(applicationWindows().length, 2);
+    await js(secondPage, "window.__releaseClose()");
+    await until(() => secondPage.isDestroyed(), "Page cleanup did not close");
+    console.log(
+      "PASS: failed acknowledgements and busy destinations keep the source tab without creating another window",
     );
 
     // Closing the primary owns the entire set of page windows, including saves.

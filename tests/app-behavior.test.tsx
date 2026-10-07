@@ -1275,6 +1275,12 @@ test("docking preserves mounted page state, tab order, keyboard moves and close 
   });
   const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
   const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+  const bounds = HTMLElement.prototype.getBoundingClientRect;
+  HTMLElement.prototype.getBoundingClientRect = function () {
+    return this.classList.contains("workspace-layout-viewport")
+      ? new dom.window.DOMRect(0, 0, 1100, 800)
+      : bounds.call(this);
+  };
   Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get() { return 1100; } });
   Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get() { return 800; } });
   let ui: Awaited<ReturnType<typeof mount>> | undefined;
@@ -1381,6 +1387,7 @@ test("docking preserves mounted page state, tab order, keyboard moves and close 
     } finally { source.remove(); }
   } finally {
     await ui?.unmount();
+    HTMLElement.prototype.getBoundingClientRect = bounds;
     globals.forEach((name, index) => {
       if (previous[index]) Object.defineProperty(globalThis, name, previous[index]!);
       else Reflect.deleteProperty(globalThis, name);

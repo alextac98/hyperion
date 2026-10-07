@@ -21,12 +21,34 @@ export const detachedTabRequest = z.object({
 
 export const tabDragRequest = z.object({
   token: z.string().uuid(),
+  location: windowLocation,
   rect: z.object({
     x: z.number().int().min(0),
     y: z.number().int().min(0),
     width: z.number().int().min(1).max(600),
     height: z.number().int().min(1).max(100),
   }),
+});
+
+const point = z.object({ x: z.number().finite(), y: z.number().finite() });
+export const tabDragPosition = z.object({
+  token: z.string().uuid(),
+  position: point,
+});
+export const tabDropTargets = z.object({
+  disabled: z.boolean(),
+  targets: z
+    .array(
+      z.object({
+        groupId: z.string().min(1).max(512),
+        rect: point.extend({
+          width: z.number().finite().positive(),
+          height: z.number().finite().positive(),
+        }),
+        tabs: z.array(z.object({ midpoint: z.number().finite() })).max(4096),
+      }),
+    )
+    .max(128),
 });
 
 export type WindowLocation = z.infer<typeof windowLocation>;
@@ -39,7 +61,12 @@ export type WindowSession = {
 };
 
 export type TabDragRequest = z.infer<typeof tabDragRequest>;
-export type OpenWindowTab = DetachedTabRequest & { token: string };
+export type TabDropTargets = z.infer<typeof tabDropTargets>;
+export type TabDropTarget = { groupId: string; index: number };
+export type OpenWindowTab = DetachedTabRequest & {
+  token: string;
+  target?: TabDropTarget;
+};
 
 export type EditorUpdate = {
   vaultId: string;

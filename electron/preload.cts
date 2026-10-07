@@ -45,6 +45,13 @@ contextBridge.exposeInMainWorld("hyperionDesktop", Object.freeze({
   closeWindow: () => ipcRenderer.invoke("hyperion:close-window"),
   beginTabDrag: (request: unknown) => ipcRenderer.invoke("hyperion:begin-tab-drag", request),
   endTabDrag: (token: string) => ipcRenderer.invoke("hyperion:end-tab-drag", token),
+  updateTabDrag: (token: string, position: unknown) => ipcRenderer.invoke("hyperion:update-tab-drag", { token, position }),
+  updateTabDropTargets: (targets: unknown) => ipcRenderer.invoke("hyperion:tab-drop-targets", targets),
+  onTabDropHint: (callback: (target: { groupId: string; index: number } | null) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, target: { groupId: string; index: number } | null) => callback(target);
+    ipcRenderer.on("hyperion:tab-drop-hint", listener);
+    return () => { ipcRenderer.removeListener("hyperion:tab-drop-hint", listener); };
+  },
   onOpenTab: (callback: (request: { token: string }) => Promise<void>) => {
     const listener = (_event: Electron.IpcRendererEvent, request: { token: string }) => {
       void Promise.resolve().then(() => callback(request)).then(
@@ -54,7 +61,7 @@ contextBridge.exposeInMainWorld("hyperionDesktop", Object.freeze({
       );
     };
     ipcRenderer.on("hyperion:open-tab", listener);
-    return () => ipcRenderer.removeListener("hyperion:open-tab", listener);
+    return () => { ipcRenderer.removeListener("hyperion:open-tab", listener); };
   },
   workspaceReady: (vaultId: string) => ipcRenderer.invoke("hyperion:workspace-ready", vaultId),
   onEditorUpdate: (callback: (update: unknown) => void) => {
