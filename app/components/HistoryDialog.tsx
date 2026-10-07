@@ -1,4 +1,4 @@
-import { uiStorage } from "../lib/ui-storage";
+import { rememberRestoredPage } from "../application/restore-navigation";
 import { Dialog } from "./Dialog";
 import { useEffect, useRef, useState } from "react";
 import type { PageRevision } from "../platform/desktop-api";
@@ -42,7 +42,7 @@ export function HistoryDialog({ vaultId, noteId, onClose }: { vaultId: string; n
     await dataOperation(async () => {
       const note = await requireDataService().repositoryExecute<{ id: string }>({ operation: "restoreRevision", vaultId, revisionId: selected.id, asCopy });
       await stopEditorWorkspaces();
-      uiStorage.setItem(`hyperion:last-note:${vaultId}`, note.id);
+      rememberRestoredPage(vaultId, note.id);
       window.location.reload();
     });
   });

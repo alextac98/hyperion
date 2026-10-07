@@ -1,4 +1,4 @@
-import { uiStorage } from "../lib/ui-storage";
+import { rememberRestoredPage } from "../application/restore-navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageComparison, PageRevision, PageSnapshot, RevisionCapture } from "../platform/desktop-api";
 import { requireDataService } from "../platform/runtime";
@@ -95,7 +95,7 @@ export function PageHistoryPreview({ comparison, onClose }: { comparison: PageCo
       await dataOperation(async () => {
         const note = await requireDataService().repositoryExecute<{ id: string }>({ operation: "restoreRevision", vaultId: revision.vaultId, revisionId: revision.id, asCopy });
         await stopEditorWorkspaces();
-        uiStorage.setItem(`hyperion:last-note:${revision.vaultId}`, note.id);
+        rememberRestoredPage(revision.vaultId, note.id);
         window.location.reload();
       });
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setWorking(false); }

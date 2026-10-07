@@ -1021,6 +1021,7 @@ test("nested note groups follow expand and collapse without changing page select
 
 // Workspace tabs use document identity, independently of mutable page titles.
 import { initialTabs, locationKey, restoreTabs, tabsReducer } from "../app/application/workspace-tabs";
+import { rememberRestoredPage } from "../app/application/restore-navigation";
 
 test("workspace tabs open beside active, deduplicate and return to most recent on close", () => {
   const a = { view: "note", id: "a" } as const;
@@ -1068,6 +1069,40 @@ function splitSession() {
   }, ids)!;
   return { ids, layout };
 }
+
+test("history restore reload selects the result while preserving open tabs, panes and other vaults", () => {
+  const { ids, layout } = splitSession();
+  const key = "hyperion:tabs:restore-test";
+  const other = "hyperion:tabs:other-restore-test";
+  localStorage.setItem(key, JSON.stringify({ version: 2, locations: ids.map(id => JSON.parse(id)), active: ids[2], layout }));
+  localStorage.setItem(other, "another vault's session");
+  try {
+    rememberRestoredPage("restore-test", "restored-copy");
+    const restored = restoreTabs(localStorage.getItem(key), () => true, { view: "home" });
+    const copyId = locationKey({ view: "note", id: "restored-copy" });
+    assert.equal(restored.active, copyId);
+    assert.equal(restored.layout?.activeGroup, "top");
+    assert.deepEqual(layoutPanes(restored.layout)[1].views, [ids[2], copyId]);
+    assert.equal(layoutPanes(restored.layout)[1].activeView, copyId);
+    assert.deepEqual(new Set(restored.tabs.map(tab => tab.id)), new Set([...ids, copyId]));
+    assert.deepEqual(layoutPanes(restored.layout).map(pane => pane.views.filter(id => id !== copyId)), layoutPanes(layout).map(pane => pane.views));
+    assert.deepEqual(layoutMinimum(restored.layout), layoutMinimum(layout));
+    assert.equal(localStorage.getItem("hyperion:last-note:restore-test"), "restored-copy");
+    assert.equal(localStorage.getItem(other), "another vault's session");
+
+    rememberRestoredPage("restore-test", "b");
+    const existing = restoreTabs(localStorage.getItem(key), () => true, { view: "home" });
+    assert.equal(existing.active, ids[1]);
+    assert.equal(existing.layout?.activeGroup, "left");
+    assert.equal(layoutPanes(existing.layout)[0].activeView, ids[1]);
+    assert.equal(existing.tabs.length, restored.tabs.length);
+    localStorage.setItem(key, "broken");
+    rememberRestoredPage("restore-test", "fresh-copy");
+    assert.deepEqual(restoreTabs(localStorage.getItem(key), () => true, { view: "home" }), initialTabs({ view: "note", id: "fresh-copy" }));
+  } finally {
+    for (const item of [key, other, "hyperion:last-note:restore-test"]) localStorage.removeItem(item);
+  }
+});
 
 test("workspace layouts preserve nested axes, order and every visible tab across restore", () => {
   const { ids, layout } = splitSession();
