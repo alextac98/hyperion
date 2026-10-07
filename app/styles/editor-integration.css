@@ -40,6 +40,7 @@
   --affine-z-index-popover: 80;
   --affine-z-index-modal: 90;
   --hyperion-bs-button-primary: var(--accent);
+  --hyperion-bs-button-iconButtonSolid: var(--surface-raised);
   --hyperion-bs-database-border: var(--line-strong);
   --hyperion-bs-icon-primary: var(--text);
   --hyperion-bs-icon-secondary: var(--text-soft);
@@ -63,6 +64,24 @@
   background: transparent;
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* Heading type is expressed by typography; keep only the controls in the gutter. */
+.hyperion-blocksuite-viewport affine-paragraph-heading-icon {
+  display: none;
+}
+
+.hyperion-blocksuite-viewport .affine-paragraph-rich-text-wrapper:focus-within > blocksuite-toggle-button .toggle-icon {
+  opacity: 1;
+}
+
+.hyperion-blocksuite-viewport .affine-paragraph-rich-text-wrapper > blocksuite-toggle-button .toggle-icon svg {
+  color: var(--text-faint);
+}
+
+.hyperion-blocksuite-viewport .affine-paragraph-rich-text-wrapper > blocksuite-toggle-button .toggle-icon:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .vault-switcher-wrap {

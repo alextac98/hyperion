@@ -23,6 +23,7 @@ import { ClipboardRouting } from "./clipboard";
 import {
   DocModeProvider,
   EditorSettingExtension,
+  FeatureFlagService,
 } from "@blocksuite/affine/shared/services";
 import { signal } from "@preact/signals-core";
 import { BlockDragHandleExtension } from "./block-drag-handle";
@@ -82,6 +83,8 @@ export function renderPageEditor(store: Store) {
   });
   // The upstream default returns null, which disables page drag-handle hit testing.
   scope.get(DocModeProvider).getEditorMode = () => "page";
+  // Callouts are supported, but the upstream slash command is gated by default.
+  scope.get(FeatureFlagService).setFlag("enable_callout", true);
   configureInlineDates(scope);
   // RangeBinding can finish an earlier selection update after notes are hidden.
   // Keep that delayed page update from clearing or replacing a native field's caret.

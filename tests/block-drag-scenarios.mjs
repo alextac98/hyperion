@@ -176,6 +176,55 @@ export async function blockDragScenarios() {
     );
   };
 
+  // Disclosure controls are replaced by the native renderer after toggling.
+  // Keyboard focus must survive so a collapsed section can be expanded again.
+  const headingView = std.view.getBlock(heading);
+  const disclosure = () =>
+    headingView.querySelector("blocksuite-toggle-button .toggle-icon");
+  await until(
+    () => disclosure()?.getAttribute("aria-label") === "Collapse section",
+    "Heading disclosure is not keyboard accessible",
+  );
+  disclosure().focus();
+  disclosure().dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+    }),
+  );
+  await until(
+    () =>
+      store.getModelById(heading).props.collapsed &&
+      disclosure()?.getAttribute("aria-expanded") === "false" &&
+      document.activeElement === disclosure(),
+    "Collapsing a heading lost keyboard focus",
+  );
+  check(
+    getComputedStyle(std.view.getBlock(list)).display === "none",
+    "Heading disclosure did not hide its section",
+  );
+  disclosure().dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: " ",
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+    }),
+  );
+  await until(
+    () =>
+      !store.getModelById(heading).props.collapsed &&
+      disclosure()?.getAttribute("aria-expanded") === "true" &&
+      document.activeElement === disclosure(),
+    "Expanding a heading lost keyboard focus",
+  );
+  check(
+    getComputedStyle(std.view.getBlock(list)).display !== "none",
+    "Heading disclosure did not restore its section",
+  );
+
   await drag(paragraph, heading);
   await until(
     () => sameOrder([heading, paragraph, list, table, meeting]),

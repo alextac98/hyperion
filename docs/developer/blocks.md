@@ -123,6 +123,11 @@ The grip is also available at the text caret for keyboard navigation. Tab to
 **Move block** and use Alt+ArrowUp or Alt+ArrowDown to move it among its siblings;
 Enter or Space selects the block. History previews hide the grip and reject edits.
 
+Headings use a quiet gutter without H1–H6 badges. Their collapse arrow appears on
+hover or keyboard focus; a collapsed section keeps its arrow visible. Tab to
+**Collapse section** or **Expand section** and press Enter or Space to toggle it.
+Focus stays on the arrow after the disclosure changes.
+
 `app/editor/block-drag-handle.ts` adapts the native BlockSuite widget's shadow-root
 styles and accessibility, with subscriptions owned by each editor scope. The page
 editor supplies an explicit page mode and editor settings for hit testing and drag

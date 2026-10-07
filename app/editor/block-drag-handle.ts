@@ -5,6 +5,13 @@ import {
 import { LifeCycleWatcher, TextSelection } from "@blocksuite/affine/std";
 import styles from "./block-drag-handle.css?inline";
 
+const headingToggleSelector =
+  ".affine-paragraph-rich-text-wrapper > blocksuite-toggle-button > .toggle-icon";
+type HeadingToggle = HTMLElement & {
+  collapsed: boolean;
+  updateComplete: Promise<unknown>;
+};
+
 /** Keep BlockSuite's drag engine and customize its shadow-root grip. */
 export class BlockDragHandleExtension extends LifeCycleWatcher {
   static override key = "hyperion:block-drag-handle";
@@ -12,6 +19,7 @@ export class BlockDragHandleExtension extends LifeCycleWatcher {
   private unsubscribe?: () => void;
   private selectionFrame = 0;
   private dropCaptureTimer?: ReturnType<typeof setTimeout>;
+  private headingCleanup?: () => void;
 
   override created() {
     const stopMonitoring = this.std.dnd.monitor({
@@ -131,8 +139,72 @@ export class BlockDragHandleExtension extends LifeCycleWatcher {
     };
   }
 
+  override mounted() {
+    const prepare = (element: HTMLElement) => {
+      if (!element.isConnected) return;
+      const toggle = element.parentElement as HeadingToggle;
+      element.setAttribute("role", "button");
+      element.tabIndex = 0;
+      element.setAttribute("aria-expanded", String(!toggle.collapsed));
+      element.setAttribute(
+        "aria-label",
+        toggle.collapsed ? "Expand section" : "Collapse section",
+      );
+    };
+    const scan = (element: Element) => {
+      if (element.matches(headingToggleSelector))
+        prepare(element as HTMLElement);
+      element
+        .querySelectorAll<HTMLElement>(headingToggleSelector)
+        .forEach(prepare);
+    };
+    // The native disclosure replaces its element when it changes direction.
+    const observer = new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes)
+          if (node instanceof Element) scan(node);
+    });
+    observer.observe(this.std.host, { childList: true, subtree: true });
+    scan(this.std.host);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        (event.key !== "Enter" && event.key !== " ") ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        !(event.target instanceof Element)
+      )
+        return;
+      const control = event.target.closest<HTMLElement>(headingToggleSelector);
+      if (!control) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const toggle = control.parentElement as HeadingToggle;
+      const paragraph = control.closest("affine-paragraph") as
+        | (HTMLElement & { updateComplete: Promise<unknown> })
+        | null;
+      control.click();
+      void paragraph?.updateComplete
+        .then(() => toggle.updateComplete)
+        .then(() => {
+          const replacement = toggle.querySelector<HTMLElement>(".toggle-icon");
+          if (!replacement?.isConnected) return;
+          prepare(replacement);
+          replacement.focus({ preventScroll: true });
+        });
+    };
+    this.std.host.addEventListener("keydown", onKeyDown, { capture: true });
+    this.headingCleanup = () => {
+      observer.disconnect();
+      this.std.host.removeEventListener("keydown", onKeyDown, {
+        capture: true,
+      });
+    };
+  }
+
   override unmounted() {
     this.unsubscribe?.();
+    this.headingCleanup?.();
     cancelAnimationFrame(this.selectionFrame);
     clearTimeout(this.dropCaptureTimer);
   }
