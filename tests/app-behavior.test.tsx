@@ -11,7 +11,7 @@ import { usePageContext } from "../app/hooks/usePageContext";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
-import { act, StrictMode, useState } from "react";
+import { act, StrictMode, useState, useLayoutEffect } from "react";
 import { createBlankNote } from "../app/lib/local-database";
 import { reconcilePageLinks } from "../app/lib/page-links";
 import { movePage, patchPage } from "../app/application/page-operations";
@@ -137,6 +137,26 @@ test("navigation history bounds retained visits", () => {
   let count = 0;
   while (history.move("back", () => true)) count++;
   assert.equal(count, 99);
+});
+
+test("mouse Back uses the location committed before passive effects run", async () => {
+  let visit!: () => void;
+  function Probe() {
+    const [location, setLocation] = useState<NavigationLocation>({ view: "note", id: "a" });
+    visit = () => setLocation({ view: "note", id: "b" });
+    useMouseNavigation({ vaultId: "vault", loading: false, location,
+      isBlocked: () => false, isAvailable: () => true, onNavigate: setLocation });
+    useLayoutEffect(() => {
+      if (location.view === "note" && location.id === "b")
+        document.body.dispatchEvent(new dom.window.MouseEvent("auxclick", { button: 3, bubbles: true, cancelable: true }));
+    }, [location]);
+    return <span>{location.view === "note" ? location.id : location.view}</span>;
+  }
+  const view = await mount(<Probe />);
+  try {
+    await act(async () => visit());
+    assert.equal(view.host.textContent, "a", "Back must include the committed visit before another input arrives");
+  } finally { await view.unmount(); }
 });
 
 test("mouse navigation handles thumb buttons, native commands, blocking, vault resets and cleanup", async () => {
@@ -1178,7 +1198,7 @@ test("pane focus and close preserve layout and choose a remaining tab in the sam
 
 test("detached workspaces start with only the transferred tab and persist independently of the primary window", async () => {
   localStorage.clear();
-  const session: WindowSession = { id: "detached", vaultId: "vault", location: { view: "note", id: "transferred" } };
+  const session: WindowSession = { id: "detached", kind: "page", vaultId: "vault", location: { view: "note", id: "transferred" } };
   let source: ReturnType<typeof useWorkspaceTabs>;
   let destination: ReturnType<typeof useWorkspaceTabs>;
   function Probe() {

@@ -22,6 +22,7 @@ import {
   type DockviewWillShowOverlayLocationEvent,
 } from "dockview-react";
 import { Plus, X } from "@phosphor-icons/react";
+import type { TabDragRequest } from "../../electron/window-session";
 import { locationKey } from "../application/workspace-tabs";
 import { readPageDrag, type PageDrag } from "../application/page-drag";
 import type {
@@ -48,6 +49,11 @@ type Props = {
   icon: (tab: WorkspaceTab) => ReactNode;
   render: (tab: WorkspaceTab, visible: boolean) => ReactNode;
   onDetach?: (tab: WorkspaceTab, position?: { x: number; y: number }) => void;
+  canDetach?: (tab: WorkspaceTab) => boolean;
+  pageWindow?: boolean;
+  onReturn?: (tab: WorkspaceTab) => void;
+  onBeginTabDrag?: (request: TabDragRequest) => Promise<boolean>;
+  onEndTabDrag?: (token: string) => Promise<void>;
 };
 const WorkspaceContext = createContext<Props | null>(null);
 function useWorkspace() {
@@ -108,7 +114,8 @@ function WorkspaceTabHeader({ api }: IDockviewPanelHeaderProps) {
 }
 
 function WorkspacePaneActions({ api }: IDockviewHeaderActionsProps) {
-  const { dispatch, disabled } = useWorkspace();
+  const { dispatch, disabled, pageWindow } = useWorkspace();
+  if (pageWindow) return null;
   return (
     <button
       className="tab-home"
@@ -136,7 +143,7 @@ function WorkspaceTabMenu({
   api,
   close,
 }: IContextMenuItemComponentProps) {
-  const { dispatch, disabled, state, onDetach } = useWorkspace();
+  const { dispatch, disabled, state, onDetach, canDetach, onReturn } = useWorkspace();
   const menu = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     menu.current
@@ -144,6 +151,7 @@ function WorkspaceTabMenu({
       ?.focus();
   }, []);
   if (!panel) return null;
+  const tab = state.tabs.find(tab => tab.id === panel.id);
   const run = (action: () => void) => {
     action();
     close();
@@ -200,7 +208,12 @@ function WorkspaceTabMenu({
         items[next]?.focus();
       }}
     >
-      {onDetach && (
+      {onReturn && tab && (
+        <button role="menuitem" disabled={disabled} onClick={() => run(() => onReturn(tab))}>
+          Move to main window
+        </button>
+      )}
+      {onDetach && tab && (canDetach?.(tab) ?? true) && (
         <button
           role="menuitem"
           disabled={disabled}
@@ -326,10 +339,13 @@ export function WorkspaceLayout(props: Props) {
       id: string;
       pointerId: number;
       element: HTMLElement;
+      token: string;
     } | null = null;
     let draggedPage: PageDrag | null = null;
     let dragCleanup = 0;
     const endTabDrag = () => {
+      if (draggedTab) void latest.current.onEndTabDrag?.(draggedTab.token).catch(() => {});
+      document.body.removeAttribute("data-native-tab-drag-preview");
       if (draggedTab?.element.hasPointerCapture?.(draggedTab.pointerId))
         draggedTab.element.releasePointerCapture(draggedTab.pointerId);
       draggedTab = null;
@@ -360,7 +376,7 @@ export function WorkspaceLayout(props: Props) {
         const tab = latest.current.state.tabs.find(
           (tab) => tab.id === draggedTab!.id,
         );
-        if (tab)
+        if (tab && (latest.current.canDetach?.(tab) ?? true))
           latest.current.onDetach?.(tab, {
             x: event.screenX,
             y: event.screenY,
@@ -531,8 +547,19 @@ export function WorkspaceLayout(props: Props) {
           ).find((element) => element.dataset.tabPanelId === panel.id);
           if (element) {
             const pointerId = (nativeEvent as PointerEvent).pointerId;
-            draggedTab = { id: panel.id, pointerId, element };
+            const token = crypto.randomUUID();
+            draggedTab = { id: panel.id, pointerId, element, token };
             element.setPointerCapture?.(pointerId);
+            const box = element.getBoundingClientRect();
+            const x = Math.max(0, Math.round(box.x));
+            const y = Math.max(0, Math.round(box.y));
+            const width = Math.min(600, Math.round(Math.min(box.right, window.innerWidth) - x));
+            const height = Math.min(100, Math.round(Math.min(box.bottom, window.innerHeight) - y));
+            if (width > 0 && height > 0 && latest.current.onBeginTabDrag)
+              void latest.current.onBeginTabDrag({ token, rect: { x, y, width, height } }).then(visible => {
+                if (visible && draggedTab?.token === token)
+                  document.body.setAttribute("data-native-tab-drag-preview", "true");
+              }).catch(() => { /* Dockview's in-window preview remains available. */ });
           }
         }
         dragSurface?.setAttribute("data-tab-dragging", "true");

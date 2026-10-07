@@ -50,9 +50,11 @@ bundled Chromium runtime. SQLite stores all knowledge data locally.
 - Workspace tabs open or focus pages, templates, and library views, with reordering,
   independent scroll positions, and session restoration per vault. Use Command/Ctrl+T
   for Home, Command/Ctrl+W to close a tab, and Ctrl+Tab / Ctrl+Shift+Tab to switch.
-- Drag a tab outside the desktop window and release it to move it to a new window,
-  or choose **Move to new window** from its tab menu. Windows have independent
-  tabs and vault selection, with live editor updates between windows.
+- Drag a page or template tab outside the desktop window to move it to a new window,
+  or choose **Move to new window** from its tab menu. A visible tab preview follows
+  the pointer onto the desktop. Page windows contain editors and tabs; navigation
+  and vault management stay in the primary window. Use **Move to main window** to
+  return a page. Closing the primary saves and closes all its page windows.
 - Mouse Back/Forward buttons revisit pages and views within the current vault.
 - Keyboard shortcuts for global search (`Command/Ctrl + Shift + F`), current-page
   search (`Command/Ctrl + F`), and new notes

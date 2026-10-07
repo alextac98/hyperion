@@ -8,6 +8,14 @@ import { pathToFileURL } from "node:url";
 import { createFirstVault } from "./vault-setup-helpers.mjs";
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const applicationWindows = () =>
+  BrowserWindow.getAllWindows().filter(
+    (window) => window.getTitle() !== "Hyperion tab drag preview",
+  );
+const dragPreview = () =>
+  BrowserWindow.getAllWindows().find(
+    (window) => window.getTitle() === "Hyperion tab drag preview",
+  );
 const editor = `document.querySelector('.workspace-panel[data-workspace-active="true"] doc-title')`;
 // Electron delays app.ready until its ESM entry has finished evaluating.
 // Keep the native lifecycle checks outside top-level await.
@@ -42,6 +50,7 @@ async function run() {
       `Editor ${id} did not become active`,
     );
   const openPage = async (window, id) => {
+    await until(() => js(window, `Boolean(document.querySelector('[data-page-id="'+${JSON.stringify(id)}+'"] .organizer-page-link'))`), "Page navigation did not load");
     await js(
       window,
       `document.querySelector('[data-page-id="'+${JSON.stringify(id)}+'"] .organizer-page-link').click()`,
@@ -76,10 +85,19 @@ async function run() {
         ),
       "Tab drag did not start",
     );
+    await until(
+      () => dragPreview()?.isVisible(),
+      "Native tab preview did not appear",
+    );
+    assert.equal(
+      dragPreview().isFocusable(),
+      false,
+      "The tab preview must not steal focus",
+    );
     return point;
   };
   const newWindow = (source) =>
-    BrowserWindow.getAllWindows().find((window) => window !== source);
+    applicationWindows().find((window) => window !== source);
   const detachFromMenu = async (window, id) => {
     const point = await tabCenter(window, id);
     await js(
@@ -96,7 +114,7 @@ async function run() {
     await import(pathToFileURL(resolve("dist-electron/main.js")).href);
     let source;
     await until(() => {
-      source = BrowserWindow.getAllWindows()[0];
+      source = applicationWindows()[0];
       return source && !source.webContents.isLoading();
     }, "Primary window did not load");
     source.setBounds({ x: 40, y: 60, width: 1000, height: 800 });
@@ -121,7 +139,12 @@ async function run() {
     mouse(source, "mouseUp", outside);
     await wait(300);
     assert.equal(
-      BrowserWindow.getAllWindows().length,
+      dragPreview(),
+      undefined,
+      "Escape must remove the drag preview",
+    );
+    assert.equal(
+      applicationWindows().length,
       1,
       "Escape must cancel detachment",
     );
@@ -134,7 +157,7 @@ async function run() {
     mouse(source, "mouseUp", { x: 500, y: 400 });
     await wait(300);
     assert.equal(
-      BrowserWindow.getAllWindows().length,
+      applicationWindows().length,
       1,
       "An in-window drop must not detach",
     );
@@ -153,7 +176,7 @@ async function run() {
       () => js(source, "document.querySelectorAll('.dv-groupview').length===2"),
       "In-window tab drag did not split the pane",
     );
-    assert.equal(BrowserWindow.getAllWindows().length, 1);
+    assert.equal(applicationWindows().length, 1);
     console.log(
       "PASS: in-window tab drags still split panes without opening another window",
     );
@@ -197,7 +220,38 @@ async function run() {
       "window.hyperionDesktop.windowSession()",
     );
     assert.notEqual(sourceSession.id, destinationSession.id);
+    assert.equal(sourceSession.kind, "primary");
+    assert.equal(destinationSession.kind, "page");
     assert.equal(destinationSession.vaultId, vaultId);
+    assert.equal(
+      await js(
+        destination,
+        "Boolean(document.querySelector('.sidebar, .tab-home'))",
+      ),
+      false,
+    );
+    assert.equal(
+      await js(
+        destination,
+        "document.querySelector('.app-shell').dataset.windowKind",
+      ),
+      "page",
+    );
+    assert.equal(
+      dragPreview(),
+      undefined,
+      "Releasing the tab must remove the preview",
+    );
+    destination.setSize(520, 700);
+    await wait(150);
+    assert.ok(
+      await js(
+        destination,
+        "document.querySelector('.topbar').scrollWidth <= innerWidth",
+      ),
+      "Page controls must fit a narrow window",
+    );
+    destination.setSize(840, 820);
     console.log(
       "PASS: releasing a tab outside opens a native window with its pending edit, and removes only the transferred tab",
     );
@@ -350,7 +404,7 @@ async function run() {
       ),
       /no longer available/,
     );
-    assert.equal(BrowserWindow.getAllWindows().length, 2);
+    assert.equal(applicationWindows().length, 2);
 
     app.once("browser-window-created", (_event, window) =>
       setTimeout(() => window.destroy(), 0),
@@ -360,7 +414,7 @@ async function run() {
       () => js(source, "Boolean(document.querySelector('.data-error-banner'))"),
       "Failed transfer was not surfaced",
     );
-    assert.equal(BrowserWindow.getAllWindows().length, 2);
+    assert.equal(applicationWindows().length, 2);
     assert.ok(
       await tabCenter(source, noteId),
       "A failed transfer must keep the original tab",
@@ -372,7 +426,7 @@ async function run() {
     // A failed close saves nothing and keeps both windows usable. The save acknowledgement
     // must be scoped to the requesting renderer, even when tokens arrive concurrently.
     await js(
-      source,
+      destination,
       `window.__failClose = window.hyperionDesktop.onPrepareClose(async () => { throw new Error('Injected save failure'); }); true`,
     );
     source.close();
@@ -385,48 +439,85 @@ async function run() {
     );
     assert.equal(source.isDestroyed(), false);
     assert.equal(destination.isDestroyed(), false);
-    await js(source, "window.__failClose()");
+    await js(destination, "window.__failClose()");
     console.log(
-      "PASS: a failed save keeps its window open without closing another window",
+      "PASS: a failed page-window save keeps the primary and all page windows open",
     );
 
+    // A return acknowledges the destination before removing the page tab/window.
     await js(
-      source,
-      `${editor}.doc.root.props.title.insert('Close saved ', 0)`,
+      destination,
+      `${editor}.doc.root.props.title.insert('Returned ', 0)`,
     );
+    await js(
+      destination,
+      "document.querySelector('[aria-label=\"Move to main window\"]').click()",
+    );
+    await until(
+      () => destination.isDestroyed(),
+      "Returning the final page did not close its page window",
+    );
+    await activePage(source, noteId);
+    assert.ok(
+      await js(
+        source,
+        `${editor}.doc.root.props.title.toString().startsWith('Returned ')`,
+      ),
+    );
+    assert.equal(source.isDestroyed(), false);
+    console.log(
+      "PASS: returning a page saves its pending edit, focuses the primary, and closes the empty page window",
+    );
+
+    // Closing the primary owns the entire set of page windows, including saves.
+    await detachFromMenu(source, noteId);
+    await until(() => {
+      destination = newWindow(source);
+      return Boolean(destination);
+    }, "Menu did not create page window");
+    await activePage(destination, noteId);
+    const databasePath = (
+      await js(destination, "window.hyperionDesktop.storageInfo()")
+    ).databasePath;
+    await js(
+      destination,
+      `${editor}.doc.root.props.title.insert('Primary close saved ', 0)`,
+    );
+    app.removeAllListeners("window-all-closed");
     source.close();
     await until(
-      () => source.isDestroyed(),
-      "Save-aware source close did not finish",
+      () => applicationWindows().length === 0,
+      "Closing the primary did not save and close its page windows",
     );
-    await until(
-      () =>
-        js(
-          destination,
-          `${editor}.doc.root.props.title.toString().startsWith('Close saved ')`,
-        ),
-      "Original window close lost its final edit",
+    const { DatabaseSync } = process.getBuiltinModule("node:sqlite");
+    const stored = new DatabaseSync(databasePath, { readOnly: true });
+    assert.ok(
+      stored
+        .prepare("SELECT record FROM notes WHERE id=?")
+        .get(noteId)
+        .record.includes("Primary close saved Returned "),
     );
-    assert.equal(destination.isDestroyed(), false);
-
-    // Detaching the final tab keeps a useful Home tab in the original window.
-    await detachFromMenu(destination, noteId);
-    let third;
-    await until(() => {
-      third = newWindow(destination);
-      return Boolean(third);
-    }, "Menu did not create window");
-    await activePage(third, noteId);
-    await until(
-      () => js(destination, "Boolean(document.querySelector('.home-view'))"),
-      "Final-tab transfer did not leave Home",
-    );
-    const databasePath = (
-      await js(third, "window.hyperionDesktop.storageInfo()")
-    ).databasePath;
-    await js(third, `${editor}.doc.root.props.title.insert('Quit saved ', 0)`);
+    stored.close();
     console.log(
-      "PASS: detached window survives closing the original; the tab menu also detaches the final tab safely",
+      "PASS: closing the primary saves pending edits and closes its page windows",
+    );
+
+    // macOS can reopen the primary while the app remains running; then quit all.
+    app.emit("activate");
+    await until(() => {
+      source = applicationWindows()[0];
+      return source && !source.webContents.isLoading();
+    }, "Primary did not reopen");
+    await openPage(source, noteId);
+    await detachFromMenu(source, noteId);
+    await until(() => {
+      destination = newWindow(source);
+      return Boolean(destination);
+    }, "Reopened primary did not detach");
+    await activePage(destination, noteId);
+    await js(
+      destination,
+      `${editor}.doc.root.props.title.insert('Quit saved ', 0)`,
     );
 
     app.once("will-quit", () => {
@@ -437,7 +528,9 @@ async function run() {
         const note = JSON.parse(
           db.prepare("SELECT record FROM notes WHERE id=?").get(noteId).record,
         );
-        assert.ok(note.title.startsWith("Quit saved Close saved "));
+        assert.ok(
+          note.title.startsWith("Quit saved Primary close saved Returned "),
+        );
         db.close();
         console.log("PASS: app quit saves pending edits across all windows");
       } catch (error) {

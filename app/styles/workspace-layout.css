@@ -15,6 +15,15 @@
   height: 100%;
   position: relative;
 }
+.dv-tab-ghost-drag {
+  background: var(--bg) !important;
+  border: 2px solid var(--accent) !important;
+  border-radius: 7px;
+  box-shadow: 0 4px 16px #0003;
+  color: var(--text) !important;
+  overflow: hidden;
+}
+body[data-native-tab-drag-preview] .dv-tab-ghost-drag { visibility: hidden; }
 /* Keep tab drags on Dockview's drop surface. Editors otherwise interpret the
    same gesture as a content/file drop and show an inline insertion indicator.
    The transparent shield leaves normal editor drag/drop untouched. */

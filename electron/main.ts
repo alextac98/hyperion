@@ -21,9 +21,11 @@ import { developmentInstance, developmentRendererUrl } from "./development.js";
 import { feedbackIssueUrl } from "./feedback.js";
 import {
   detachedTabRequest,
+  tabDragRequest,
   type WindowSession,
   type DetachedTabRequest,
 } from "./window-session.js";
+import { createTabDragPreview } from "./tab-drag-preview.js";
 
 const updatePreview = !app.isPackaged && Boolean(process.env.HYPERION_UPDATE_PREVIEW);
 const useBuiltRenderer = app.isPackaged || process.env.HYPERION_TEST_RENDERER === "1";
@@ -90,6 +92,7 @@ let updateCheckStarted = false;
 type WindowState = {
   session: WindowSession;
   rendererReady: boolean;
+  workspaceLoaded: boolean;
   closeApproved: boolean;
   pending?: {
     token: string;
@@ -98,6 +101,12 @@ type WindowState = {
   };
   ready?: { resolve: () => void; reject: (error: Error) => void };
   detaching: boolean;
+  drag?: { token: string; preview: ReturnType<typeof createTabDragPreview> };
+  navigation?: {
+    token: string;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  };
 };
 const windows = new Map<BrowserWindow, WindowState>();
 let quitApproved = false;
@@ -152,6 +161,10 @@ function prepareWindow(window: BrowserWindow): Promise<void> {
   });
 }
 async function prepareAllWindows() {
+  for (const state of windows.values()) {
+    state.drag?.preview.dispose();
+    state.drag = undefined;
+  }
   if ([...windows.values()].some((state) => state.detaching))
     throw new Error("Wait for the tab to finish moving before quitting.");
   const results = await Promise.allSettled(
@@ -247,10 +260,81 @@ function registerDesktopHandlers() {
     arch: process.arch,
   })));
   handle("hyperion:window-session", (event) => senderState(event).session);
+  handle("hyperion:close-window", (event) => {
+    senderWindow(event).close();
+  });
+  handle("hyperion:begin-tab-drag", async (event, value) => {
+    const source = senderWindow(event);
+    const state = senderState(event);
+    if (state.pending || state.detaching || preparingQuit) return false;
+    const request = tabDragRequest.parse(value);
+    state.drag?.preview.dispose();
+    const preview = createTabDragPreview(source, request.rect);
+    state.drag = { token: request.token, preview };
+    try {
+      await preview.ready;
+      return state.drag?.token === request.token && !preview.window.isDestroyed() && preview.window.isVisible();
+    } catch (error) {
+      preview.dispose();
+      if (state.drag?.token === request.token) state.drag = undefined;
+      throw error;
+    }
+  });
+  handle("hyperion:end-tab-drag", (event, token) => {
+    const state = senderState(event);
+    if (!state.drag || state.drag.token !== token) return;
+    state.drag.preview.dispose();
+    state.drag = undefined;
+  });
+  handle("hyperion:open-tab-ready", (event, token, error) => {
+    const state = senderState(event);
+    if (!state.navigation || state.navigation.token !== token) return;
+    const navigation = state.navigation;
+    state.navigation = undefined;
+    if (error) navigation.reject(new Error(String(error)));
+    else navigation.resolve();
+  });
+  handle("hyperion:return-tab", async (event, value) => {
+    const state = senderState(event);
+    if (state.session.kind !== "page" || state.detaching || state.pending || preparingQuit)
+      throw new Error("Wait for the current window operation to finish.");
+    const request = detachedTabRequest.parse(value);
+    if (request.vaultId !== state.session.vaultId)
+      throw new Error("The page belongs to a different vault.");
+    assertAvailableLocation(request);
+    const primary = [...windows].find(([, state]) => state.session.kind === "primary")?.[0];
+    if (!primary || primary.isDestroyed())
+      throw new Error("The main window is no longer open.");
+    const destination = windows.get(primary)!;
+    if (!destination.workspaceLoaded || destination.navigation || destination.pending || destination.detaching)
+      throw new Error("The main window is busy. Try again once it finishes.");
+    state.detaching = true;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const token = randomUUID();
+        const timeout = setTimeout(() => {
+          if (destination.navigation?.token === token)
+            destination.navigation = undefined;
+          reject(new Error("The main window did not finish opening the page. Your tab remains in this window."));
+        }, 30_000);
+        destination.navigation = {
+          token,
+          resolve: () => { clearTimeout(timeout); resolve(); },
+          reject: error => { clearTimeout(timeout); reject(error); },
+        };
+        primary.webContents.send("hyperion:open-tab", { ...request, token });
+      });
+      if (primary.isMinimized()) primary.restore();
+      primary.focus();
+    } finally {
+      state.detaching = false;
+    }
+  });
   handle("hyperion:workspace-ready", (event, vaultId) => {
     const state = senderState(event);
     if (vaultId !== state.session.vaultId)
       throw new Error("Unexpected workspace vault");
+    state.workspaceLoaded = true;
     state.ready?.resolve();
     state.ready = undefined;
   });
@@ -308,6 +392,8 @@ function registerDesktopHandlers() {
       (request.operation === "updateVault" ? record?.id : undefined) ??
       state.session.vaultId;
     const scoped = vaultId ? { ...request, vaultId } : request;
+    if (request.operation === "selectVault" && state.session.kind === "page" && request.vaultId !== state.session.vaultId)
+      throw new Error("Choose vaults in the main window. This page window belongs to its original vault.");
     if (
       ["closeVault", "deleteVault", "deleteNote", "deleteTemplate"].includes(request.operation) ||
       (request.operation === "restoreRevision" && request.asCopy !== true)
@@ -317,8 +403,10 @@ function registerDesktopHandlers() {
         senderWindow(event),
       );
     const result = databaseInstance().repositoryExecute(scoped);
-    if (request.operation === "selectVault")
+    if (request.operation === "selectVault") {
       state.session.vaultId = String(request.vaultId);
+      state.workspaceLoaded = false;
+    }
     if (
       !/^(list|get|initialize|selectVault|vaultSetup|suggest|export|capture)/.test(
         request.operation,
@@ -462,6 +550,8 @@ function registerDesktopHandlers() {
 
 function assertAvailableLocation(request: DetachedTabRequest) {
   const { location, vaultId } = request;
+  if (location.view !== "note" && location.view !== "template")
+    throw new Error("Only page and template tabs can open a page window.");
   // This also verifies that the vault is still registered and accessible.
   const notes = databaseInstance().repositoryExecute({
     operation: "listNotes",
@@ -491,7 +581,7 @@ async function createWindow(detached?: DetachedTabRequest) {
   const area = point
     ? screen.getDisplayNearestPoint(point).workArea
     : undefined;
-  const width = area ? Math.min(1100, area.width) : 1440;
+  const width = area ? Math.min(840, area.width) : 1440;
   const height = area ? Math.min(820, area.height) : 940;
   const windowTitle = updatePreview
     ? `${applicationName} — Update preview (simulated)`
@@ -515,8 +605,8 @@ async function createWindow(detached?: DetachedTabRequest) {
           ),
         }
       : {}),
-    minWidth: 940,
-    minHeight: 640,
+    minWidth: detached ? 480 : 940,
+    minHeight: detached ? 400 : 640,
     show: false,
     backgroundColor: "#f7f6f2",
     title: windowTitle,
@@ -532,14 +622,17 @@ async function createWindow(detached?: DetachedTabRequest) {
   const state: WindowState = {
     session: {
       id: detached ? randomUUID() : "main",
+      kind: detached ? "page" : "primary",
       vaultId: detached?.vaultId ?? null,
       location: detached?.location ?? null,
     },
     rendererReady: false,
+    workspaceLoaded: false,
     closeApproved: false,
     detaching: false,
   };
   windows.set(window, state);
+  if (detached) window.setMenuBarVisibility(false);
   // The source tab is retained until the destination has restored its workspace.
   const workspaceReady = detached
     ? new Promise<void>((resolve, reject) => {
@@ -559,9 +652,9 @@ async function createWindow(detached?: DetachedTabRequest) {
     : undefined;
 
   if (!app.isPackaged) {
-    window.on("page-title-updated", (event) => {
+    window.on("page-title-updated", (event, title) => {
       event.preventDefault();
-      window.setTitle(windowTitle);
+      window.setTitle(detached ? title : windowTitle);
     });
   }
   // Windows/Linux mouse thumb buttons arrive as native browser commands.
@@ -589,11 +682,35 @@ async function createWindow(detached?: DetachedTabRequest) {
   });
   window.once("ready-to-show", () => window.show());
   window.webContents.on("did-start-loading", () => {
+    state.drag?.preview.dispose();
+    state.drag = undefined;
     state.rendererReady = false;
+    state.workspaceLoaded = false;
     state.closeApproved = false;
   });
   window.on("close", (event) => {
-    if (state.closeApproved || !state.rendererReady) return;
+    if (state.closeApproved) return;
+    if (state.session.kind === "primary" && windows.size > 1) {
+      event.preventDefault();
+      if (preparingQuit) return;
+      preparingQuit = true;
+      void prepareAllWindows().then(() => {
+        for (const [page, pageState] of windows)
+          if (pageState.session.kind === "page") page.close();
+        window.close();
+      }, error => {
+        void dialog.showMessageBox(window, {
+          type: "error",
+          message: "Hyperion could not finish saving",
+          detail: `${String(error)}\nYour windows will remain open.`,
+          buttons: ["Keep working"],
+        });
+      }).finally(() => {
+        preparingQuit = false;
+      });
+      return;
+    }
+    if (!state.rendererReady) return;
     event.preventDefault();
     if (state.pending || state.detaching || preparingQuit) return;
     void prepareWindow(window).then(
@@ -609,15 +726,17 @@ async function createWindow(detached?: DetachedTabRequest) {
     );
   });
   window.on("closed", () => {
+    state.drag?.preview.dispose();
+    state.navigation?.reject(new Error("The main window closed before the page opened."));
     state.ready?.reject(
       new Error("The new window was closed before its workspace opened."),
     );
     state.pending?.resolve();
     windows.delete(window);
-    if (mainWindow === window) mainWindow = windows.keys().next().value ?? null;
+    if (mainWindow === window) mainWindow = null;
   });
 
-  mainWindow ??= window;
+  if (state.session.kind === "primary") mainWindow = window;
   try {
     // Observe an early workspace failure while the page is still loading.
     await Promise.all([

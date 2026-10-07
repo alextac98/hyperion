@@ -16,6 +16,29 @@
   overflow: hidden;
   background: var(--bg);
 }
+.page-window .topbar { padding-inline: 12px; }
+.page-window-vault {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 10px;
+  margin-right: 5px;
+  border-right: 1px solid var(--line);
+  color: var(--text-soft);
+  font-size: 12px;
+}
+.page-window-return {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .page-window-vault { display: none; }
+  .page-window-return { font-size: 0; gap: 0; }
+}
 
 .hyperion-mark {
   display: block;

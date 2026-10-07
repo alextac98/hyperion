@@ -19,13 +19,27 @@ export const detachedTabRequest = z.object({
     .optional(),
 });
 
+export const tabDragRequest = z.object({
+  token: z.string().uuid(),
+  rect: z.object({
+    x: z.number().int().min(0),
+    y: z.number().int().min(0),
+    width: z.number().int().min(1).max(600),
+    height: z.number().int().min(1).max(100),
+  }),
+});
+
 export type WindowLocation = z.infer<typeof windowLocation>;
 export type DetachedTabRequest = z.infer<typeof detachedTabRequest>;
 export type WindowSession = {
   id: string;
+  kind: "primary" | "page";
   vaultId: string | null;
   location: WindowLocation | null;
 };
+
+export type TabDragRequest = z.infer<typeof tabDragRequest>;
+export type OpenWindowTab = DetachedTabRequest & { token: string };
 
 export type EditorUpdate = {
   vaultId: string;

@@ -41,6 +41,21 @@ contextBridge.exposeInMainWorld("hyperionDesktop", Object.freeze({
   openFeedback: () => ipcRenderer.invoke("hyperion:feedback-open"),
   windowSession: () => ipcRenderer.invoke("hyperion:window-session"),
   detachTab: (request: unknown) => ipcRenderer.invoke("hyperion:detach-tab", request),
+  returnTab: (request: unknown) => ipcRenderer.invoke("hyperion:return-tab", request),
+  closeWindow: () => ipcRenderer.invoke("hyperion:close-window"),
+  beginTabDrag: (request: unknown) => ipcRenderer.invoke("hyperion:begin-tab-drag", request),
+  endTabDrag: (token: string) => ipcRenderer.invoke("hyperion:end-tab-drag", token),
+  onOpenTab: (callback: (request: { token: string }) => Promise<void>) => {
+    const listener = (_event: Electron.IpcRendererEvent, request: { token: string }) => {
+      void Promise.resolve().then(() => callback(request)).then(
+        () => ipcRenderer.invoke("hyperion:open-tab-ready", request.token, null),
+        (error: unknown) => ipcRenderer.invoke("hyperion:open-tab-ready", request.token,
+          (error instanceof Error ? error.message : String(error)) || "The page could not open"),
+      );
+    };
+    ipcRenderer.on("hyperion:open-tab", listener);
+    return () => ipcRenderer.removeListener("hyperion:open-tab", listener);
+  },
   workspaceReady: (vaultId: string) => ipcRenderer.invoke("hyperion:workspace-ready", vaultId),
   onEditorUpdate: (callback: (update: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, update: unknown) => callback(update);
