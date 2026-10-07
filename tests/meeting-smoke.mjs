@@ -48,6 +48,9 @@ void (async () => {
       "Editor did not open",
     );
     const noteId = await js(`${storeExpression}.id`);
+    const originalTitle = await js(
+      `${storeExpression}.root.props.title.toString()`,
+    );
     const today = await js(
       `(() => { const now = new Date(); return [String(now.getFullYear()).padStart(4, '0'), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-'); })()`,
     );
@@ -216,7 +219,7 @@ void (async () => {
     );
     assert.equal(
       await js(`${storeExpression}.root.props.title.toString()`),
-      "Welcome",
+      originalTitle,
     );
     // Enter must create another native paragraph inside the meeting, not on the page.
     await js(

@@ -13,6 +13,8 @@ void (async () => {
   let window;
   const rendererErrors = [];
   const js = (source) => window.webContents.executeJavaScript(source, true);
+  const activePage = `document.querySelector('.workspace-panel[data-workspace-active="true"] .note-workspace')`;
+  const activeStore = `${activePage}?.querySelector('doc-title')?.doc`;
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   async function until(predicate, message) {
     const deadline = Date.now() + 25000;
@@ -591,8 +593,12 @@ void (async () => {
     );
     await saved();
     // A read-only history preview uses the same registry and disables edits.
-    await js(`document.querySelector('[aria-label="More page actions"]').click()`);
-    await js(`Array.from(document.querySelectorAll('.note-menu button')).find(button=>button.textContent.includes('Version history')).click()`);
+    await js(
+      `document.querySelector('[aria-label="More page actions"]').click()`,
+    );
+    await js(
+      `Array.from(document.querySelectorAll('.note-menu button')).find(button=>button.textContent.includes('Version history')).click()`,
+    );
     await until(
       () =>
         js(
@@ -690,34 +696,38 @@ void (async () => {
     await until(
       () =>
         js(
-          `document.querySelector('doc-title')?.doc.id!==${JSON.stringify(identity.noteId)} && document.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15'`,
+          `Boolean(${activeStore}?.root) && ${activeStore}.id!==${JSON.stringify(identity.noteId)} && ${activePage}?.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15'`,
         ),
       "Duplicated custom block did not render",
     );
     assert.deepEqual(
-      await js(
-        `document.querySelector('doc-title').doc.doc.yBlocks.get('unknown-block').toJSON()`,
-      ),
+      await js(`${activeStore}.doc.yBlocks.get('unknown-block').toJSON()`),
       opaqueBefore,
     );
     await saved();
     const restored = await js(
       `window.hyperionDesktop.repositoryExecute({operation:'restoreRevision',vaultId:${JSON.stringify(vaultId)},revisionId:${JSON.stringify(checkpoint.id)},asCopy:true})`,
     );
+    await js(`location.reload()`);
+    await until(
+      () =>
+        js(
+          `Boolean(document.querySelector('[data-page-id="${restored.id}"] .organizer-page-link'))`,
+        ),
+      "Restored copy was not listed",
+    );
     await js(
-      `localStorage.setItem('hyperion:last-note:'+${JSON.stringify(vaultId)},${JSON.stringify(restored.id)});location.reload()`,
+      `document.querySelector('[data-page-id="${restored.id}"] .organizer-page-link').click()`,
     );
     await until(
       () =>
         js(
-          `document.querySelector('doc-title')?.doc.id===${JSON.stringify(restored.id)} && document.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15'`,
+          `${activeStore}?.id===${JSON.stringify(restored.id)} && ${activePage}?.querySelector('.hyperion-inline-date time')?.dateTime==='2030-06-15'`,
         ),
       "Restored custom block did not render",
     );
     assert.deepEqual(
-      await js(
-        `document.querySelector('doc-title').doc.doc.yBlocks.get('unknown-block').toJSON()`,
-      ),
+      await js(`${activeStore}.doc.yBlocks.get('unknown-block').toJSON()`),
       opaqueBefore,
     );
     await saved();
