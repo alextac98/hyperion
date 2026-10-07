@@ -176,11 +176,15 @@ its API tests. Server provisioning and agent process supervision are separate.
   continued operation after one instance closes, plus launcher shutdown cleanup.
   Requires a graphical desktop
   session (or Xvfb on Linux).
+- `pnpm test:clipboard`: runs native copy, cut, and paste against the built renderer
+  and a fresh Vite development server. Verifies that copying text replaces an old
+  screenshot, pastes below the source with formatting, and respects native fields
+  and retained tabs. Requires a graphical desktop session (or Xvfb on Linux).
 - `pnpm test`: builds the renderer and runs application behavior, database, semantic page diff, save coordinator and configuration tests.
 - `pnpm lint`: checks TypeScript and React code.
 - `pnpm test:integration`: builds both processes and runs the native Electron smoke test
   against a temporary isolated vault, including sidebar history, pending-edit diffs,
-  read-only previews, native recovery dialogs and both restore paths; requires a graphical desktop session.
+  read-only previews, native clipboard commands and retained-tab isolation, native recovery dialogs and both restore paths; requires a graphical desktop session.
 
 See [Database migration regression tests](migration-tests.md) for fixture contents,
 what the migration checks verify, and how to add coverage for future releases.

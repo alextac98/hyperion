@@ -128,7 +128,9 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: blocksuitePackages,
-    include: ["bind-event-listener", "bytes", "debug", "deepmerge", "extend", "lodash.ismatch", "picocolors"],
+    // BlockSuite stays unbundled for decorators, but its CommonJS clipboard
+    // compressor needs optimization so namespace imports expose its functions.
+    include: ["bind-event-listener", "bytes", "debug", "deepmerge", "extend", "lodash.ismatch", "lz-string", "picocolors"],
     rolldownOptions: {
       plugins: [transformBlocksuiteDecorators()],
       transform: {

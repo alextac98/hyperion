@@ -7,6 +7,7 @@ import { getInternalViewExtensions } from "@blocksuite/affine/extensions/view";
 import { BlockStdScope, TextSelection } from "@blocksuite/affine/std";
 import type { Store } from "@blocksuite/affine/store";
 import { PageDraggingAreaViewExtension } from "@blocksuite/affine/widgets/page-dragging-area/view";
+import { ClipboardRouting } from "./clipboard";
 
 import { customBlockViews, customBlockInsertion, applyInsertionPolicy } from "./blocks/views";
 import { literal } from "lit/static-html.js";
@@ -19,7 +20,7 @@ const viewManager = new ViewExtensionManager(
 const pageExtensions = viewManager.get("page");
 
 export function renderPageEditor(store: Store) {
-  const scope = new BlockStdScope({ store, extensions: [...supportedExtensions(pageExtensions), ...customBlockViews(store), ...customBlockInsertion(), inlineDateSpec, inlineDateMenu] });
+  const scope = new BlockStdScope({ store, extensions: [...supportedExtensions(pageExtensions), ...customBlockViews(store), ...customBlockInsertion(), inlineDateSpec, inlineDateMenu, ClipboardRouting] });
   configureInlineDates(scope);
   // RangeBinding can finish an earlier selection update after notes are hidden.
   // Keep that delayed page update from clearing or replacing a native field's caret.
