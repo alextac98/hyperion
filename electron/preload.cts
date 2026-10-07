@@ -25,6 +25,7 @@ const channels = {
 } as const;
 
 contextBridge.exposeInMainWorld("hyperionDesktop", Object.freeze({
+  openFeedback: () => ipcRenderer.invoke("hyperion:feedback-open"),
   onNavigate: (callback: (direction: "back" | "forward") => void) => {
     const listener = (_event: Electron.IpcRendererEvent, direction: unknown) => {
       if (direction === "back" || direction === "forward") callback(direction);

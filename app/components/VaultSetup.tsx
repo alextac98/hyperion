@@ -3,6 +3,7 @@ import { FolderOpen, Plus, X } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import type { VaultRecord } from "../lib/local-database";
 import { HyperionMark } from "./HyperionMark";
+import { FeedbackButton } from "./FeedbackButton";
 
 export function VaultSetup({
   firstRun,
@@ -192,6 +193,7 @@ export function VaultSetup({
           ? "Local to this device. No account needed."
           : "Stored on your development server."}
       </p>
+      <FeedbackButton />
     </section>
   );
 }
