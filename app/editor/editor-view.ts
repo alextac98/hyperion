@@ -1,33 +1,98 @@
-import { configureInlineDates, inlineDateMenu, inlineDateSpec, installInlineDates } from "./inline-date";
+import {
+  configureInlineDates,
+  inlineDateMenu,
+  inlineDateSpec,
+  installInlineDates,
+} from "./inline-date";
 import { MindmapViewExtension } from "@blocksuite/affine/gfx/mindmap/view";
 import { supportedExtensions } from "./blocks/extensions";
 import { retiredBlockFlavours } from "../../blocks/retired";
-import { ViewExtensionManager } from "@blocksuite/affine/ext-loader";
+import {
+  ViewExtensionManager,
+  type ViewScope,
+} from "@blocksuite/affine/ext-loader";
 import { getInternalViewExtensions } from "@blocksuite/affine/extensions/view";
-import { BlockStdScope, TextSelection } from "@blocksuite/affine/std";
+import {
+  BlockStdScope,
+  LifeCycleWatcher,
+  TextSelection,
+} from "@blocksuite/affine/std";
 import type { Store } from "@blocksuite/affine/store";
 import { PageDraggingAreaViewExtension } from "@blocksuite/affine/widgets/page-dragging-area/view";
 import { ClipboardRouting } from "./clipboard";
+import {
+  DocModeProvider,
+  EditorSettingExtension,
+} from "@blocksuite/affine/shared/services";
+import { signal } from "@preact/signals-core";
+import { BlockDragHandleExtension } from "./block-drag-handle";
 
-import { customBlockViews, customBlockInsertion, applyInsertionPolicy } from "./blocks/views";
+import {
+  customBlockViews,
+  customBlockInsertion,
+  applyInsertionPolicy,
+} from "./blocks/views";
 import { literal } from "lit/static-html.js";
 
-const viewManager = new ViewExtensionManager(
-  getInternalViewExtensions().filter(
-    (extension) => extension !== PageDraggingAreaViewExtension && extension !== MindmapViewExtension,
-  ),
+const viewProviders = getInternalViewExtensions().filter(
+  (extension) =>
+    extension !== PageDraggingAreaViewExtension &&
+    extension !== MindmapViewExtension,
 );
-const pageExtensions = viewManager.get("page");
+
+class DragPreviewInlineDates extends LifeCycleWatcher {
+  static override key = "hyperion:drag-preview-inline-dates";
+
+  override created() {
+    configureInlineDates(this.std);
+  }
+}
+
+class EditorViewManager extends ViewExtensionManager {
+  constructor(private readonly store: Store) {
+    super(viewProviders);
+  }
+
+  override get(viewScope: ViewScope) {
+    // The native drag preview asks this manager for a separate editor scope.
+    // Give it the same custom views and inline dates as the source document.
+    return [
+      ...supportedExtensions(super.get(viewScope)),
+      ...customBlockViews(this.store),
+      ...(viewScope === "preview-page"
+        ? [inlineDateSpec, DragPreviewInlineDates]
+        : []),
+    ];
+  }
+}
 
 export function renderPageEditor(store: Store) {
-  const scope = new BlockStdScope({ store, extensions: [...supportedExtensions(pageExtensions), ...customBlockViews(store), ...customBlockInsertion(), inlineDateSpec, inlineDateMenu, ClipboardRouting] });
+  const viewManager = new EditorViewManager(store);
+  const scope = new BlockStdScope({
+    store,
+    extensions: [
+      ...viewManager.get("page"),
+      ...customBlockInsertion(),
+      inlineDateSpec,
+      inlineDateMenu,
+      ClipboardRouting,
+      BlockDragHandleExtension,
+      EditorSettingExtension({ setting$: signal({}) }),
+    ],
+  });
+  // The upstream default returns null, which disables page drag-handle hit testing.
+  scope.get(DocModeProvider).getEditorMode = () => "page";
   configureInlineDates(scope);
   // RangeBinding can finish an earlier selection update after notes are hidden.
   // Keep that delayed page update from clearing or replacing a native field's caret.
   const meetingControlFocused = () => {
     const active = document.activeElement;
-    return active instanceof Element && scope.host.contains(active) && active.matches(
-      '.meeting-title, .meeting-date, textarea[aria-label="Meeting transcript"]',
+    return (
+      active instanceof Element &&
+      scope.host.contains(active) &&
+      active.matches(
+        '.meeting-title, .meeting-date, textarea[aria-label="Meeting transcript"]',
+      )
     );
   };
   const range = scope.range;
@@ -36,11 +101,14 @@ export function renderPageEditor(store: Store) {
     if (!meetingControlFocused()) clearRange();
   };
   const syncTextSelection = range.syncTextSelectionToRange.bind(range);
-  range.syncTextSelectionToRange = selection => {
+  range.syncTextSelectionToRange = (selection) => {
     if (!meetingControlFocused()) syncTextSelection(selection);
   };
   const getView = scope.getView.bind(scope);
-  scope.getView = flavour => retiredBlockFlavours.has(flavour) ? null : getView(flavour) ?? literal`hyperion-unavailable-block`;
+  scope.getView = (flavour) =>
+    retiredBlockFlavours.has(flavour)
+      ? null
+      : (getView(flavour) ?? literal`hyperion-unavailable-block`);
   applyInsertionPolicy(scope);
   const viewport = document.createElement("div");
   viewport.className = "affine-page-viewport hyperion-blocksuite-viewport";
@@ -67,9 +135,10 @@ export function renderPageEditor(store: Store) {
         (!event.metaKey && !event.ctrlKey) ||
         event.altKey ||
         event.shiftKey ||
-        (event.target instanceof Element && event.target.closest(
-          'input, textarea, select, [data-range-sync-exclude="true"]',
-        )) ||
+        (event.target instanceof Element &&
+          event.target.closest(
+            'input, textarea, select, [data-range-sync-exclude="true"]',
+          )) ||
         !event.composedPath().some((target) => target === editorContainer)
       ) {
         return;
@@ -83,9 +152,10 @@ export function renderPageEditor(store: Store) {
         model?: { text?: { length: number } };
       };
 
-      const selectionContainer = event.target instanceof Element
-        ? event.target.closest(".meeting-notes-editor") ?? editorContainer
-        : editorContainer;
+      const selectionContainer =
+        event.target instanceof Element
+          ? (event.target.closest(".meeting-notes-editor") ?? editorContainer)
+          : editorContainer;
 
       const textBlocks = Array.from(
         selectionContainer.querySelectorAll<HTMLElement>(".inline-editor"),

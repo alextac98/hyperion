@@ -111,6 +111,29 @@ calendar days; Escape and Cancel dismiss the picker without changing the saved
 date. Click a saved date to edit it. Dates are stored as calendar dates without a
 time zone; the displayed label follows the device locale and search uses ISO text.
 
+## Moving blocks
+
+Hover a block to reveal its six-dot grip in the left gutter. Drag it to the
+insertion line to reorder it; selected blocks move together, and nested content
+stays with its parent. Text formatting, table cells and custom block properties
+remain intact. A canceled drag leaves the document unchanged. Moves save through
+the regular document store and support undo/redo, separately from subsequent typing.
+
+The grip is also available at the text caret for keyboard navigation. Tab to
+**Move block** and use Alt+ArrowUp or Alt+ArrowDown to move it among its siblings;
+Enter or Space selects the block. History previews hide the grip and reject edits.
+
+`app/editor/block-drag-handle.ts` adapts the native BlockSuite widget's shadow-root
+styles and accessibility, with subscriptions owned by each editor scope. The page
+editor supplies an explicit page mode and editor settings for hit testing and drag
+previews. Keep those services when changing the editor preset.
+
+`pnpm test:block-drag` exercises the real drag events and previews, paragraph/heading
+and multi-block moves, nested lists, tables, custom meetings, formatting, undo/redo,
+keyboard focus, cancellation, persistence after reopening and read-only history.
+It requires a graphical desktop session (or Xvfb on Linux) and also runs as part
+of `pnpm test:integration`.
+
 ## References and assets
 
 Reserve `props.references` for explicit reference slots:
