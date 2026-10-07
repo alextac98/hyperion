@@ -175,6 +175,9 @@ importers:
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@preact/signals-core':
+        specifier: 1.14.4
+        version: 1.14.4
       diff:
         specifier: ^9.0.0
         version: 9.0.0

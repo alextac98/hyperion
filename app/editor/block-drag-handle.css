@@ -1,0 +1,50 @@
+:host .affine-drag-handle-container {
+  transition: none !important;
+}
+
+:host .affine-drag-handle-grabber {
+  position: relative;
+  flex: 0 0 16px;
+  width: 16px !important;
+  height: 12px;
+  color: var(--affine-text-disable-color);
+  background: transparent;
+  border-radius: 0 !important;
+  outline: none;
+  cursor: grab;
+  transition: none;
+}
+
+/* A compact six-dot grip with a generous hit area, beside the first line. */
+:host .affine-drag-handle-grabber::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: -4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at 9px 7px, currentColor 1.2px, transparent 1.3px),
+    radial-gradient(circle at 15px 7px, currentColor 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 12px, currentColor 1.2px, transparent 1.3px),
+    radial-gradient(circle at 15px 12px, currentColor 1.2px, transparent 1.3px),
+    radial-gradient(circle at 9px 17px, currentColor 1.2px, transparent 1.3px),
+    radial-gradient(circle at 15px 17px, currentColor 1.2px, transparent 1.3px);
+}
+
+:host .affine-drag-handle-grabber:hover::before,
+:host .affine-drag-handle-grabber:focus-visible::before {
+  color: var(--affine-text-secondary-color);
+  background-color: var(--affine-hover-color);
+}
+
+:host .affine-drag-handle-grabber:focus-visible::before {
+  outline: 2px solid var(--affine-primary-color);
+  outline-offset: 2px;
+}
+
+:host .affine-drag-handle-container:active,
+:host .affine-drag-handle-grabber:active {
+  cursor: grabbing;
+}
