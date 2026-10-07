@@ -1,19 +1,21 @@
-# Primary and page window evidence
+# Cross-window tab evidence
 
-Recorded remotely on this computer against Hyperion commit `6c633b411b3d78fcdb47b21d8fb256f79f1bd6be`.
+Recorded remotely on this computer against Hyperion commit `809a68cc6c14052d18fc7e530fbb3c32788c569a` for [PR #51](https://github.com/alextac98/hyperion/pull/51).
 
-[Watch or download the 27-second revised flow](page-window-flow.mp4).
+[Watch or download the 22-second cross-window tab video](cross-window-tabs.mp4).
 
-![A tab preview follows the pointer outside the primary window](page-drag-preview.png)
+![Dragging back onto the primary tab strip](page-to-primary-drop.png)
 
-![The primary workspace and its focused page window](page-preview.png)
+![Dragging from one page window into another](page-to-page-drop.png)
 
-The video shows an actual X11 mouse drag with a visible native tab preview, a focused page window opening without a sidebar, live edits synchronizing with the primary, returning the page to the primary, and closing all page windows with the primary. It uses the real Electron app and built renderer with an isolated temporary vault and profile on an Xvfb Linux desktop. The drag uses native XTest mouse events; the title edit uses the live editor's Yjs store. ffmpeg captures the desktop directly.
+The recording shows actual native mouse drags from a page window into another page window, back onto the primary tab strip, and from the primary into an existing page window. A visible tab preview follows the pointer; the destination highlights the tab strip and insertion position. The destination receives the tab, an empty source page window closes, and a source with another tab stays open.
 
-Validation: all 161 standard tests, lint, desktop type checking, native window integration, and the broader desktop smoke test pass. The native suite covers preview visibility/cancellation/focus, split panes, narrow page windows, two-way concurrent edits, vault isolation and backups, failed transfer/save, return to a hidden primary, owned window closure, and save-on-quit. A regression test verifies that navigation history updates before the next input can arrive.
+Environment: the real Electron app and built renderer, an isolated temporary vault and profile, and a 2300×1080 Xvfb Linux desktop. Mouse drags use native XTest events. ffmpeg captures the desktop directly. The final edit uses the live editor's Yjs store. The video was decoded fully to verify the artifact.
 
-Video: H.264 MP4, 2300×1080, 24 fps, approximately 27 seconds.
+Validation: all 161 standard tests, lint, desktop type checking, native window integration, and the broader desktop smoke suite pass. Cross-window integration covers chosen split panes, insertion order, transfers in both directions, reuse of already-open tabs, cancellation and preview/marker cleanup, 125% zoom, failed destination acknowledgements, and busy destinations preserving the source tab. Existing checks cover concurrent edits, vault/backup isolation, failed saves, returning to a hidden primary, primary-owned closure, and save-on-quit.
 
-SHA-256: `5c8f09ff18f510bfe0321b9d9f1e157c05f1ea3807b7b0f8d3f6d41cd9a02752`
+Video: H.264 MP4, 2300×1080, 24 fps, 21.54 seconds.
 
-The earlier independent-window recording is retained as `window-support.mp4` for history; the linked revised video demonstrates the current behavior.
+SHA-256: `92a7d26562472f6d318f375dd90acdebdf76161146bc157c884971671efdbc2e`
+
+The [earlier primary + page flow](page-window-flow.mp4), recorded against commit `6c633b411b3d78fcdb47b21d8fb256f79f1bd6be`, shows detaching, live edits, the return button, and closing page windows with their primary. The initial independent-window recording is retained as `window-support.mp4` for history.
