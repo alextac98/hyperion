@@ -5,10 +5,13 @@ import { errorMessage } from "./lib/error-message";
 import { flushSync } from "react-dom";
 import { VaultSetup } from "./components/VaultSetup";
 import { Dialog } from "./components/Dialog";
-import { requireDesktop } from "./platform/runtime";
+import { requireDesktop, desktop, desktopWindow } from "./platform/runtime";
+import type { WorkspaceTab, TabAction } from "./application/workspace-tabs";
+import type { NavigationLocation } from "./application/navigation-history";
 import { useWorkspaceTabs } from "./hooks/useWorkspaceTabs";
 import { usePageContext, type PageContextView } from "./hooks/usePageContext";
-import { WorkspaceLayout } from "./components/WorkspaceLayout";
+import { WorkspaceLayout, type WorkspaceLayoutHandle } from "./components/WorkspaceLayout";
+import { locationKey } from "./application/workspace-tabs";
 import { layoutPanes } from "./application/workspace-layout";
 import { useMouseNavigation } from "./hooks/useMouseNavigation";
 import { uiStorage } from "./lib/ui-storage";
@@ -24,6 +27,7 @@ import {
   Archive,
   ArrowClockwise,
   ArrowCounterClockwise,
+  ArrowBendUpLeft,
   CalendarBlank,
   CaretDown,
   CaretRight,
@@ -189,6 +193,8 @@ function downloadJson(name: string, value: unknown) {
 }
 
 export default function HyperionApp() {
+  const workspaceLayout = useRef<WorkspaceLayoutHandle>(null);
+  const isPageWindow = desktopWindow?.kind === "page";
   const [vaults, setVaults] = useState<VaultRecord[]>([]);
   const [vaultId, setVaultId] = useState(DEFAULT_VAULT_ID);
   const [notes, setNotes, readNotes] = useRecords<NoteRecord>([]);
@@ -199,14 +205,30 @@ export default function HyperionApp() {
   const [preferences, setPreferences] = useState(FALLBACK_PREFERENCES);
   const [loading, setLoading] = useState(true);
   const [vaultReady, setVaultReady] = useState(false);
-  const workspace = useWorkspaceTabs(vaultId, vaultReady && !loading);
+  const [dataError, setDataError] = useState("");
+  const workspace = useWorkspaceTabs(vaultId, vaultReady && !loading, desktopWindow);
   const {
-    open: openTab,
+    open: openWorkspaceTab,
     restore: restoreWorkspace,
     state: tabState,
-    dispatch: dispatchTab,
+    dispatch: reduceTab,
   } = workspace;
+  const dispatchTab = useCallback((action: TabAction) => {
+    const removed = action.type === "close" ? [action.id]
+      : action.type === "prune" ? action.ids : [];
+    if (isPageWindow && removed.length && tabState.tabs.every(tab => removed.includes(tab.id))) {
+      void desktop?.closeWindow().catch(error => setDataError(errorMessage(error)));
+      return;
+    }
+    reduceTab(action);
+  }, [isPageWindow, reduceTab, tabState.tabs]);
+  const openTab = useCallback((location: NavigationLocation) => {
+    if (isPageWindow && location.view !== "note" && location.view !== "template") return;
+    openWorkspaceTab(location);
+  }, [isPageWindow, openWorkspaceTab]);
   const { location } = workspace;
+  const currentVaultKey = desktopWindow && desktopWindow.id !== "main"
+    ? `hyperion:current-vault:${desktopWindow.id}` : "hyperion:current-vault";
   const view = location.view;
   const activeId = location.view === "note" ? location.id : "";
   const activeTemplateId = location.view === "template" ? location.id : "";
@@ -251,7 +273,6 @@ export default function HyperionApp() {
     dataBusy.getSnapshot,
   );
   const [history, setHistory] = useState<{ noteId?: string } | null>(null);
-  const [dataError, setDataError] = useState("");
   const [editorStore, setEditorStore] = useState<EditorStore | null>(null);
   const tabStores = useRef(new Map<string, EditorStore>());
   useEffect(() => {
@@ -509,7 +530,7 @@ export default function HyperionApp() {
           },
           target ? { view: "note", id: target.id } : { view: "home" },
         );
-        uiStorage.setItem("hyperion:current-vault", nextVaultId);
+        uiStorage.setItem(currentVaultKey, nextVaultId);
         setVaultMenuOpen(false);
         setEditorStore(null);
         setVaultSetupOpen(false);
@@ -519,7 +540,7 @@ export default function HyperionApp() {
         setLoading(false);
       }
     },
-    [setNotes, setTemplates, restoreWorkspace],
+    [setNotes, setTemplates, restoreWorkspace, currentVaultKey],
   );
 
   useEffect(() => {
@@ -542,7 +563,7 @@ export default function HyperionApp() {
           setLoading(false);
           return;
         }
-        const remembered = uiStorage.getItem("hyperion:current-vault");
+        const remembered = isPageWindow ? desktopWindow?.vaultId : uiStorage.getItem(currentVaultKey);
         const target = storedVaults.some((vault) => vault.id === remembered)
           ? remembered!
           : (storedVaults[0]?.id ?? DEFAULT_VAULT_ID);
@@ -557,7 +578,89 @@ export default function HyperionApp() {
     return () => {
       cancelled = true;
     };
-  }, [loadVault]);
+  }, [loadVault, currentVaultKey, isPageWindow]);
+
+  useEffect(() => {
+    if (!desktop) return;
+    return desktop.onOpenTab(request => dataOperation(async () => {
+      const switchingVault = request.vaultId !== vaultId;
+      if (switchingVault) {
+        if (isPageWindow) throw new Error("This page window belongs to a different vault.");
+        await loadVault(request.vaultId);
+      }
+      flushSync(() => openTab(request.location));
+      if (request.target && !switchingVault) {
+        if (!workspaceLayout.current) throw new Error("The destination workspace is no longer open.");
+        flushSync(() => workspaceLayout.current!.placeTab(locationKey(request.location), request.target!));
+      }
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    }));
+  }, [isPageWindow, vaultId, loadVault, openTab]);
+
+  useEffect(() => {
+    if (!loading && vaultReady) void desktop?.workspaceReady(vaultId).catch(error => setDataError(errorMessage(error)));
+  }, [loading, vaultReady, vaultId]);
+
+  useEffect(() => {
+    if (!desktop || loading || !vaultReady) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      if (disposed) return;
+      // Do not replace local records while their newer values are still queued.
+      if (saves.getState() !== "saved") {
+        timer = setTimeout(refresh, 100);
+        return;
+      }
+      void Promise.all([
+        knowledgeRepository.listNotes(vaultId),
+        knowledgeRepository.listTemplates(vaultId),
+        knowledgeRepository.listVaults(),
+        knowledgeRepository.getPreferences(vaultId),
+      ]).then(([notes, templates, vaults, preferences]) => {
+        if (disposed || saves.getState() !== "saved") {
+          if (!disposed) timer = setTimeout(refresh, 100);
+          return;
+        }
+        const localTitles = new Map(readNotes().map(note => [note.id, note.title]));
+        for (const note of notes) {
+          const pendingTitle = titleTimers.current[note.id];
+          // Preserve the alias baseline while a local rename is still settling.
+          if (pendingTitle && localTitles.get(note.id) === note.title) continue;
+          if (pendingTitle) {
+            clearTimeout(pendingTitle);
+            delete titleTimers.current[note.id];
+          }
+          stableTitles.current[note.id] = note.title;
+        }
+        setNotes(notes);
+        setTemplates(templates);
+        setVaults(vaults);
+        setPreferences(preferences);
+      }).catch(error => { if (!disposed) setDataError(errorMessage(error)); });
+    };
+    const unsubscribe = desktop.onRepositoryChanged(request => {
+      if (request.vaultId !== vaultId && !["createVault", "updateVault", "importVault", "openVault", "closeVault", "deleteVault"].includes(request.operation)) return;
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 50);
+    });
+    return () => { disposed = true; clearTimeout(timer); unsubscribe(); };
+  }, [vaultId, loading, vaultReady, setNotes, setTemplates, readNotes]);
+
+  const detachTab = desktop ? (tab: WorkspaceTab, position?: { x: number; y: number }) => {
+    void dataOperation(async () => {
+      await requireDesktop().detachTab({ vaultId, location: tab.location, position });
+      await flushAll();
+    }).then(() => dispatchTab({ type: "close", id: tab.id }))
+      .catch(error => setDataError(errorMessage(error)));
+  } : undefined;
+  const returnTab = (tab: WorkspaceTab) => {
+    void dataOperation(async () => {
+      await requireDesktop().returnTab({ vaultId, location: tab.location });
+      await flushAll();
+    }).then(() => dispatchTab({ type: "close", id: tab.id }))
+      .catch(error => setDataError(errorMessage(error)));
+  };
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -588,6 +691,8 @@ export default function HyperionApp() {
 
   const updateNoteById = useCallback(
     (id: string, patch: Partial<NoteRecord>, immediate = false) => {
+      const current = readNotes().find(note => note.id === id);
+      if (current && Object.entries(patch).every(([key, value]) => current[key as keyof NoteRecord] === value)) return;
       const result = patchPage(
         readNotes(),
         id,
@@ -615,6 +720,7 @@ export default function HyperionApp() {
       const current = readTemplates();
       const template = current.find((item) => item.id === id);
       if (!template) return;
+      if (Object.entries(patch).every(([key, value]) => template[key as keyof TemplateRecord] === value)) return;
       const updated = {
         ...template,
         ...patch,
@@ -929,6 +1035,7 @@ export default function HyperionApp() {
   };
 
   const navigateView = (nextView: Exclude<View, "note" | "template">) => {
+    if (isPageWindow) return;
     openTab(
       nextView === "tags" ? { view: "tags", tag: null } : { view: nextView },
     );
@@ -1341,6 +1448,13 @@ export default function HyperionApp() {
       note => note.id,
     ),
   ).size;
+  useEffect(() => {
+    if (isPageWindow) document.title = `${heading || "Untitled"} — Hyperion`;
+  }, [isPageWindow, heading]);
+  useEffect(() => {
+    if (isPageWindow && !loading && vaultReady && view !== "note" && view !== "template")
+      void desktop?.closeWindow().catch(error => setDataError(errorMessage(error)));
+  }, [isPageWindow, loading, vaultReady, view]);
 
   if (loading) {
     return (
@@ -1355,17 +1469,18 @@ export default function HyperionApp() {
 
   return (
     <main
-      className={`app-shell${sidebarResizing ? " sidebar-resizing" : ""}`}
+      className={`app-shell${isPageWindow ? " page-window" : ""}${sidebarResizing ? " sidebar-resizing" : ""}`}
+      data-window-kind={isPageWindow ? "page" : "primary"}
       style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
     >
-      {sidebarOpen && (
+      {!isPageWindow && sidebarOpen && (
         <button
           className="mobile-scrim"
           aria-label="Close sidebar"
           onClick={() => setSidebarOpen(false)}
         />
       )}
-      <aside
+      {!isPageWindow && (<aside
         className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${IS_DEVELOPMENT_BUILD ? " sidebar-development" : ""}`}
         aria-label={IS_DEVELOPMENT_BUILD ? "Sidebar (development build)" : undefined}
       >
@@ -1606,12 +1721,12 @@ export default function HyperionApp() {
             onDoubleClick={() => applySidebarWidth(DEFAULT_SIDEBAR_WIDTH, true)}
           />
         )}
-      </aside>
+      </aside>)}
 
       <section className="workspace">
         <header className="topbar">
           <div className="topbar-left">
-            {!sidebarOpen && (
+            {!isPageWindow && !sidebarOpen && (
               <button
                 className="icon-button"
                 aria-label="Open sidebar"
@@ -1648,8 +1763,13 @@ export default function HyperionApp() {
                 />
               </button>
             )}
+            {isPageWindow && (
+              <span className="page-window-vault" title={activeVault?.name}>
+                {activeVault?.name}
+              </span>
+            )}
             <div className="breadcrumbs">
-              {view === "note" && activeNote?.kind === "journal" && (
+              {!isPageWindow && view === "note" && activeNote?.kind === "journal" && (
                 <span className="breadcrumb-parent">
                   <button onClick={() => navigateView("journal")}>
                     <CalendarBlank size={12} />
@@ -1658,7 +1778,7 @@ export default function HyperionApp() {
                   <CaretRight size={12} />
                 </span>
               )}
-              {view === "template" && (
+              {!isPageWindow && view === "template" && (
                 <span className="breadcrumb-parent">
                   <button onClick={() => navigateView("templates")}>
                     <Stack size={12} />
@@ -1686,6 +1806,20 @@ export default function HyperionApp() {
             </div>
           </div>
           <div className="topbar-actions">
+            {isPageWindow && (
+              <button
+                className="page-window-return"
+                disabled={operationBusy}
+                title="Move this page back to the main window"
+                aria-label="Move to main window"
+                onClick={() => {
+                  const tab = tabState.tabs.find(tab => tab.id === tabState.active);
+                  if (tab) returnTab(tab);
+                }}
+              >
+                <ArrowBendUpLeft size={16} /> Main window
+              </button>
+            )}
             {((view === "note" && activeNote) ||
               (view === "template" && activeTemplate)) && (
               <div className="topbar-history" aria-label="Editing history">
@@ -1817,6 +1951,16 @@ export default function HyperionApp() {
         <div className="content-shell">
           <section className="main-content">
             <WorkspaceLayout
+              ref={workspaceLayout}
+              onDetach={detachTab}
+              canDetach={tab => tab.location.view === "note" || tab.location.view === "template"}
+              pageWindow={isPageWindow}
+              onReturn={isPageWindow ? returnTab : undefined}
+              onBeginTabDrag={desktop?.beginTabDrag}
+              onEndTabDrag={desktop?.endTabDrag}
+              onUpdateTabDrag={desktop?.updateTabDrag}
+              onUpdateTabDropTargets={desktop?.updateTabDropTargets}
+              onTabDropHint={desktop?.onTabDropHint}
               state={tabState}
               dispatch={dispatchTab}
               disabled={operationBusy}

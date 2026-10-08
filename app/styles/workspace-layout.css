@@ -15,6 +15,35 @@
   height: 100%;
   position: relative;
 }
+.dv-tab-ghost-drag {
+  background: var(--bg) !important;
+  border: 2px solid var(--accent) !important;
+  border-radius: 7px;
+  box-shadow: 0 4px 16px #0003;
+  color: var(--text) !important;
+  overflow: hidden;
+}
+/* Dockview copies computed styles (including visibility/display) inline into
+   its ghost. Override those so only the native preview is painted. */
+body[data-native-tab-drag-preview] .dv-tab-ghost-drag { display: none !important; }
+.dv-tab-ghost-drag::after { display: none !important; }
+.window-tab-drop-indicator {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.window-tab-drop-indicator::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: var(--tab-insertion-x);
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
 /* Keep tab drags on Dockview's drop surface. Editors otherwise interpret the
    same gesture as a content/file drop and show an inline insertion indicator.
    The transparent shield leaves normal editor drag/drop untouched. */

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import {
   NavigationHistory,
   type NavigationDirection,
@@ -18,7 +18,9 @@ export function useMouseNavigation(options: Options) {
   const history = useRef(new NavigationHistory());
   const scope = useRef<string | null>(null);
 
-  useEffect(() => {
+  // Keep history and input handlers aligned with the committed view before
+  // another mouse/native navigation event can arrive.
+  useLayoutEffect(() => {
     if (options.loading || scope.current !== options.vaultId) {
       history.current = new NavigationHistory();
       scope.current = options.vaultId;

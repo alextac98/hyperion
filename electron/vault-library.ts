@@ -481,8 +481,7 @@ export class VaultLibrary {
     });
     this.disconnect(vaultId);
   }
-  moveVault(destination: string): StorageInfo & { warning?: string } {
-    const vaultId = this.registry.activeVaultId!;
+  moveVault(destination: string, vaultId = this.registry.activeVaultId!): StorageInfo & { warning?: string } {
     const source = this.database(vaultId);
     const entry = this.entry(vaultId);
     const oldDirectory = realpathSync(entry.directory);
@@ -562,9 +561,9 @@ export class VaultLibrary {
       case "importVault":
         return this.importVault(request.bundle);
       case "captureAutomaticRevisions":
-        return this.registry.activeVaultId &&
-          this.connections.has(this.registry.activeVaultId)
-          ? this.database().repositoryExecute(request)
+        return (request.vaultId ?? this.registry.activeVaultId) &&
+          this.connections.has(String(request.vaultId ?? this.registry.activeVaultId))
+          ? this.database(String(request.vaultId ?? this.registry.activeVaultId)).repositoryExecute(request)
           : null;
       case "deleteVault": {
         const vaultId = id(request.id);
@@ -603,19 +602,19 @@ export class VaultLibrary {
     }
     return result;
   }
-  storageInfo() {
-    return this.registry.activeVaultId
-      ? this.database().storageInfo()
+  storageInfo(vaultId = this.registry.activeVaultId) {
+    return vaultId
+      ? this.database(vaultId).storageInfo()
       : { directory: this.vaultsDirectory, databasePath: "", isDefault: true };
   }
-  createBackup(automatic = false) {
-    return this.database().createBackup(automatic);
+  createBackup(automatic = false, vaultId?: string) {
+    return this.database(vaultId).createBackup(automatic);
   }
-  listBackups() {
-    return this.database().listBackups();
+  listBackups(vaultId?: string) {
+    return this.database(vaultId).listBackups();
   }
-  restoreBackup(source: string, destination: string) {
-    return this.database().restoreBackup(source, destination);
+  restoreBackup(source: string, destination: string, vaultId?: string) {
+    return this.database(vaultId).restoreBackup(source, destination);
   }
   editorPull(vaultId: string, documentId: string) {
     return this.database(vaultId).editorPull(vaultId, documentId);

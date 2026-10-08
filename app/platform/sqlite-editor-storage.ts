@@ -2,6 +2,7 @@ import { saves } from "../lib/save-coordinator";
 import type { BlobSource, DocSource } from "@blocksuite/sync";
 import { diffUpdate, encodeStateVectorFromUpdate, mergeUpdates } from "yjs";
 import type { HyperionDataApi } from "./desktop-api";
+import type { HyperionDesktopApi } from "./desktop-api";
 
 function bytesToBase64(bytes: Uint8Array) {
   let binary = "";
@@ -47,10 +48,14 @@ class SqliteDocSource implements DocSource {
     );
   }
 
-  subscribe() {
-    // Each runtime currently has one active editor session. This boundary
-    // can add a main-process broadcast if multi-window editing is introduced.
-    return () => {};
+  subscribe(callback: (docId: string, data: Uint8Array) => void) {
+    const desktop = this.data as Partial<HyperionDesktopApi>;
+    return (
+      desktop.onEditorUpdate?.((update) => {
+        if (!this.closed() && update.vaultId === this.vaultId)
+          callback(update.documentId, base64ToBytes(update.data));
+      }) ?? (() => {})
+    );
   }
 }
 
