@@ -69,15 +69,27 @@ export async function columnsScenarios() {
   await frame();
 
   const count = () => model().children.length;
+  const menuAction = async (anchor, label) => {
+    anchor.click();
+    await frame();
+    const button = [
+      ...document.querySelectorAll(".editor-action-menu button"),
+    ].find((button) => button.textContent === label);
+    check(button && !button.disabled, `Unavailable menu action: ${label}`);
+    button.click();
+    await frame();
+    await frame();
+  };
   const add = async () => {
-    view().querySelector(".columns-toolbar button").click();
+    view().querySelector('[data-action="add-column"]').click();
     await frame();
     await frame();
   };
   const remove = async () => {
-    view().querySelector(".columns-toolbar button:last-child").click();
-    await frame();
-    await frame();
+    await menuAction(
+      view().querySelector(".columns-column:last-child .column-grip"),
+      "Remove column (keep content)",
+    );
   };
   await add();
   check(count() === 3, "Add column failed");
@@ -92,7 +104,7 @@ export async function columnsScenarios() {
   await add();
   check(count() === 4, "Fourth column did not appear");
   check(
-    view().querySelector(".columns-toolbar button").disabled,
+    view().querySelector('[data-action="add-column"]').disabled,
     "Column limit is not enforced",
   );
   await add();
@@ -146,10 +158,21 @@ export async function columnsScenarios() {
   store.redo();
   await until(() => count() === 3, "Removal redo failed");
   await remove();
+  view().querySelector(".columns-column:last-child .column-grip").click();
+  await frame();
   check(
     count() === 2 &&
-      view().querySelector(".columns-toolbar button:last-child").disabled,
+      [...document.querySelectorAll(".editor-action-menu button")].find(
+        (button) => button.textContent === "Remove column (keep content)",
+      ).disabled,
     "Minimum column count is not enforced",
+  );
+  document.querySelector(".editor-action-menu").dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    }),
   );
   check(
     store.getParent(heading).id === columnIds[1],
@@ -314,6 +337,197 @@ export async function columnsScenarios() {
   await view().updateComplete;
   await frame();
   await frame();
+
+  // Column actions reorder whole containers, not just their first paragraph.
+  const order = () => model().children.map((column) => column.id);
+  const grip = (columnId) =>
+    view().querySelector(`[data-column-id="${columnId}"] .column-grip`);
+  await menuAction(grip(columnIds[1]), "Move left");
+  check(
+    order().join() === [...columnIds].reverse().join(),
+    "Column menu did not reorder",
+  );
+  check(
+    store.getParent(table).id === columnIds[1] &&
+      store.getParent(nested).id === list,
+    "Column reordering lost nested content",
+  );
+  store.undo();
+  await until(
+    () => order().join() === columnIds.join(),
+    "Column move undo failed",
+  );
+  store.redo();
+  await until(() => order()[0] === columnIds[1], "Column move redo failed");
+  await view().updateComplete;
+  grip(columnIds[1]).focus();
+  grip(columnIds[1]).dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "ArrowRight",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  await until(
+    () => order().join() === columnIds.join(),
+    "Keyboard column reorder failed",
+  );
+  await view().updateComplete;
+  check(
+    document.activeElement === grip(columnIds[1]),
+    "Column reorder lost keyboard focus",
+  );
+
+  const dragColumn = async (sourceId, targetId, before, narrow = false) => {
+    if (narrow) view().style.width = "420px";
+    await frame();
+    const dataTransfer = new DataTransfer();
+    const options = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      dataTransfer,
+    };
+    grip(sourceId).dispatchEvent(new DragEvent("dragstart", options));
+    const target = view().querySelector(`[data-column-id="${targetId}"]`);
+    const rect = target.getBoundingClientRect();
+    const point = narrow
+      ? {
+          clientX: rect.left + 10,
+          clientY: before ? rect.top + 2 : rect.bottom - 2,
+        }
+      : {
+          clientX: before ? rect.left + 2 : rect.right - 2,
+          clientY: rect.top + 10,
+        };
+    target.dispatchEvent(new DragEvent("dragover", { ...options, ...point }));
+    target.dispatchEvent(new DragEvent("drop", { ...options, ...point }));
+    grip(sourceId).dispatchEvent(new DragEvent("dragend", options));
+    await view().updateComplete;
+    view().style.removeProperty("width");
+  };
+  await dragColumn(columnIds[1], columnIds[0], true);
+  check(order()[0] === columnIds[1], "Pointer column reorder failed");
+  store.undo();
+  await until(
+    () => order()[0] === columnIds[0],
+    "Pointer column reorder undo failed",
+  );
+  await dragColumn(columnIds[0], columnIds[1], false, true);
+  check(order()[0] === columnIds[1], "Stacked column drag failed");
+  store.undo();
+  await until(
+    () => order()[0] === columnIds[0],
+    "Stacked column drag undo failed",
+  );
+  await view().updateComplete;
+
+  const canceled = new DataTransfer();
+  grip(columnIds[0]).dispatchEvent(
+    new DragEvent("dragstart", {
+      bubbles: true,
+      cancelable: true,
+      dataTransfer: canceled,
+    }),
+  );
+  grip(columnIds[0]).dispatchEvent(
+    new DragEvent("dragend", {
+      bubbles: true,
+      cancelable: true,
+      dataTransfer: canceled,
+    }),
+  );
+  check(
+    order().join() === columnIds.join() && !drag.dragging,
+    "Canceling a column drag changed content or started block dragging",
+  );
+
+  // Remove a chosen first column without losing content or reversing reading order.
+  await add();
+  const firstBlocks = model().children[0].children.map((child) => child.id);
+  const secondBlocks = model().children[1].children.map((child) => child.id);
+  await menuAction(grip(columnIds[0]), "Remove column (keep content)");
+  check(
+    !store.getModelById(columnIds[0]) &&
+      model()
+        .children[0].children.map((child) => child.id)
+        .join() === [...firstBlocks, ...secondBlocks].join(),
+    "First-column removal lost content order",
+  );
+  store.undo();
+  await until(() => count() === 3, "First-column removal undo failed");
+  store.undo();
+  await until(() => count() === 2, "Additional column undo failed");
+  await view().updateComplete;
+
+  const contentIds = model().children.flatMap((column) =>
+    column.children.map((child) => child.id),
+  );
+  const layoutParent = store.getParent(id);
+  const layoutIndex = layoutParent.children.findIndex(
+    (child) => child.id === id,
+  );
+  await menuAction(
+    view().querySelector(".columns-layout-menu"),
+    "Unwrap columns",
+  );
+  check(
+    !store.getModelById(id) &&
+      columnIds.every((column) => !store.getModelById(column)),
+    "Unwrap left layout containers",
+  );
+  check(
+    layoutParent.children
+      .slice(layoutIndex, layoutIndex + contentIds.length)
+      .map((child) => child.id)
+      .join() === contentIds.join(),
+    "Unwrap changed reading order or position",
+  );
+  check(
+    store.getParent(nested).id === list &&
+      store.getModelById(heading).props.text.yText.toDelta()[0].attributes.bold,
+    "Unwrap lost nested formatting",
+  );
+  store.undo();
+  await until(
+    () => view()?.querySelector(".columns-layout-menu"),
+    "Unwrap undo failed",
+  );
+  store.redo();
+  await until(() => !store.getModelById(id), "Unwrap redo failed");
+  store.undo();
+  await until(
+    () => view()?.querySelector(".columns-layout-menu"),
+    "Unwrap did not restore original layout",
+  );
+
+  const subtree = [id, ...columnIds, ...contentIds, list, nested, table];
+  await menuAction(
+    view().querySelector(".columns-layout-menu"),
+    "Delete block",
+  );
+  check(
+    subtree.every((child) => !store.getModelById(child)),
+    "Layout deletion left orphaned content",
+  );
+  store.undo();
+  await until(
+    () => view()?.querySelector(".columns-layout-menu"),
+    "Delete layout undo failed",
+  );
+  check(
+    subtree.every((child) => store.getModelById(child)) &&
+      order().join() === columnIds.join(),
+    "Undo did not restore the complete layout",
+  );
+  store.redo();
+  await until(() => !store.getModelById(id), "Delete layout redo failed");
+  store.undo();
+  await until(
+    () => view()?.querySelector(".columns-layout-menu"),
+    "Layout did not restore for persistence checks",
+  );
 
   return {
     id,

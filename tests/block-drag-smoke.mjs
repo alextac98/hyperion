@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { blockDragScenarios } from "./block-drag-scenarios.mjs";
+import { blockActionsScenarios } from "./block-actions-scenarios.mjs";
 import { createFirstVault } from "./vault-setup-helpers.mjs";
 
 void (async () => {
@@ -47,6 +48,9 @@ void (async () => {
       if (event.level === "error") errors.push(event.message);
     });
     const vaultId = await createFirstVault(js, until);
+    await js(
+      "window.addEventListener('unhandledrejection', event => { window.blockDragErrors ??= []; window.blockDragErrors.push(event.reason?.stack ?? String(event.reason)); })",
+    );
     await until(
       () =>
         js(
@@ -57,6 +61,14 @@ void (async () => {
     const fixture = await js(`(${blockDragScenarios.toString()})()`);
     console.log(
       "PASS: block dragging, six-dot grip, formatting, nested lists, tables, custom blocks, multiple selection, undo/redo, keyboard and cancellation",
+    );
+    assert.deepEqual(await js("window.blockDragErrors ?? []"), []);
+    await js(
+      `(${blockActionsScenarios.toString()})(${JSON.stringify({ table: fixture.expected.at(-1), custom: fixture.expected[0] })})`,
+    );
+    assert.deepEqual(await js("window.blockDragErrors ?? []"), []);
+    console.log(
+      "PASS: shared block menu, keyboard navigation, move/delete/undo/redo, nested lists, tables, custom blocks and last-block focus",
     );
     await saved();
     await js(
@@ -140,6 +152,14 @@ void (async () => {
       true,
     );
     console.log("PASS: read-only history has no draggable grip");
+    assert.equal(
+      await js(`(() => {
+      const widget = document.querySelector('.history-preview affine-drag-handle-widget');
+      widget.dragHandleGrabber.click();
+      return !document.querySelector('.editor-action-menu');
+    })()`),
+      true,
+    );
     assert.deepEqual(errors, []);
   } catch (error) {
     console.error(error);

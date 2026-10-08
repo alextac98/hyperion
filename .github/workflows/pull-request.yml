@@ -57,3 +57,12 @@ jobs:
           name: desktop-integration-failures
           path: /tmp/hyperion-*failure*.png
           if-no-files-found: ignore
+      - name: Upload columns interaction evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: columns-interaction-evidence
+          path: |
+            /tmp/hyperion-column-layout-actions.png
+            /tmp/hyperion-column-reorder-actions.png
+          if-no-files-found: ignore

@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from "electron";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { columnsScenarios } from "./columns-scenarios.mjs";
@@ -58,7 +58,30 @@ void (async () => {
     );
     const fixture = await js(`(${columnsScenarios.toString()})()`);
     console.log(
-      "PASS: column insertion, column counts, content preservation, cross-column drag, undo/redo and narrow layouts",
+      "PASS: columns insert, reorder by pointer/menu/keyboard, preserve content on removal, unwrap, delete, undo/redo and stack in narrow layouts",
+    );
+    await js(`(async () => {
+      const layout = document.querySelector('[data-block-id="${fixture.id}"]');
+      layout.scrollIntoView({block:'center'});
+      await new Promise(requestAnimationFrame);
+      layout.querySelector('.columns-layout-menu').click();
+      await new Promise(requestAnimationFrame);
+    })()`);
+    await writeFile(
+      "/tmp/hyperion-column-layout-actions.png",
+      (await window.webContents.capturePage()).toPNG(),
+    );
+    await js(`(async () => {
+      document.querySelector('.editor-action-menu').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+      document.querySelector('[data-block-id="${fixture.id}"] .column-grip').click();
+      await new Promise(requestAnimationFrame);
+    })()`);
+    await writeFile(
+      "/tmp/hyperion-column-reorder-actions.png",
+      (await window.webContents.capturePage()).toPNG(),
+    );
+    await js(
+      "document.querySelector('.editor-action-menu').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))",
     );
 
     // Native typing/Enter and Backspace must stay inside the column, including
@@ -181,6 +204,12 @@ void (async () => {
     assert.equal(
       await js(
         "Boolean(document.querySelector('.history-preview .columns-toolbar'))",
+      ),
+      false,
+    );
+    assert.equal(
+      await js(
+        "Boolean(document.querySelector('.history-preview .column-grip'))",
       ),
       false,
     );

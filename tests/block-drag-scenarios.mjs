@@ -93,7 +93,7 @@ export async function blockDragScenarios() {
       "Hover did not reveal the block grip",
     );
     check(
-      widget.dragHandleGrabber.getAttribute("aria-label") === "Move block",
+      widget.dragHandleGrabber.getAttribute("aria-label") === "Block actions",
       "Grip needs an accessible label",
     );
     check(
