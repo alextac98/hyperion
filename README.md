@@ -1,21 +1,23 @@
-# Cross-window tab evidence
+# Clean tab drag preview evidence
 
-Recorded remotely on this computer against Hyperion commit `809a68cc6c14052d18fc7e530fbb3c32788c569a` for [PR #51](https://github.com/alextac98/hyperion/pull/51).
+Recorded remotely on this computer against Hyperion commit `c6077bd764dc71d29c0594ace08c61066eaeeb4c` for [PR #51](https://github.com/alextac98/hyperion/pull/51).
 
-[Watch or download the 22-second cross-window tab video](cross-window-tabs.mp4).
+[Watch or download the 28-second drag preview video](clean-tab-drag.mp4).
 
-![Dragging back onto the primary tab strip](page-to-primary-drop.png)
+![One clean preview over the primary window](clean-primary-source-preview.png)
 
-![Dragging from one page window into another](page-to-page-drop.png)
+![One clean preview over its originating page window](clean-page-source-preview.png)
 
-The recording shows actual native mouse drags from a page window into another page window, back onto the primary tab strip, and from the primary into an existing page window. A visible tab preview follows the pointer; the destination highlights the tab strip and insertion position. The destination receives the tab, an empty source page window closes, and a source with another tab stays open.
+The recording shows a single clean tab preview while dragging over the originating page window and the primary window. It also shows transfers to another page window, back onto the primary tab strip, and from the primary into an existing page window. The destination receives the tab, an empty source page window closes, and a source with another tab stays open.
 
-Environment: the real Electron app and built renderer, an isolated temporary vault and profile, and a 2300×1080 Xvfb Linux desktop. Mouse drags use native XTest events. ffmpeg captures the desktop directly. The final edit uses the live editor's Yjs store. The video was decoded fully to verify the artifact.
+The preview renders its title and emoji/vector icon without capturing the live workspace. This keeps focus and drop outlines out of the preview. The Dockview DOM ghost is hidden once the native preview is ready, including its copied inline styles; the browser/failure fallback remains available.
 
-Validation: all 161 standard tests, lint, desktop type checking, native window integration, and the broader desktop smoke suite pass. Cross-window integration covers chosen split panes, insertion order, transfers in both directions, reuse of already-open tabs, cancellation and preview/marker cleanup, 125% zoom, failed destination acknowledgements, and busy destinations preserving the source tab. Existing checks cover concurrent edits, vault/backup isolation, failed saves, returning to a hidden primary, primary-owned closure, and save-on-quit.
+Environment: the real Electron app and built renderer, a temporary vault and profile, and a 2300×1080 Xvfb Linux desktop with xcompmgr compositing for transparent native windows. Native XTest events drive the mouse drags. ffmpeg captures the desktop directly, with captions added for the video. No macOS compositor was available for direct testing.
 
-Video: H.264 MP4, 2300×1080, 24 fps, 21.54 seconds.
+Validation for this fix: renderer and Electron builds/type checks, lint, all 42 app tests, and the full native window integration suite pass. New native assertions cover suppression of the duplicate ghost, literal HTML-like titles, emoji and decoded vector icons, dark theme, correctly scaled previews at 125% zoom, and cleanup after cancellation. Existing native transfer, split-pane, concurrent-edit, reload, vault/backup isolation, failure, save and owned-window closure checks also pass.
 
-SHA-256: `92a7d26562472f6d318f375dd90acdebdf76161146bc157c884971671efdbc2e`
+Video: H.264 MP4, 2300×1080, 24 fps, 28.04 seconds. Fully decoded successfully.
 
-The [earlier primary + page flow](page-window-flow.mp4), recorded against commit `6c633b411b3d78fcdb47b21d8fb256f79f1bd6be`, shows detaching, live edits, the return button, and closing page windows with their primary. The initial independent-window recording is retained as `window-support.mp4` for history.
+SHA-256: `85d721495ef462f159326a325a8228d552a3f1edc317e2fbbd21ffe71e94e91e`
+
+Earlier recordings are retained: [cross-window transfers](cross-window-tabs.mp4), [primary + page flow](page-window-flow.mp4), and [initial independent windows](window-support.mp4).
