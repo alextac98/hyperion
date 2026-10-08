@@ -19,12 +19,11 @@ import {
   type DockviewReadyEvent,
   type IDockviewPanelProps,
   type IDockviewPanelHeaderProps,
-  type IDockviewHeaderActionsProps,
   type IContextMenuItemComponentProps,
   type DockviewWillDropEvent,
   type DockviewWillShowOverlayLocationEvent,
 } from "dockview-react";
-import { Plus, SidebarSimple, X } from "@phosphor-icons/react";
+import { SidebarSimple, X } from "@phosphor-icons/react";
 import type {
   TabDragRequest,
   TabDropTarget,
@@ -58,7 +57,6 @@ type Props = {
   render: (tab: WorkspaceTab, visible: boolean) => ReactNode;
   onDetach?: (tab: WorkspaceTab, position?: { x: number; y: number }) => void;
   canDetach?: (tab: WorkspaceTab) => boolean;
-  pageWindow?: boolean;
   showSidebarToggle?: boolean;
   onOpenSidebar?: () => void;
   onReturn?: (tab: WorkspaceTab) => void;
@@ -185,25 +183,6 @@ function WorkspaceTabHeader({ api }: IDockviewPanelHeaderProps) {
         <X size={12} />
       </button>
     </div>
-  );
-}
-
-function WorkspacePaneActions({ api }: IDockviewHeaderActionsProps) {
-  const { dispatch, disabled, pageWindow } = useWorkspace();
-  if (pageWindow) return null;
-  return (
-    <button
-      className="tab-home"
-      disabled={disabled}
-      aria-label="Open Home tab"
-      title="Open Home tab"
-      onClick={() => {
-        api.setActive();
-        dispatch({ type: "open", location: { view: "home" } });
-      }}
-    >
-      <Plus size={16} />
-    </button>
   );
 }
 
@@ -897,7 +876,6 @@ export function WorkspaceLayout({ ref, ...props }: Props) {
             dndEdges={false}
             defaultTabComponent={WorkspaceTabHeader}
             prefixHeaderActionsComponent={WorkspacePaneLeadingActions}
-            rightHeaderActionsComponent={WorkspacePaneActions}
             getTabContextMenuItems={() => [{ component: WorkspaceTabMenu }]}
           />
         </div>

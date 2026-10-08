@@ -162,9 +162,6 @@ body[data-native-tab-drag-preview] .dv-tab-ghost-drag { display: none !important
 .workspace-tab-content .tab-close {
   margin-left: 3px;
 }
-.dockview-theme-hyperion .tab-home {
-  height: 36px;
-}
 .dockview-theme-hyperion .workspace-panel {
   display: flex;
   flex-direction: column;

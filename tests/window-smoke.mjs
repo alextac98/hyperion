@@ -356,7 +356,7 @@ async function run() {
     assert.ok(await js(source, `(() => {
       const area = navigator.windowControlsOverlay?.getTitlebarAreaRect();
       if (!navigator.windowControlsOverlay?.visible) return true;
-      return Array.from(document.querySelectorAll('[data-window-top-edge] .dv-tab, [data-window-top-edge] .tab-home, [data-window-top-edge] .workspace-sidebar-toggle')).filter(element => getComputedStyle(element).display !== 'none').every(element => {
+      return Array.from(document.querySelectorAll('[data-window-top-edge] .dv-tab, [data-window-top-edge] .workspace-sidebar-toggle')).filter(element => getComputedStyle(element).display !== 'none').every(element => {
         const box = element.getBoundingClientRect();
         return box.left >= area.x && box.right <= area.x + area.width;
       });
@@ -425,7 +425,7 @@ async function run() {
     assert.equal(
       await js(
         destination,
-        "Boolean(document.querySelector('.sidebar, .tab-home'))",
+        "Boolean(document.querySelector('.sidebar'))",
       ),
       false,
     );
@@ -746,7 +746,7 @@ async function run() {
     }, "Page did not detach for cross-window drops");
     await activePage(destination, noteId);
     destination.setBounds({ x: 1150, y: 60, width: 800, height: 800 });
-    await js(source, "document.querySelector('.tab-home').click()");
+    await js(source, "Array.from(document.querySelectorAll('.primary-nav button')).find(button => button.textContent.trim() === 'Home').click()");
     await until(
       () => js(source, "document.querySelectorAll('.dv-tab').length>=2"),
       "Primary did not open its Home tab",

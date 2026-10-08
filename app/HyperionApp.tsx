@@ -1478,85 +1478,86 @@ export default function HyperionApp() {
         className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${IS_DEVELOPMENT_BUILD ? " sidebar-development" : ""}`}
         aria-label={IS_DEVELOPMENT_BUILD ? "Sidebar (development build)" : undefined}
       >
-        <div className="sidebar-titlebar">
-          <span className="sidebar-app-name">Hyperion</span>
-          <button
-            className="icon-button subtle"
-            aria-label="Collapse sidebar"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <SidebarSimple size={18} />
-          </button>
-        </div>
-        <div className="workspace-header">
+        <div className="sidebar-header">
           {IS_DEVELOPMENT_BUILD && <DevelopmentBlueprint />}
-          <div className="vault-switcher-wrap">
+          <div className="sidebar-titlebar">
             <button
-              className="workspace-button"
-              onClick={() => setVaultMenuOpen((open) => !open)}
-              aria-expanded={vaultMenuOpen}
+              className="icon-button subtle"
+              aria-label="Collapse sidebar"
+              onClick={() => setSidebarOpen(false)}
             >
-              <HyperionMark small />
-              <span className="workspace-copy">
-                <strong>{activeVault?.name ?? "Hyperion"}</strong>
-                <span>{organizedNotes.length} pages · Local only</span>
-              </span>
-              <CaretDown size={14} weight="bold" />
+              <SidebarSimple size={18} />
             </button>
-            {vaultMenuOpen && (
-              <div className="popover vault-menu">
-                <div className="popover-label">Your vaults</div>
-                {vaults.map((vault) => (
-                  <button
-                    key={vault.id}
-                    className={vault.id === vaultId ? "selected" : ""}
-                    onClick={() => void switchVault(vault.id)}
-                  >
-                    <span
-                      className="vault-color"
-                      style={{ background: vault.color }}
-                    />
-                    <span>
-                      <strong>{vault.name}</strong>
-                      <small>Stored on this device</small>
-                    </span>
-                    {vault.id === vaultId && <Check size={15} weight="bold" />}
-                  </button>
-                ))}
-                <div className="popover-divider" />
-                <button
-                  onClick={() => {
-                    setVaultSetupOpen(true);
-                    setVaultMenuOpen(false);
-                  }}
-                >
-                  <Plus size={16} /> Create vault…
-                </button>
-                {platformRuntime.capabilities.configurableStorage && (
+            <span className="sidebar-app-name">Hyperion</span>
+          </div>
+          <div className="workspace-header">
+            <div className="vault-switcher-wrap">
+              <button
+                className="workspace-button"
+                onClick={() => setVaultMenuOpen((open) => !open)}
+                aria-expanded={vaultMenuOpen}
+              >
+                <HyperionMark small />
+                <span className="workspace-copy">
+                  <strong>{activeVault?.name ?? "Hyperion"}</strong>
+                  <span>{organizedNotes.length} pages · Local only</span>
+                </span>
+                <CaretDown size={14} weight="bold" />
+              </button>
+              {vaultMenuOpen && (
+                <div className="popover vault-menu">
+                  <div className="popover-label">Your vaults</div>
+                  {vaults.map((vault) => (
+                    <button
+                      key={vault.id}
+                      className={vault.id === vaultId ? "selected" : ""}
+                      onClick={() => void switchVault(vault.id)}
+                    >
+                      <span
+                        className="vault-color"
+                        style={{ background: vault.color }}
+                      />
+                      <span>
+                        <strong>{vault.name}</strong>
+                        <small>Stored on this device</small>
+                      </span>
+                      {vault.id === vaultId && <Check size={15} weight="bold" />}
+                    </button>
+                  ))}
+                  <div className="popover-divider" />
                   <button
                     onClick={() => {
+                      setVaultSetupOpen(true);
                       setVaultMenuOpen(false);
-                      void openExistingVault().catch((error) =>
-                        setDataError(String(error)),
-                      );
                     }}
                   >
-                    <FolderOpen size={16} /> Open existing vault…
+                    <Plus size={16} /> Create vault…
                   </button>
-                )}
-                <button
-                  onClick={() =>
-                    void closeCurrentVault().catch((error) =>
-                      setDataError(String(error)),
-                    )
-                  }
-                >
-                  Close vault
-                </button>
-              </div>
-            )}
+                  {platformRuntime.capabilities.configurableStorage && (
+                    <button
+                      onClick={() => {
+                        setVaultMenuOpen(false);
+                        void openExistingVault().catch((error) =>
+                          setDataError(String(error)),
+                        );
+                      }}
+                    >
+                      <FolderOpen size={16} /> Open existing vault…
+                    </button>
+                  )}
+                  <button
+                    onClick={() =>
+                      void closeCurrentVault().catch((error) =>
+                        setDataError(String(error)),
+                      )
+                    }
+                  >
+                    Close vault
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-
         </div>
 
         <div className="new-note-actions">
@@ -1730,7 +1731,6 @@ export default function HyperionApp() {
               canDetach={(tab) =>
                 tab.location.view === "note" || tab.location.view === "template"
               }
-              pageWindow={isPageWindow}
               showSidebarToggle={!isPageWindow && !sidebarOpen}
               onOpenSidebar={() => setSidebarOpen(true)}
               onReturn={isPageWindow ? returnTab : undefined}
