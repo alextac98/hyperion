@@ -2,6 +2,11 @@
   transition: none !important;
 }
 
+:host .affine-drag-handle-container[data-hover-position] {
+  padding-top: var(--hyperion-grip-padding-top) !important;
+  padding-bottom: var(--hyperion-grip-padding-bottom) !important;
+}
+
 :host .affine-drag-handle-grabber {
   position: relative;
   flex: 0 0 16px;

@@ -54,6 +54,31 @@ export class BlockDragHandleExtension extends LifeCycleWatcher {
         style.textContent = styles;
         widget.shadowRoot.append(style);
 
+        const container = widget.dragHandleContainer;
+        // The native bar expands by changing its padding on pointer entry.
+        // Keep our compact grip at its existing first-line position instead.
+        widget.disposables.addFromEvent(
+          container,
+          "pointerenter",
+          () => {
+            if (!widget.isBlockDragHandleVisible) return;
+            const padding = getComputedStyle(container);
+            container.style.setProperty(
+              "--hyperion-grip-padding-top",
+              padding.paddingTop,
+            );
+            container.style.setProperty(
+              "--hyperion-grip-padding-bottom",
+              padding.paddingBottom,
+            );
+            container.setAttribute("data-hover-position", "");
+          },
+          { capture: true },
+        );
+        widget.disposables.addFromEvent(container, "pointerleave", () => {
+          container.removeAttribute("data-hover-position");
+        });
+
         const grip = widget.dragHandleGrabber;
         grip.setAttribute("role", "button");
         grip.tabIndex = 0;
