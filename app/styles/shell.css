@@ -235,34 +235,6 @@
   color: var(--text-faint);
 }
 
-.new-note-button {
-  display: flex;
-  height: 36px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 9px;
-  margin: 4px 12px 9px;
-  padding: 0 9px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-control);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-sm);
-  color: var(--text);
-  font-size: var(--font-size-ui);
-  font-weight: 560;
-  text-align: left;
-}
-
-.new-note-button:hover {
-  border-color: color-mix(in srgb, var(--line-strong) 75%, var(--text-soft));
-  background: var(--hover);
-}
-
-.new-note-button span {
-  flex: 1;
-}
-
-.new-note-button kbd,
 .primary-nav kbd {
   color: var(--text-faint);
   font-size: var(--font-size-caption);
@@ -637,9 +609,6 @@
   display: flex;
   align-items: center;
   gap: 1px;
-  margin-right: 3px;
-  padding-right: 7px;
-  border-right: 1px solid var(--line);
 }
 
 .topbar-history .icon-button {
@@ -712,6 +681,10 @@
   border-radius: var(--radius-sm);
   color: var(--text-faint);
   font-size: var(--font-size-caption);
+}
+
+.save-status[hidden] {
+  display: none;
 }
 
 .save-status.saved svg {

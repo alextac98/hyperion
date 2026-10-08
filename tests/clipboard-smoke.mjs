@@ -235,7 +235,7 @@ void (async () => {
 
     // Retained tabs may still have BlockSuite selections and document listeners.
     await select(first.noteId, first.blockId, 0, 11);
-    await js(`document.querySelector('.new-note-button').click()`);
+    await js(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', ctrlKey: true, bubbles: true, cancelable: true }))`);
     await until(
       () =>
         js(

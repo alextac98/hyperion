@@ -22,6 +22,7 @@ import { dataBusy, dataOperation, flushAll } from "./lib/data-operations";
 import { PageHistory, PageHistoryPreview } from "./components/PageHistory";
 import type { PageComparison } from "./platform/desktop-api";
 import { HistoryDialog } from "./components/HistoryDialog";
+import { DataErrorNotice } from "./components/DataErrorNotice";
 import { preloadEditor, prepareVaultEditor } from "./editor/editor-client";
 import {
   Archive,
@@ -92,7 +93,6 @@ import {
   SidebarOrganizer,
   SidebarSectionHeading,
 } from "./components/SidebarOrganizer";
-import { TemplatePickerDialog } from "./components/TemplatePickerDialog";
 import { BlockEditor } from "./editor/BlockEditor";
 import {
   duplicateEditorDocument,
@@ -143,7 +143,6 @@ import {
 } from "./platform/runtime";
 
 type TemplateSelection = "default" | "blank" | { templateId: string };
-type TemplatePickerState = { parentId: string | null } | null;
 
 const DEFAULT_SIDEBAR_WIDTH = 272;
 const MIN_SIDEBAR_WIDTH = 224;
@@ -265,8 +264,6 @@ export default function HyperionApp() {
   const [pageContextMenu, setPageContextMenu] =
     useState<PageContextMenuState | null>(null);
   const [composer, setComposer] = useState<Composer>(null);
-  const [templatePicker, setTemplatePicker] =
-    useState<TemplatePickerState>(null);
   const saveStatus = useSyncExternalStore(saves.subscribe, saves.getState);
   const operationBusy = useSyncExternalStore(
     dataBusy.subscribe,
@@ -934,7 +931,6 @@ export default function HyperionApp() {
         setMoreOpen(null);
         setVaultMenuOpen(false);
         setPageContextMenu(null);
-        setTemplatePicker(null);
         setComposer(null);
       }
     };
@@ -1254,11 +1250,7 @@ export default function HyperionApp() {
   const submitComposer = async (event: FormEvent) => {
     event.preventDefault();
     if (!composer) return;
-    if (composer.type === "page") {
-      const { parentId, value } = composer;
-      setComposer(null);
-      await createNote(parentId, value);
-    } else if (composer.type === "template") {
+    if (composer.type === "template") {
       const note = composer.noteId
         ? notes.find((item) => item.id === composer.noteId)
         : undefined;
@@ -1560,22 +1552,6 @@ export default function HyperionApp() {
           </div>
         </div>
 
-        <div className="new-note-actions">
-          <button className="new-note-button" onClick={() => void createNote()}>
-            <Plus size={17} weight="bold" />
-            <span>New page</span>
-            <kbd>⌘ N</kbd>
-          </button>
-          <button
-            className="new-note-template-button"
-            aria-label="Choose a page template"
-            title="New from template"
-            onClick={() => setTemplatePicker({ parentId: null })}
-          >
-            <CaretDown size={14} weight="bold" />
-          </button>
-        </div>
-
         <nav className="primary-nav" aria-label="Knowledge base">
           <button
             onClick={() => {
@@ -1661,7 +1637,7 @@ export default function HyperionApp() {
             view={view}
             activeNoteId={activeId}
             onCreatePage={(parentId) =>
-              setComposer({ type: "page", value: "", parentId })
+              void createNote(parentId, "Untitled")
             }
             onMoveNote={moveNote}
             onOpenNote={selectNote}
@@ -1948,6 +1924,36 @@ export default function HyperionApp() {
                               <ArrowBendUpLeft size={16} /> Main window
                             </button>
                           )}
+                          <span
+                            className={`save-status ${saveStatus}`}
+                            hidden={saveStatus === "saved"}
+                            role="status"
+                            title={saves.getError()}
+                          >
+                            {saveStatus === "saved" ? (
+                              <Check size={13} weight="bold" />
+                            ) : saveStatus === "saving" ? (
+                              <span className="saving-spinner" />
+                            ) : null}
+                            {saveStatus === "saved"
+                              ? platformRuntime.kind === "browser-development"
+                                ? "Saved to development server"
+                                : "Saved locally"
+                              : saveStatus === "error"
+                                ? "Save failed"
+                                : "Saving"}
+                          </span>
+                          {saveStatus === "error" && (
+                            <button
+                              onClick={() =>
+                                void flushAll().catch((error) =>
+                                  setDataError(String(error)),
+                                )
+                              }
+                            >
+                              Retry save
+                            </button>
+                          )}
                           {((view === "note" && activeNote) ||
                             (view === "template" && activeTemplate)) && (
                             <div
@@ -1981,34 +1987,6 @@ export default function HyperionApp() {
                                 <ArrowClockwise size={16} />
                               </button>
                             </div>
-                          )}
-                          <span
-                            className={`save-status ${saveStatus}`}
-                            title={saves.getError()}
-                          >
-                            {saveStatus === "saved" ? (
-                              <Check size={13} weight="bold" />
-                            ) : saveStatus === "saving" ? (
-                              <span className="saving-spinner" />
-                            ) : null}
-                            {saveStatus === "saved"
-                              ? platformRuntime.kind === "browser-development"
-                                ? "Saved to development server"
-                                : "Saved locally"
-                              : saveStatus === "error"
-                                ? "Save failed"
-                                : "Saving"}
-                          </span>
-                          {saveStatus === "error" && (
-                            <button
-                              onClick={() =>
-                                void flushAll().catch((error) =>
-                                  setDataError(String(error)),
-                                )
-                              }
-                            >
-                              Retry save
-                            </button>
                           )}
                           {view === "note" && activeNote && (
                             <div className="more-wrap topbar-more">
@@ -2465,10 +2443,7 @@ export default function HyperionApp() {
         </div>
       )}
       {dataError && (
-        <div className="data-error-banner" role="alert">
-          {dataError}
-          <button onClick={() => setDataError("")}>Dismiss</button>
-        </div>
+        <DataErrorNotice message={dataError} onDismiss={() => setDataError("")} />
       )}
       {vaultSetupOpen && (
         <Dialog
@@ -2561,30 +2536,6 @@ export default function HyperionApp() {
         }}
       />
 
-      {templatePicker && (
-        <TemplatePickerDialog
-          templates={templates}
-          defaultTemplateId={preferences.defaultTemplateIds.note}
-          parentTitle={
-            templatePicker.parentId
-              ? activeNotes.find((note) => note.id === templatePicker.parentId)
-                  ?.title
-              : undefined
-          }
-          onClose={() => setTemplatePicker(null)}
-          onBlank={() => {
-            const parentId = templatePicker.parentId;
-            setTemplatePicker(null);
-            void createNote(parentId, undefined, "blank");
-          }}
-          onTemplate={(template) => {
-            const parentId = templatePicker.parentId;
-            setTemplatePicker(null);
-            void createNote(parentId, undefined, { templateId: template.id });
-          }}
-        />
-      )}
-
       {pageContextMenu && pageContextNote && (
         <PageContextMenu
           state={pageContextMenu}
@@ -2592,11 +2543,7 @@ export default function HyperionApp() {
           onClose={() => setPageContextMenu(null)}
           onOpen={() => selectNote(pageContextNote.id)}
           onCreatePage={() =>
-            setComposer({
-              type: "page",
-              value: "",
-              parentId: pageContextNote.id,
-            })
+            void createNote(pageContextNote.id, "Untitled")
           }
           onRename={() =>
             setComposer({
@@ -2628,11 +2575,6 @@ export default function HyperionApp() {
       {composer && (
         <ComposerDialog
           composer={composer}
-          parentTitle={
-            composer.type === "page"
-              ? activeNotes.find((note) => note.id === composer.parentId)?.title
-              : undefined
-          }
           onClose={() => setComposer(null)}
           onValue={(value) => setComposer({ ...composer, value })}
           onSubmit={submitComposer}

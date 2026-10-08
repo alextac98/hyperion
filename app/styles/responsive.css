@@ -25,7 +25,6 @@
   .topbar { padding-inline: 10px; }
   .breadcrumbs > span,
   .breadcrumbs > svg { display: none; }
-  .save-status { display: none; }
   .note-editor { padding: 58px 24px 90px; }
   .note-toolbar { top: 16px; right: 19px; }
   .note-icon { width: 40px; height: 40px; }
