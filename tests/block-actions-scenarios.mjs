@@ -100,6 +100,10 @@ export async function blockActionsScenarios({ table, custom }) {
   action("Move down").click();
   await frame();
   check(
+    !document.querySelector(".editor-action-menu"),
+    "Menu stayed open after Move down",
+  );
+  check(
     parent.children.indexOf(store.getModelById(paragraph)) >
       parent.children.indexOf(store.getModelById(list)),
     "Menu move did not reorder",

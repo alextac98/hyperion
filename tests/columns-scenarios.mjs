@@ -6,7 +6,7 @@ export async function columnsScenarios() {
   const until = async (predicate, message) => {
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
-      if (predicate()) return;
+      if (await predicate()) return;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     throw new Error(message);
@@ -675,10 +675,13 @@ export async function columnsScenarios() {
 
   const layoutGrip = async () => {
     std.selection.clear();
+    std.host.focus({ preventScroll: true });
     view().scrollIntoView({ block: "center" });
-    await frame();
-    const rect = view().getBoundingClientRect();
-    for (let index = 0; index < 2; index++) {
+    // Undo restores rich views asynchronously and the native hover handler is
+    // throttled. Re-read the current layout position until its grip is ready.
+    await until(async () => {
+      await view().updateComplete;
+      const rect = view().getBoundingClientRect();
       view().dispatchEvent(
         new PointerEvent("pointermove", {
           bubbles: true,
@@ -688,8 +691,10 @@ export async function columnsScenarios() {
         }),
       );
       await frame();
-    }
-    check(drag.anchorBlockId.value === id, "Shared layout grip did not appear");
+      return (
+        drag.anchorBlockId.value === id && drag.activeDragHandle === "block"
+      );
+    }, "Shared layout grip did not appear");
     return drag.dragHandleGrabber;
   };
   await menuAction(await layoutGrip(), "Unwrap columns");

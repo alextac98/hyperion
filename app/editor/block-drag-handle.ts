@@ -115,9 +115,6 @@ export class BlockDragHandleExtension extends LifeCycleWatcher {
           event.stopPropagation();
           open();
         });
-        widget.disposables.addFromEvent(grip, "dragstart", () =>
-          this.closeActions?.(),
-        );
         widget.disposables.addFromEvent(grip, "keydown", (event) => {
           const block = widget.anchorBlockComponent.peek();
           if (!block || widget.store.readonly || widget.dragging) return;

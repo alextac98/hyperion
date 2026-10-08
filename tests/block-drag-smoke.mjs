@@ -60,7 +60,7 @@ void (async () => {
     );
     const fixture = await js(`(${blockDragScenarios.toString()})()`);
     console.log(
-      "PASS: block dragging, six-dot grip, formatting, nested lists, tables, custom blocks, multiple selection, undo/redo, keyboard and cancellation",
+      "PASS: block dragging closes open menus; six-dot grip, formatting, nested lists, tables, custom blocks, multiple selection, undo/redo, keyboard and cancellation",
     );
     // Use actual pointer input: synthetic click() skips the native hover styles
     // that can move the grip before a user's mouse-down reaches it.

@@ -66,13 +66,17 @@ void (async () => {
       await new Promise(requestAnimationFrame);
       const drag = document.querySelector('affine-drag-handle-widget');
       drag.std.selection.clear();
-      const rect = layout.getBoundingClientRect();
-      for (let index = 0; index < 2; index++) {
+      const deadline = Date.now() + 15000;
+      while (Date.now() < deadline) {
+        await layout.updateComplete;
+        const rect = layout.getBoundingClientRect();
         layout.dispatchEvent(new PointerEvent('pointermove', {
           bubbles:true, composed:true,
           clientX:rect.left+40, clientY:rect.top+12,
         }));
         await new Promise(requestAnimationFrame);
+        if (drag.anchorBlockId.value === '${fixture.id}' && drag.activeDragHandle === 'block') break;
+        await new Promise(resolve => setTimeout(resolve, 25));
       }
       if (drag.anchorBlockId.value !== '${fixture.id}') throw new Error('Shared layout grip is missing');
       drag.dragHandleGrabber.click();
@@ -230,10 +234,17 @@ void (async () => {
     );
   } catch (error) {
     console.error(error);
-    if (window && !window.isDestroyed())
+    if (window && !window.isDestroyed()) {
       console.error(
         await js("document.body.innerText").catch(() => "Renderer unavailable"),
       );
+      await window.webContents
+        .capturePage()
+        .then((image) =>
+          writeFile("/tmp/hyperion-columns-failure.png", image.toPNG()),
+        )
+        .catch(() => {});
+    }
     exitCode = 1;
   } finally {
     for (const current of BrowserWindow.getAllWindows()) current.destroy();

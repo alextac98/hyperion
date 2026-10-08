@@ -31,6 +31,7 @@ export function openEditorActionMenu(
   const close = (restoreFocus = false) => {
     cancelAnimationFrame(focusFrame);
     document.removeEventListener("scroll", position, true);
+    document.removeEventListener("dragstart", closeOnDrag, true);
     window.removeEventListener("resize", position);
     observer.disconnect();
     menu.remove();
@@ -38,6 +39,9 @@ export function openEditorActionMenu(
     if (dismiss === close) dismiss = undefined;
     if (restoreFocus && anchor.isConnected) returnFocus();
   };
+  // Native block drags originate on the widget, while column drags originate
+  // on their header. Dismiss either menu before the drag engine handles them.
+  const closeOnDrag = () => close();
   const position = () => {
     if (!anchor.isConnected) return close();
     const rect = anchor.getBoundingClientRect();
@@ -92,6 +96,7 @@ export function openEditorActionMenu(
   anchor.setAttribute("aria-expanded", "true");
   observer.observe(document.body, { childList: true, subtree: true });
   document.addEventListener("scroll", position, true);
+  document.addEventListener("dragstart", closeOnDrag, true);
   window.addEventListener("resize", position);
   position();
   const focus = () => {

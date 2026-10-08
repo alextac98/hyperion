@@ -105,8 +105,26 @@ export async function blockDragScenarios() {
     );
   };
 
-  const drag = async (id, targetId, before = false, clearSelection = true) => {
+  const drag = async (
+    id,
+    targetId,
+    before = false,
+    { clearSelection = true, withMenu = false } = {},
+  ) => {
     await hover(id, clearSelection);
+    if (withMenu) {
+      widget.dragHandleGrabber.click();
+      await frame();
+      check(
+        document.querySelector(".editor-action-menu"),
+        "Drag menu did not open",
+      );
+      await hover(id, clearSelection);
+      check(
+        document.querySelector(".editor-action-menu"),
+        "Menu closed before the drag regression started",
+      );
+    }
     const dataTransfer = new DataTransfer();
     const sourceRect = widget.dragHandleGrabber.getBoundingClientRect();
     const options = {
@@ -138,6 +156,11 @@ export async function blockDragScenarios() {
     check(
       widget.dragging,
       "Dragging did not start (including the drag preview)",
+    );
+    check(
+      !document.querySelector(".editor-action-menu") &&
+        widget.dragHandleGrabber.getAttribute("aria-expanded") === "false",
+      "Starting a block drag left its actions menu open",
     );
     if (id === meeting) {
       check(
@@ -173,6 +196,10 @@ export async function blockDragScenarios() {
           (indicator) => indicator.rect,
         ),
       "Drag state was not cleaned up",
+    );
+    check(
+      !document.querySelector(".editor-action-menu"),
+      "The actions menu reopened after moving the block",
     );
   };
 
@@ -225,7 +252,7 @@ export async function blockDragScenarios() {
     "Heading disclosure did not restore its section",
   );
 
-  await drag(paragraph, heading);
+  await drag(paragraph, heading, false, { withMenu: true });
   await until(
     () => sameOrder([heading, paragraph, list, table, meeting]),
     "Paragraph was not moved after the heading",
@@ -280,7 +307,7 @@ export async function blockDragScenarios() {
     { type: "block", blockId: heading },
     { type: "block", blockId: paragraph },
   ]);
-  await drag(heading, table, false, false);
+  await drag(heading, table, false, { clearSelection: false });
   await until(
     () => sameOrder([list, table, heading, paragraph, meeting]),
     "Selected blocks were not moved together",
