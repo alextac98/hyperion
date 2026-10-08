@@ -5,9 +5,8 @@
   --development-ink-soft: #d6e7f4;
 }
 
-/* Inherit the normal header's height and padding; this is decoration only. */
-.sidebar-development .workspace-header {
-  position: relative;
+/* One continuous scene behind the native controls, app name and vault picker. */
+.sidebar-development .sidebar-header {
   background: linear-gradient(
     180deg,
     var(--development-blue) 0%,
@@ -17,8 +16,8 @@
 }
 
 .sidebar-development .workspace-button,
-.sidebar-development .workspace-header > .icon-button {
-  position: relative;
+.sidebar-development .sidebar-titlebar .icon-button,
+.sidebar-development .sidebar-app-name {
   color: var(--development-ink);
 }
 
@@ -27,12 +26,12 @@
 }
 
 .sidebar-development .workspace-button:hover,
-.sidebar-development .workspace-header > .icon-button:hover {
+.sidebar-development .sidebar-titlebar .icon-button:hover {
   background: #f4faff1a;
 }
 
 .sidebar-development .workspace-button:focus-visible,
-.sidebar-development .workspace-header > .icon-button:focus-visible {
+.sidebar-development .sidebar-titlebar .icon-button:focus-visible {
   outline-color: var(--development-ink);
 }
 
@@ -62,7 +61,7 @@
 
 .development-blueprint-window {
   position: absolute;
-  top: 5px;
+  top: calc(var(--workspace-tab-height) + 5px);
   right: 29px;
   display: grid;
   width: 52px;
@@ -90,7 +89,7 @@
 
 .development-blueprint-dimension {
   position: absolute;
-  top: 44px;
+  top: calc(var(--workspace-tab-height) + 44px);
   right: 25px;
   width: 70px;
   height: 6px;
@@ -101,7 +100,7 @@
 
 .development-blueprint-square {
   position: absolute;
-  top: 4px;
+  top: calc(var(--workspace-tab-height) + 4px);
   right: 10px;
   width: 14px;
   height: 14px;

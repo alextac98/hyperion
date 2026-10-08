@@ -38,6 +38,8 @@ ipcRenderer.on(channels.prepareClose, (_event, token: string) => {
 });
 
 contextBridge.exposeInMainWorld("hyperionDesktop", Object.freeze({
+  platform: process.platform,
+  updateTitleBarTheme: (theme: "light" | "dark") => ipcRenderer.invoke("hyperion:title-bar-theme", theme),
   openFeedback: () => ipcRenderer.invoke("hyperion:feedback-open"),
   windowSession: () => ipcRenderer.invoke("hyperion:window-session"),
   detachTab: (request: unknown) => ipcRenderer.invoke("hyperion:detach-tab", request),

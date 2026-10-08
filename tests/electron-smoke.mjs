@@ -1,4 +1,5 @@
 import { createFirstVault } from "./vault-setup-helpers.mjs";
+import { capturePage } from "./capture-page.mjs";
 // Run with: node scripts/run-electron-test.mjs
 import { app, BrowserWindow } from 'electron';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -52,7 +53,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
           tags.every((tag, index) => !index || tag.top >= tags[index-1].bottom || tag.left - tags[index-1].right >= 4);
       })`), `Home card spacing at ${width}px`);
     }
-    await window.webContents.capturePage().then(image=>writeFileSync('/tmp/hyperion-home-spacing.png',image.toPNG()));
+    await capturePage(window.webContents).then(image=>writeFileSync('/tmp/hyperion-home-spacing.png',image.toPNG()));
     window.setSize(1440, 940);
     await js(`document.querySelector('[data-page-id="'+${JSON.stringify(identity.noteId)}+'"] .organizer-page-link').click()`);
     await until(() => js(`Boolean(${editor}?.doc?.root)`), 'Editor did not return');
@@ -110,7 +111,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await until(() => js(`${editor}?.doc?.id===${JSON.stringify(identity.noteId)}`), 'Original editor did not return');
     await js(`window.hyperionDesktop.repositoryExecute({operation:'captureAutomaticRevisions'})`);
     const automatic = await js(`window.hyperionDesktop.repositoryExecute({operation:'listRevisions',vaultId:${JSON.stringify(vaultId)},noteId:${JSON.stringify(identity.noteId)}}).then(versions=>versions[0])`);
-    await js(`document.querySelector('[aria-label="More page actions"]').click()`);
+    await js(`document.querySelector('.workspace-panel[data-workspace-active=true] [aria-label="More page actions"]').click()`);
     await js(`Array.from(document.querySelectorAll('.note-menu button')).find(button=>button.textContent.includes('Version history')).click()`);
     await until(() => js('Boolean(document.querySelector(".page-history"))'), 'Page history sidebar did not open');
     await js(`document.querySelector('[aria-label="Pin page context"]').click()`);
@@ -136,20 +137,20 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await js(`${editor}.doc.root.props.title.insert('Changed ',0); document.querySelector('.page-history nav button').click();`);
     await until(() => js(`${titleChange}?.querySelector(".diff-after .diff-text")?.textContent.includes("Changed Smoke")`), 'Comparison missed pending title edit');
     assert.ok(await js(`${titleChange}?.querySelector(".diff-before .diff-text")?.textContent.includes("Smoke")`));
-    assert.equal(await js('document.querySelector("[aria-label=Undo]").disabled'), true);
+    assert.equal(await js('document.querySelector(".workspace-panel[data-workspace-active=true] [aria-label=Undo]").disabled'), true);
     assert.equal(await js(`${titleChange}?.querySelector(".diff-text ins")?.textContent`), 'Changed ');
     assert.ok(await js(`(() => { const a=${titleChange}.querySelector('.diff-before').getBoundingClientRect(); const b=${titleChange}.querySelector('.diff-after').getBoundingClientRect(); return Math.abs(a.top-b.top)<1 && a.right<=b.left+1; })()`));
     await js(`Array.from(document.querySelectorAll('.diff-layout button')).find(button=>button.textContent==='Unified').click()`);
     await until(() => js(`(() => { const a=${titleChange}.querySelector('.diff-before').getBoundingClientRect(); const b=${titleChange}.querySelector('.diff-after').getBoundingClientRect(); return b.top>=a.bottom && Math.abs(a.left-b.left)<1; })()`), 'Unified comparison layout did not settle');
     await js(`Array.from(document.querySelectorAll('.diff-layout button')).find(button=>button.textContent==='Side by side').click()`);
 
-    await window.webContents.capturePage().then(image => writeFileSync('/tmp/hyperion-history-diff.png', image.toPNG()));
+    await capturePage(window.webContents).then(image => writeFileSync('/tmp/hyperion-history-diff.png', image.toPNG()));
     await js(`Array.from(document.querySelectorAll('.comparison-tabs button')).find(b=>b.textContent==='Saved page').click()`);
     await until(() => js('Boolean(document.querySelector(".page-comparison .history-preview doc-title")?.doc?.root)'), 'Historical rich preview did not load');
     assert.equal(await js('document.querySelector(".page-comparison .history-preview doc-title").doc.readonly'), true);
     assert.ok(await js('document.querySelector(".page-comparison .history-preview doc-title").doc.root.props.title.toString().startsWith("Smoke ")'));
     await wait(200);
-    await window.webContents.capturePage().then(image => writeFileSync('/tmp/hyperion-history-preview.png', image.toPNG()));
+    await capturePage(window.webContents).then(image => writeFileSync('/tmp/hyperion-history-preview.png', image.toPNG()));
     await js(`Array.from(document.querySelectorAll('.comparison-tabs button')).find(b=>b.textContent==='Current page').click()`);
     await until(() => js('document.querySelector(".page-comparison .history-preview doc-title")?.doc?.root?.props.title.toString().startsWith("Changed Smoke ")'), 'Current rich preview has stale text');
     // The sidebar follows navigation and does not leak the selected page's history.
@@ -171,12 +172,12 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
           parseFloat(guide.left) < parseFloat(row.style.paddingLeft) && group.getBoundingClientRect().height > 0;
       });
     })()`));
-    await window.webContents.capturePage().then(image=>writeFileSync('/tmp/hyperion-tree-guides.png',image.toPNG()));
+    await capturePage(window.webContents).then(image=>writeFileSync('/tmp/hyperion-tree-guides.png',image.toPNG()));
     // History stays usable at the desktop minimum window width.
     window.setSize(940, 760);
     await wait(250);
     assert.ok(await js(`(() => { const panel=document.querySelector('.page-context-drawer.history-open').getBoundingClientRect(); const preview=document.querySelector('.page-comparison').getBoundingClientRect(); return panel.width>0 && panel.right<=innerWidth && preview.right<=panel.left+1; })()`));
-    await window.webContents.capturePage().then(image=>writeFileSync('/tmp/hyperion-history-narrow.png',image.toPNG()));
+    await capturePage(window.webContents).then(image=>writeFileSync('/tmp/hyperion-history-narrow.png',image.toPNG()));
     window.setSize(1440, 940);
     const exported = await js(`window.hyperionDesktop.repositoryExecute({operation:'exportVault',vaultId:${JSON.stringify(vaultId)}})`);
     // Restoring in place preserves the current version and reloads the original page.
@@ -184,7 +185,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await until(() => js(`!document.querySelector('.page-comparison') && ${editor}?.doc?.root?.props.title.toString().startsWith('Smoke ')`), 'Restored original did not load');
     const history = await js(`window.hyperionDesktop.repositoryExecute({operation:'listRevisions',vaultId:${JSON.stringify(vaultId)},noteId:${JSON.stringify(identity.noteId)}})`);
     assert.ok(history.some(version=>version.label==='Before restore' && version.note.title.startsWith('Changed Smoke ')));
-    await js(`document.querySelector('[aria-label="More page actions"]').click()`);
+    await js(`document.querySelector('.workspace-panel[data-workspace-active=true] [aria-label="More page actions"]').click()`);
     await js(`Array.from(document.querySelectorAll('.note-menu button')).find(button=>button.textContent.includes('Version history')).click()`);
     await until(() => js('Boolean(document.querySelector(".page-history nav button"))'), 'History sidebar did not reopen');
     await js(`Array.from(document.querySelectorAll('.page-history nav button')).find(b=>b.textContent.includes('Smoke checkpoint')).click()`);
@@ -208,7 +209,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await until(()=>js('Boolean(document.querySelector(".data-recovery"))'),'Backup controls missing');
     await wait(200);
     assert.ok(await js('document.querySelector(".settings-dialog").getBoundingClientRect().bottom <= innerHeight'));
-    await window.webContents.capturePage().then(image=>writeFileSync('/tmp/hyperion-data-settings.png',image.toPNG()));
+    await capturePage(window.webContents).then(image=>writeFileSync('/tmp/hyperion-data-settings.png',image.toPNG()));
     // Recovery uses the refactored native modal, including page history navigation.
     assert.equal(await js(`document.querySelector('dialog[aria-label="Settings"]')?.matches(':modal')`), true);
     await js(`Array.from(document.querySelectorAll('.settings-dialog button')).find(b=>b.textContent==='Browse page history').click()`);
@@ -245,7 +246,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     console.error("SMOKE FAILURE", error.name, error.message);
     if (window && !window.isDestroyed()) {
       console.error(await js('document.body.innerText').catch(()=>''));
-      await window.webContents.capturePage().then(image=>writeFileSync('/tmp/hyperion-smoke-failure.png',image.toPNG())).catch(()=>{});
+      await capturePage(window.webContents).then(image=>writeFileSync('/tmp/hyperion-smoke-failure.png',image.toPNG())).catch(()=>{});
     }
     app.exit(1);
   } finally { await rm(directory, { recursive: true, force: true }).catch(()=>{}); }

@@ -1,0 +1,60 @@
+diff --git a/dist/utils/virtual-padding.js b/dist/utils/virtual-padding.js
+index 02916231dcc1a38db83987b1fa9e0524299ca532..fd054e36a84c8dbb3acdb27a42091f0ab8c52620 100644
+--- a/dist/utils/virtual-padding.js
++++ b/dist/utils/virtual-padding.js
+@@ -17,11 +17,20 @@ export class VirtualPaddingController {
+         if (this.std.get(DocModeProvider).getEditorMode() === 'edgeless') {
+             return;
+         }
+-        this.block.disposables.add(autoUpdate(this.host, this.block, () => {
+-            const padding = this.block.getBoundingClientRect().left -
+-                this.host.getBoundingClientRect().left;
+-            this.virtualPadding$.value = Math.max(0, padding - 72);
+-        }));
++        let frame = 0;
++        const cleanup = autoUpdate(this.host, this.block, () => {
++            cancelAnimationFrame(frame);
++            // Defer margin changes until ResizeObserver delivery has finished.
++            frame = requestAnimationFrame(() => {
++                const padding = this.block.getBoundingClientRect().left -
++                    this.host.getBoundingClientRect().left;
++                this.virtualPadding$.value = Math.max(0, padding - 72);
++            });
++        });
++        this.block.disposables.add(() => {
++            cleanup();
++            cancelAnimationFrame(frame);
++        });
+     }
+ }
+ //# sourceMappingURL=virtual-padding.js.map
+diff --git a/src/utils/virtual-padding.ts b/src/utils/virtual-padding.ts
+index d03b1c3c20df2c5db7142d3491f34615a68532f4..b592ae37b155612a49a87eb02024122c1d0b8e0c 100644
+--- a/src/utils/virtual-padding.ts
++++ b/src/utils/virtual-padding.ts
+@@ -23,13 +23,21 @@ export class VirtualPaddingController implements ReactiveController {
+     if (this.std.get(DocModeProvider).getEditorMode() === 'edgeless') {
+       return;
+     }
+-    this.block.disposables.add(
+-      autoUpdate(this.host, this.block, () => {
++    let frame = 0;
++    const cleanup = autoUpdate(this.host, this.block, () => {
++      cancelAnimationFrame(frame);
++      // Updating table margins during ResizeObserver delivery can resize an
++      // ancestor whose notifications have already been delivered this frame.
++      frame = requestAnimationFrame(() => {
+         const padding =
+           this.block.getBoundingClientRect().left -
+           this.host.getBoundingClientRect().left;
+         this.virtualPadding$.value = Math.max(0, padding - 72);
+-      })
+-    );
++      });
++    });
++    this.block.disposables.add(() => {
++      cleanup();
++      cancelAnimationFrame(frame);
++    });
+   }
+ }

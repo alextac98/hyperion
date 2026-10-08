@@ -20,8 +20,51 @@
 .data-recovery p { font-size: var(--font-size-ui); line-height: 1.6; overflow-wrap: anywhere; color: var(--text-soft); }
 .recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .data-error, .save-status.error { color: var(--danger); }
-.data-error-banner { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); max-width: 80vw; background: var(--danger-soft); color: var(--danger); padding: 14px 20px; border-radius: var(--radius-control); z-index: 1500; }
-.data-error-banner button { margin-left: 16px; }
+.data-error-banner {
+  position: fixed;
+  z-index: 1500;
+  bottom: 20px;
+  left: 50%;
+  display: flex;
+  width: max-content;
+  max-width: min(520px, calc(100vw - 32px));
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 10px 14px;
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, var(--line));
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface-raised));
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+}
+.data-error-banner p {
+  min-width: 0;
+  max-height: min(160px, 40vh);
+  margin: 0;
+  overflow: auto;
+  font-size: var(--font-size-ui);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.data-error-icon {
+  flex: 0 0 auto;
+  color: var(--danger);
+}
+.data-error-dismiss {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+}
+.data-error-dismiss:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--text);
+}
 .data-operation-overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; background: #0002; color: var(--text); cursor: progress; }
 
 .dialog-layer.history-layer { align-items: center; padding: 24px; }

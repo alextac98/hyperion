@@ -29,7 +29,10 @@ export function requireDataService() {
 export let knowledgeRepository: KnowledgeRepository =
   new SqliteKnowledgeRepository(data!);
 export async function initializeRuntime() {
-  if (desktop) desktopWindow = await desktop.windowSession();
+  if (desktop) {
+    document.documentElement.dataset.desktopPlatform = desktop.platform;
+    desktopWindow = await desktop.windowSession();
+  }
   if (!desktop && import.meta.env.DEV && window.hyperionBrowserDevelopment) {
     const { connectBrowserDevelopment } = await import("./browser-development");
     browser = await connectBrowserDevelopment(

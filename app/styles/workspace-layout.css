@@ -58,7 +58,7 @@ body[data-native-tab-drag-preview] .dv-tab-ghost-drag { display: none !important
   --dv-background-color: var(--bg);
   --dv-group-view-background-color: var(--bg);
   --dv-tabs-and-actions-container-background-color: var(--panel);
-  --dv-tabs-and-actions-container-height: 39px;
+  --dv-tabs-and-actions-container-height: var(--workspace-tab-height);
   --dv-activegroup-visiblepanel-tab-background-color: var(--bg);
   --dv-activegroup-hiddenpanel-tab-background-color: var(--panel);
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg);
@@ -86,6 +86,49 @@ body[data-native-tab-drag-preview] .dv-tab-ghost-drag { display: none !important
 }
 .dockview-theme-hyperion .dv-tabs-and-actions-container {
   border-bottom: 1px solid var(--line);
+}
+.workspace-sidebar-toggle {
+  display: none;
+  margin-inline: 4px;
+}
+[data-window-top-left]
+  > .dv-tabs-and-actions-container
+  .workspace-sidebar-toggle {
+  display: inline-grid;
+}
+
+/* The native buttons share only the window's top row. CSS environment values
+   follow fullscreen, system button placement and display scaling. */
+[data-desktop-platform]
+  [data-window-top-edge]
+  > .dv-tabs-and-actions-container {
+  -webkit-app-region: drag;
+  padding-left: max(
+    0px,
+    calc(env(titlebar-area-x, 0px) - var(--group-window-left))
+  );
+  padding-right: max(
+    0px,
+    calc(
+      var(--group-window-right) - env(titlebar-area-x, 0px) -
+        env(titlebar-area-width, 100vw)
+    )
+  );
+}
+[data-desktop-platform] [data-window-top-edge] .dv-void-container {
+  min-width: 48px;
+}
+[data-desktop-platform] .dv-tab,
+[data-desktop-platform] .dv-tabs-and-actions-container button,
+[data-desktop-platform] .dv-tabs-overflow-container {
+  -webkit-app-region: no-drag;
+}
+/* Window dragging must yield to page/tab drops for the duration of a drag. */
+[data-desktop-platform]
+  [data-tab-dragging]
+  [data-window-top-edge]
+  > .dv-tabs-and-actions-container {
+  -webkit-app-region: no-drag;
 }
 .dockview-theme-hyperion .dv-tab {
   padding: 0;
@@ -119,13 +162,27 @@ body[data-native-tab-drag-preview] .dv-tab-ghost-drag { display: none !important
 .workspace-tab-content .tab-close {
   margin-left: 3px;
 }
-.dockview-theme-hyperion .tab-home {
-  height: 36px;
-}
 .dockview-theme-hyperion .workspace-panel {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   width: 100%;
   container-type: inline-size;
+}
+.dockview-theme-hyperion .workspace-panel[hidden] {
+  display: none;
+}
+.workspace-page-content {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.workspace-page-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .dockview-theme-hyperion .note-workspace {
   min-height: 100%;
@@ -137,6 +194,33 @@ body[data-native-tab-drag-preview] .dv-tab-ghost-drag { display: none !important
 
 /* A narrow pane needs the compact page treatment even in a wide desktop window. */
 @container (max-width: 650px) {
+  .topbar .save-status {
+    width: 26px;
+    overflow: hidden;
+    padding: 0 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 0;
+    margin-right: 0;
+  }
+  .topbar .save-status.error {
+    width: auto;
+    font-size: 12px;
+  }
+  .topbar .save-status > svg,
+  .topbar .saving-spinner {
+    flex-shrink: 0;
+  }
+  .topbar .breadcrumbs > .breadcrumb-parent {
+    display: none;
+  }
+  .page-window-vault {
+    display: none;
+  }
+  .page-window-return {
+    font-size: 0;
+    gap: 0;
+  }
   .library-view {
     padding: 32px 20px 60px;
   }
@@ -171,6 +255,24 @@ body[data-native-tab-drag-preview] .dv-tab-ghost-drag { display: none !important
   }
   .tags-layout {
     grid-template-columns: 1fr;
+  }
+}
+
+@container (max-width: 600px) {
+  .page-context-drawer {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: min(320px, 100%);
+    box-shadow: var(--shadow-lg);
+  }
+  .page-context-scrim {
+    position: absolute;
+    z-index: 10;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: color-mix(in srgb, var(--text) 12%, transparent);
   }
 }
 

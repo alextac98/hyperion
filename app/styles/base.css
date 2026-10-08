@@ -1,6 +1,7 @@
 :root {
   --sidebar-width: 272px;
-  --topbar-height: 52px;
+  --topbar-height: 40px;
+  --workspace-tab-height: 39px;
 }
 
 * {

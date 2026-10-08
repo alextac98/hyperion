@@ -69,6 +69,8 @@ export interface HyperionDataApi {
 }
 
 export interface HyperionDesktopApi extends HyperionDataApi {
+  platform: "darwin" | "win32" | "linux";
+  updateTitleBarTheme(theme: "light" | "dark"): Promise<void>;
   openFeedback(): Promise<void>;
   windowSession(): Promise<WindowSession>;
   detachTab(request: DetachedTabRequest): Promise<void>;
