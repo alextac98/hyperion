@@ -13,6 +13,7 @@ import { layoutPanes } from "./application/workspace-layout";
 import { useMouseNavigation } from "./hooks/useMouseNavigation";
 import { uiStorage } from "./lib/ui-storage";
 import { UpdateControls } from "./components/UpdateControls";
+import { FeedbackButton } from "./components/FeedbackButton";
 import { saves } from "./lib/save-coordinator";
 import { dataBusy, dataOperation, flushAll } from "./lib/data-operations";
 import { PageHistory, PageHistoryPreview } from "./components/PageHistory";
@@ -1087,8 +1088,6 @@ export default function HyperionApp() {
   ) => {
     event.preventDefault();
     event.stopPropagation();
-    const menuWidth = 218;
-    const menuHeight = 260;
     const gutter = 8;
     const bounds = event.currentTarget.getBoundingClientRect();
     const anchorX = event.clientX || bounds.left + Math.min(bounds.width, 44);
@@ -1097,14 +1096,8 @@ export default function HyperionApp() {
     setVaultMenuOpen(false);
     setPageContextMenu({
       noteId,
-      x: Math.max(
-        gutter,
-        Math.min(anchorX, window.innerWidth - menuWidth - gutter),
-      ),
-      y: Math.max(
-        gutter,
-        Math.min(anchorY, window.innerHeight - menuHeight - gutter),
-      ),
+      x: Math.max(gutter, anchorX),
+      y: Math.max(gutter, anchorY),
     });
   };
 
@@ -1597,6 +1590,7 @@ export default function HyperionApp() {
               }}
             />
           </div>
+          <FeedbackButton />
         </div>
         {sidebarOpen && (
           <button

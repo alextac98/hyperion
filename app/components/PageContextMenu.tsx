@@ -8,9 +8,10 @@ import {
   Star,
   Trash,
 } from "@phosphor-icons/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { PageContextMenuState } from "../application/navigation";
 import type { NoteRecord } from "../lib/local-database";
+import { FeedbackButton } from "./FeedbackButton";
 
 export function PageContextMenu({
   state,
@@ -39,6 +40,23 @@ export function PageContextMenu({
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
 
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+    const position = () => {
+      // Use layout dimensions so the opening scale animation cannot move the
+      // final menu beyond the edge of the window.
+      const width = menu.offsetWidth;
+      const height = menu.offsetHeight;
+      menu.style.left = `${Math.max(8, Math.min(state.x, window.innerWidth - width - 8))}px`;
+      menu.style.top = `${Math.max(8, Math.min(state.y, window.innerHeight - height - 8))}px`;
+    };
+    position();
+    const observer = new ResizeObserver(position);
+    observer.observe(menu);
+    return () => observer.disconnect();
+  }, [state.x, state.y]);
+
   useEffect(() => {
     const focusTimer = window.setTimeout(
       () =>
@@ -49,13 +67,16 @@ export function PageContextMenu({
       if (!menuRef.current?.contains(event.target as Node)) onClose();
     };
     const closeMenu = () => onClose();
+    const closeOnScroll = (event: Event) => {
+      if (!menuRef.current?.contains(event.target as Node)) onClose();
+    };
     document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("scroll", closeMenu, true);
+    document.addEventListener("scroll", closeOnScroll, true);
     window.addEventListener("resize", closeMenu);
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("scroll", closeMenu, true);
+      document.removeEventListener("scroll", closeOnScroll, true);
       window.removeEventListener("resize", closeMenu);
     };
   }, [onClose]);
@@ -135,6 +156,12 @@ export function PageContextMenu({
         <Trash size={16} />
         <span>Trash</span>
       </button>
+      {window.hyperionDesktop && (
+        <>
+          <div className="context-menu-divider" role="separator" />
+          <FeedbackButton role="menuitem" onOpened={onClose} />
+        </>
+      )}
     </div>
   );
 }

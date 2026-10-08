@@ -141,6 +141,21 @@
   text-align: center;
   color: var(--text-soft);
 }
+.vault-setup .feedback-action {
+  margin-top: 12px;
+  text-align: center;
+}
+.vault-setup .feedback-button {
+  padding: 6px 10px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+.vault-setup .feedback-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
 .vault-setup-error {
   color: var(--danger);
   background: var(--panel);

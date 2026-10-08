@@ -1,5 +1,6 @@
 import { SidebarOrganizer } from "../app/components/SidebarOrganizer";
 import { UpdateControls } from "../app/components/UpdateControls";
+import { FeedbackButton } from "../app/components/FeedbackButton";
 import type { UpdateState } from "../electron/updates";
 import type { HyperionDesktopApi } from "../app/platform/desktop-api";
 import { PageConnections, backlinkExcerpt } from "../app/components/PageConnections";
@@ -883,6 +884,55 @@ test("failed editor preloading can retry without reloading successful modules", 
   assert.equal(viewLoads, 1);
 });
 
+
+test("feedback waits for a click, reports browser failures, and allows retry", async () => {
+  const previous = window.hyperionDesktop;
+  let calls = 0;
+  let opened = 0;
+  let finish: (() => void) | undefined;
+  window.hyperionDesktop = {
+    openFeedback: async () => {
+      calls++;
+      if (calls === 1) throw new Error("No browser available");
+      await new Promise<void>((resolve) => { finish = resolve; });
+    },
+  } as unknown as HyperionDesktopApi;
+  const view = await mount(<FeedbackButton role="menuitem" onOpened={() => { opened++; }} />);
+  try {
+    const button = view.host.querySelector("button")!;
+    assert.equal(calls, 0);
+    assert.equal(button.type, "button");
+    assert.equal(button.getAttribute("role"), "menuitem");
+    const description = document.getElementById(button.getAttribute("aria-describedby")!);
+    assert.match(description?.textContent ?? "", /GitHub account is required/);
+    assert.match(description?.textContent ?? "", /App version, OS, and architecture/);
+    await act(async () => button.click());
+    assert.equal(opened, 0);
+    assert.match(view.host.querySelector('[role="alert"]')?.textContent ?? "", /Could not open GitHub/);
+    await act(async () => { button.click(); button.click(); });
+    assert.equal(calls, 2);
+    assert.equal(button.disabled, true);
+    assert.equal(view.host.querySelector('[role="alert"]'), null);
+    await act(async () => finish?.());
+    assert.equal(opened, 1);
+    assert.equal(button.disabled, false);
+  } finally {
+    await view.unmount();
+    window.hyperionDesktop = previous;
+  }
+});
+
+test("feedback is unavailable without the native desktop capability", async () => {
+  const previous = window.hyperionDesktop;
+  delete window.hyperionDesktop;
+  const view = await mount(<FeedbackButton />);
+  try {
+    assert.equal(view.host.querySelector("button"), null);
+  } finally {
+    await view.unmount();
+    window.hyperionDesktop = previous;
+  }
+});
 
 test("update controls show progress, retry and explicit restart without installing on mount", async () => {
   const previous = window.hyperionDesktop;
