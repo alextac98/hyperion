@@ -75,7 +75,9 @@ design tokens, and icon assets. A live brand guide is available from
 
 See [development](docs/development.md), [building](docs/building.md), and
 [architecture](docs/architecture.md) for requirements and details. Maintainers
-can also review the [release process](docs/developer/release.md).
+can also review the [release process](docs/developer/release.md): manually change
+the version in `package.json`; when that change reaches `main`, GitHub Actions
+tests, builds, tags, and publishes the release automatically.
 
 ## Attributions
 

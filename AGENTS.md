@@ -15,7 +15,9 @@ Use Conventional Commits to keep change history clear:
   do not change user-facing behavior.
 
 Keep the subject imperative and concise. Commit messages do not trigger releases
-or determine versions. Use the manual Version workflow to prepare a tested
-version commit on main, and the separate manual Release workflow to publish
-main's captured commit. Do not create release tags or publish releases by hand.
+or determine versions. Edit the version in `package.json` manually. A push to
+`main` that changes that version automatically runs the Release workflow, which
+tests and publishes the captured commit. A version bump in a PR therefore
+publishes after merge; only include one when release publication is intended.
+Do not create release tags or publish releases by hand.
 See docs/developer/release.md for the process.

@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   assertReleaseAvailable,
-  bumpVersion,
   parseVersion,
+  releaseVersionForPush,
 } from "../scripts/release-version.mjs";
 
 const repo = { owner: "example", repo: "hyperion" };
@@ -23,14 +27,7 @@ function client({
   };
 }
 
-test("version preparation increments the selected component and resets lower components", () => {
-  assert.equal(bumpVersion("0.1.0", "patch"), "0.1.1");
-  assert.equal(bumpVersion("1.9.12", "minor"), "1.10.0");
-  assert.equal(bumpVersion("0.9.12", "major"), "1.0.0");
-  assert.throws(() => bumpVersion("1.2.3", "unknown"), /Unknown version bump/);
-});
-
-test("only canonical stable versions can be prepared or released", () => {
+test("only canonical stable versions can be released", () => {
   for (const version of [
     undefined,
     123,
@@ -43,6 +40,81 @@ test("only canonical stable versions can be prepared or released", () => {
   ]) {
     assert.throws(() => parseVersion(version), /Expected a stable/);
   }
+});
+
+async function repository(context) {
+  const directory = await mkdtemp(join(tmpdir(), "hyperion-release-trigger-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const git = (...args) =>
+    execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim();
+  git("init", "--quiet");
+  git("config", "user.name", "Release test");
+  git("config", "user.email", "release-test@example.invalid");
+  const commit = async (version, description = "fixture") => {
+    await writeFile(
+      join(directory, "package.json"),
+      JSON.stringify({ version, description }),
+    );
+    git("add", "package.json");
+    git("commit", "--quiet", "-m", "test: change package");
+    return git("rev-parse", "HEAD");
+  };
+  return { directory, commit };
+}
+
+test("unchanged versions skip releases even when package metadata changes", async (context) => {
+  const { directory, commit } = await repository(context);
+  const before = await commit("0.3.0");
+  const after = await commit("0.3.0", "dependency or metadata edit");
+  assert.equal(releaseVersionForPush(before, after, directory), null);
+});
+
+test("multi-commit pushes release the captured version even after HEAD moves", async (context) => {
+  const { directory, commit } = await repository(context);
+  const before = await commit("0.3.0");
+  await commit("0.4.0");
+  const after = await commit("0.4.0", "later commit in the same push");
+  await commit("0.5.0", "subsequent push");
+  assert.equal(releaseVersionForPush(before, after, directory), "0.4.0");
+});
+
+test("a push with no net version change skips intermediate version edits", async (context) => {
+  const { directory, commit } = await repository(context);
+  const before = await commit("0.3.0");
+  await commit("0.4.0");
+  const after = await commit("0.3.0", "version restored before push");
+  assert.equal(releaseVersionForPush(before, after, directory), null);
+});
+
+test("an initial main push can release its stable committed version", async (context) => {
+  const { directory, commit } = await repository(context);
+  const after = await commit("0.1.0");
+  assert.equal(
+    releaseVersionForPush("0".repeat(40), after, directory),
+    "0.1.0",
+  );
+});
+
+test("invalid changed versions and unavailable push history stop detection", async (context) => {
+  const { directory, commit } = await repository(context);
+  const before = await commit("0.3.0");
+  for (const version of ["v0.4.0", "0.4.0-beta.1", "0.4", undefined]) {
+    const after = await commit(version);
+    assert.throws(
+      () => releaseVersionForPush(before, after, directory),
+      /Expected a stable/,
+    );
+  }
+  const after = await commit("0.4.0");
+  assert.throws(() => releaseVersionForPush("f".repeat(40), after, directory));
+  assert.throws(
+    () => releaseVersionForPush("main", after, directory),
+    /Expected a commit SHA/,
+  );
+  assert.throws(
+    () => releaseVersionForPush(before, "HEAD", directory),
+    /Expected a commit SHA/,
+  );
 });
 
 test("first release is allowed and API lookups use the exact committed version", async () => {

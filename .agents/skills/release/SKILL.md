@@ -12,7 +12,7 @@ prove there are no possible failures.
 
 Resolve repository paths below from the repository root. Read `AGENTS.md`,
 `docs/developer/release.md`, `docs/migration-tests.md`, `package.json`, and the
-current `.github/workflows/{pull-request,version,release}.yml` before acting.
+current `.github/workflows/{pull-request,release}.yml` before acting.
 These files are authoritative for commands and release mechanics; do not freeze
 current version numbers, schema versions, or platform lists into this skill.
 
@@ -106,14 +106,18 @@ and call out breaking changes regardless of the numeric bump. Respect an explici
 user version choice after checking it is valid and newer than published versions.
 Conventional Commit messages are evidence, not an automatic versioning rule.
 
-The repository's Version workflow prepares and tests a version commit on `main`;
-the Release workflow later publishes the captured `main` SHA. Preparing this PR
-must not dispatch either workflow. Normally put the proposed version and bump
-in the PR, then use Version after review/merge. If `package.json` is already at the
-intended version, explain that no additional bump is needed. The release guide
-also describes manual version editing, but `AGENTS.md` directs use of Version;
-do not silently switch paths or bump twice. If the user explicitly requests a
-manual bump, update only the required version files and validate the final diff.
+Versions are edited manually in `package.json`. The Release workflow compares
+the version before and after each push to `main`, and automatically tests, builds,
+tags, and publishes the captured commit when it changes. Changes on a preparation
+branch do not publish; merging a PR containing a version bump does.
+
+Normally keep release preparation separate from the version edit: put the
+proposed version and rationale in the report/PR, then let the user change the
+version when ready to publish. Include a version edit only when the user explicitly
+requests it, explain that its merge triggers publication, and validate the final
+diff. If `package.json` is already at the intended version, explain that no further
+bump is needed and inspect the existing release run before proposing another edit.
+There is no Version workflow or manual release dispatch, and no hand-created tag.
 
 ## 4. Prepare and open the release MR/PR
 
@@ -128,10 +132,11 @@ Use the repository's PR template if present; otherwise include:
   evidence, manual smoke checks, and checks still required.
 - **Risks and recovery:** known issues, blockers, backup/restore evidence, and
   downgrade limitations.
-- **Release handoff:** after review/merge, prepare the version once, check the
-  final `main` candidate, run the manual Release workflow only when requested,
-  then smoke-test published installers. New intervening changes require review
-  and appropriate validation; earlier evidence applies only to its candidate.
+- **Release handoff:** review/merge preparation, then manually change the version
+  when publication is intended. Its arrival on `main` starts Release automatically;
+  record the captured SHA, check the workflow and smoke-test published installers.
+  New intervening changes require review and appropriate validation; earlier
+  evidence applies only to its candidate.
 
 Prefer an existing preparation branch/PR when it represents the same work. For
 new preparation work, use a focused branch targeting the repository's release
@@ -152,9 +157,9 @@ structured tool argument or `gh pr create --body-file` with an actual text file.
 
 If hosting access or authorization is unavailable, leave the completed report,
 proposed title/body, and the precise remaining action. Do not pretend a PR was
-opened. Stop after the review handoff: no merge, workflow dispatch, release tag,
-or publication is implied by preparing a release. Never hand-publish releases
-or create release tags outside the documented workflow.
+opened. Stop after the review handoff: preparing a release does not authorize
+merging the PR or changing `main`'s version to trigger publication. Never
+hand-publish releases or create release tags outside the documented workflow.
 
 ## Improve the skill from use
 

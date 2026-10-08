@@ -1,17 +1,41 @@
 # Releasing Hyperion
 
-Two manual workflows: **Version** prepares a version; **Release** publishes it.
-Pushing or merging code never publishes a release.
+Edit the version in `package.json` manually. When that version change reaches
+`main`, the **Release** workflow tests, builds, tags, and publishes the release
+automatically. No workflow dispatch or pre-created tag is required.
 
 ## 1. Decide on a version number
 
-A version number can be set manually by editing the `package.json` with the next version number.
+Prepare and review the release changes, including the release report and README
+screenshot when the interface has changed. When ready to publish, edit only the
+`version` field in `package.json` to the intended next version and commit it,
+usually in a PR targeting `main`. For example, change `0.3.0` to `0.4.0` for a minor
+release. A version edit on another branch does not publish; merging it into
+`main` does.
 
-If you'd like to do it automatically using a UI / GitHub Actions, go to **GitHub → Actions → Version → Run workflow**, select **main** branch and choose **patch**, **minor**, or **major**. The workflow updates `package.json`, tests the version commit, and pushes it to `main`. It creates no tag, release, or release PR. For example, `0.1.0` becomes `0.1.1`, `0.2.0`, or `1.0.0`, respectively.
+Use a canonical stable `major.minor.patch` version, newer than the latest published
+release and without an existing tag or release, including an unpublished draft.
+The workflow does not calculate or change versions, and commit subjects do not
+determine them. The former Version workflow has been removed.
 
 ## 2. Publish
 
-In **Actions → Release → Run workflow**, select **main**. The workflow captures that exact commit and reads its committed version. It runs checks (including checking that the release number is not duplicate), builds installers, generates release notes and checksums, then publishes `vX.Y.Z` with automatic-update metadata. It never changes version files, and later pushes to `main` are not included. The run summary identifies the commit.
+Push or merge the version change to `main`, then follow **Actions → Release**.
+Every push is checked by comparing the committed package versions at the push's
+before and after SHAs. An unchanged version skips release checks, builds, and
+publication, even if other package metadata or dependencies changed. For a
+multi-commit push, only the final version compared with the pre-push version
+matters; the workflow does not publish intermediate version edits.
+
+When the version changes, the workflow captures that exact `main` commit, validates
+the version, runs the quality checks, builds all four installers, generates release
+notes and checksums, then creates `vX.Y.Z` and publishes the GitHub release with
+automatic-update metadata. It never changes version files, and later pushes to
+`main` are not included. The run summary identifies the captured commit.
+
+Release runs execute one at a time and queue instead of replacing pending runs,
+using GitHub's [concurrency queue](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+The workflow checks version availability again immediately before publication.
 
 Download the published installers and smoke-test them. Current targets are **macOS arm64**, **Windows x64**, and **Linux x64/arm64**. Windows builds unsigned without signing-key checks. macOS signs and notarizes when all credentials below are present; otherwise it logs a warning and uses an ad-hoc signature (no Apple certificate) without notarization. For unsigned Mac builds, on first launch, users may need **System Settings → Privacy & Security → Open Anyway**. See [Apple's instructions](https://support.apple.com/en-us/102445).
 
@@ -21,13 +45,16 @@ Add these optional macOS **environment secrets**: `MACOS_CERTIFICATE` (base64 `.
 
 ## If something fails
 
-- **Version push rejected:** if `main` moved, rerun Version. Branch rules must
-  allow the workflow's version commit; it never force-pushes or bypasses rules.
-- **Checks or builds fail:** fix the problem on `main` and run Release again.
-  No release is published before all checks and builds pass.
-- **Version already exists or is older:** run Version before releasing again.
+- **Checks or builds fail:** rerun failed jobs for a transient failure; the rerun
+  uses the original captured commit. If a code fix is needed, merge it with a new
+  unused version to start a release from the corrected commit. A code-only push
+  with an unchanged version does not retry publication. No release is published
+  before all checks and builds pass.
+- **Version invalid, already exists, or is older:** manually choose a valid,
+  newer, unused version in `package.json` and push/merge that edit to `main`.
 - **Upload/publication fails:** inspect the unpublished draft and any tag before
-  retrying; remove only the failed, unpublished release/tag if a fresh run needs it.
+  rerunning the failed jobs; remove only the failed, unpublished release/tag if a
+  fresh attempt needs it. Never remove a published release to make a rerun pass.
 
 ## Download and update experience
 

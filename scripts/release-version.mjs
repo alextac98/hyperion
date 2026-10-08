@@ -1,5 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { execFileSync } from "node:child_process";
 
 export function parseVersion(version) {
   if (
@@ -13,12 +12,30 @@ export function parseVersion(version) {
   return version.split(".").map(BigInt);
 }
 
-export function bumpVersion(version, bump) {
-  const parts = parseVersion(version);
-  const index = ["major", "minor", "patch"].indexOf(bump);
-  if (index === -1) throw new Error(`Unknown version bump: ${bump}`);
-  parts[index] += 1n;
-  return parts.map((part, i) => (i > index ? 0n : part)).join(".");
+// Compare the push's complete range, including multi-commit and merge pushes.
+// Read committed manifests so a later checkout or push cannot change the candidate.
+export function releaseVersionForPush(
+  before,
+  after,
+  directory = process.cwd(),
+) {
+  for (const sha of [before, after]) {
+    if (typeof sha !== "string" || !/^[a-f0-9]{40}$/i.test(sha))
+      throw new Error(`Expected a commit SHA, got ${sha}`);
+  }
+  const versionAt = (sha) =>
+    JSON.parse(
+      execFileSync("git", ["show", `${sha}:package.json`], {
+        cwd: directory,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }),
+    ).version;
+  const version = versionAt(after);
+  // GitHub uses an all-zero before SHA when a branch is first created.
+  if (before !== "0".repeat(40) && versionAt(before) === version) return null;
+  parseVersion(version);
+  return version;
 }
 
 // Only a missing resource is acceptable; authentication and service failures
@@ -56,15 +73,4 @@ export async function assertReleaseAvailable(github, repo, version) {
     throw new Error(`${tag} must be newer than ${latest.data.tag_name}.`);
   }
   return tag;
-}
-
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
-  const file = "package.json";
-  const pkg = JSON.parse(readFileSync(file, "utf8"));
-  pkg.version = bumpVersion(pkg.version, process.argv[2]);
-  writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
-  console.log(pkg.version);
 }

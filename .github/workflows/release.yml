@@ -1,7 +1,8 @@
 name: Release
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -9,24 +10,35 @@ permissions:
 concurrency:
   group: release-main
   cancel-in-progress: false
+  queue: max
 
 jobs:
   prepare:
-    name: Validate committed release version
-    if: ${{ github.ref == 'refs/heads/main' }}
+    name: Detect and validate version change
+    if: ${{ github.ref == 'refs/heads/main' && !github.event.deleted }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
+      release: ${{ steps.version.outputs.release }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
       - id: version
         uses: actions/github-script@v9
         with:
           script: |
-            const { assertReleaseAvailable } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-version.mjs`);
-            const { version } = require('./package.json');
+            const { releaseVersionForPush, assertReleaseAvailable } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-version.mjs`);
+            const version = releaseVersionForPush(context.payload.before, context.sha);
+            core.setOutput('release', version !== null);
+            if (version === null) {
+              await core.summary.addHeading('No version change')
+                .addRaw('The package.json version is unchanged. Release checks, builds, and publication are skipped.')
+                .write();
+              return;
+            }
             const tag = await assertReleaseAvailable(github, context.repo, version);
             core.setOutput('tag', tag);
             await core.summary.addHeading(`Release ${tag}`)
@@ -35,6 +47,7 @@ jobs:
 
   quality:
     name: Release quality checks
+    if: ${{ needs.prepare.outputs.release == 'true' }}
     timeout-minutes: 20
     needs: prepare
     runs-on: ubuntu-24.04
@@ -45,7 +58,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: '24.21.0'
+          node-version: "24.21.0"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
@@ -85,7 +98,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: '24.21.0'
+          node-version: "24.21.0"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build packages
