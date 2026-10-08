@@ -11,6 +11,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type Ref,
+  type ComponentProps,
 } from "react";
 import {
   DockviewReact,
@@ -23,8 +24,12 @@ import {
   type DockviewWillDropEvent,
   type DockviewWillShowOverlayLocationEvent,
 } from "dockview-react";
-import { Plus, X } from "@phosphor-icons/react";
-import type { TabDragRequest, TabDropTarget, TabDropTargets } from "../../electron/window-session";
+import { Plus, SidebarSimple, X } from "@phosphor-icons/react";
+import type {
+  TabDragRequest,
+  TabDropTarget,
+  TabDropTargets,
+} from "../../electron/window-session";
 import { locationKey } from "../application/workspace-tabs";
 import { readPageDrag, type PageDrag } from "../application/page-drag";
 import type {
@@ -54,6 +59,8 @@ type Props = {
   onDetach?: (tab: WorkspaceTab, position?: { x: number; y: number }) => void;
   canDetach?: (tab: WorkspaceTab) => boolean;
   pageWindow?: boolean;
+  showSidebarToggle?: boolean;
+  onOpenSidebar?: () => void;
   onReturn?: (tab: WorkspaceTab) => void;
   onBeginTabDrag?: (request: TabDragRequest) => Promise<boolean>;
   onEndTabDrag?: (token: string) => Promise<void>;
@@ -62,6 +69,23 @@ type Props = {
   onTabDropHint?: (callback: (target: TabDropTarget | null) => void) => () => void;
 };
 export type WorkspaceLayoutHandle = { placeTab: (id: string, target: TabDropTarget) => void };
+
+export function WorkspacePage({
+  toolbar,
+  context,
+  children,
+  ...props
+}: ComponentProps<"div"> & { toolbar: ReactNode; context: ReactNode }) {
+  return (
+    <div {...props}>
+      {toolbar}
+      <div className="workspace-page-content">
+        <div className="workspace-page-scroll">{children}</div>
+        {context}
+      </div>
+    </div>
+  );
+}
 
 function tabPreview(element: HTMLElement, title: string): TabDragRequest["preview"] {
   const box = element.getBoundingClientRect();
@@ -93,10 +117,12 @@ function tabStrip(group: HTMLElement, viewport: HTMLElement) {
   if (!header) return null;
   const box = header.getBoundingClientRect();
   const clip = viewport.getBoundingClientRect();
+  const style = getComputedStyle(header);
+  const prefix = header.querySelector(".dv-pre-actions-container")?.getBoundingClientRect();
   const actions = header.querySelector(".dv-right-actions-container")?.getBoundingClientRect();
-  const x = Math.max(0, box.left, clip.left);
+  const x = Math.max(0, box.left + (parseFloat(style.paddingLeft) || 0), clip.left, prefix?.width ? prefix.right : box.left);
   const y = Math.max(0, box.top, clip.top);
-  const right = Math.min(window.innerWidth, box.right, clip.right, actions?.width ? actions.left : box.right);
+  const right = Math.min(window.innerWidth, box.right - (parseFloat(style.paddingRight) || 0), clip.right, actions?.width ? actions.left : box.right);
   const bottom = Math.min(window.innerHeight, box.bottom, clip.bottom);
   if (right <= x || bottom <= y) return null;
   return {
@@ -179,6 +205,20 @@ function WorkspacePaneActions({ api }: IDockviewHeaderActionsProps) {
       <Plus size={16} />
     </button>
   );
+}
+
+function WorkspacePaneLeadingActions() {
+  const { showSidebarToggle, onOpenSidebar } = useWorkspace();
+  return showSidebarToggle ? (
+    <button
+      className="icon-button workspace-sidebar-toggle"
+      aria-label="Open sidebar"
+      title="Open sidebar"
+      onClick={onOpenSidebar}
+    >
+      <SidebarSimple size={18} />
+    </button>
+  ) : null;
 }
 
 function focusTabElement(id: string) {
@@ -560,6 +600,29 @@ export function WorkspaceLayout({ ref, ...props }: Props) {
       if (disposed || frame) return;
       frame = requestAnimationFrame(() => {
         fit();
+        // Only top-edge groups share the native title bar. Lower split panes
+        // must keep their entire tab strip available for tabs and drop targets.
+        const top = viewport.current?.getBoundingClientRect().top ?? 0;
+        const left = viewport.current?.getBoundingClientRect().left ?? 0;
+        for (const group of api.groups) {
+          const bounds = group.element.getBoundingClientRect();
+          group.element.toggleAttribute(
+            "data-window-top-edge",
+            Math.abs(bounds.top - top) < 1,
+          );
+          group.element.toggleAttribute(
+            "data-window-top-left",
+            Math.abs(bounds.top - top) < 1 && Math.abs(bounds.left - left) < 1,
+          );
+          group.element.style.setProperty(
+            "--group-window-left",
+            `${bounds.left}px`,
+          );
+          group.element.style.setProperty(
+            "--group-window-right",
+            `${bounds.right}px`,
+          );
+        }
         frame = 0;
         if (api.totalPanels)
           latest.current.dispatch({ type: "layout", layout: api.toJSON() });
@@ -833,6 +896,7 @@ export function WorkspaceLayout({ ref, ...props }: Props) {
             disableDnd={props.disabled}
             dndEdges={false}
             defaultTabComponent={WorkspaceTabHeader}
+            prefixHeaderActionsComponent={WorkspacePaneLeadingActions}
             rightHeaderActionsComponent={WorkspacePaneActions}
             getTabContextMenuItems={() => [{ component: WorkspaceTabMenu }]}
           />

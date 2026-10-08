@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  nativeTheme,
   screen,
   shell,
   type IpcMainInvokeEvent,
@@ -30,6 +31,11 @@ import {
   type TabDropTarget,
 } from "./window-session.js";
 import { createTabDragPreview } from "./tab-drag-preview.js";
+
+const titleBarTheme = (theme: "light" | "dark") => ({
+  color: theme === "dark" ? "#20211f" : "#f5f6fc",
+  symbolColor: theme === "dark" ? "#f0f1ed" : "#20243d",
+});
 
 const updatePreview = !app.isPackaged && Boolean(process.env.HYPERION_UPDATE_PREVIEW);
 const useBuiltRenderer = app.isPackaged || process.env.HYPERION_TEST_RENDERER === "1";
@@ -353,6 +359,13 @@ function registerDesktopHandlers() {
     arch: process.arch,
   })));
   handle("hyperion:window-session", (event) => senderState(event).session);
+  handle("hyperion:title-bar-theme", (event, theme) => {
+    const window = senderWindow(event);
+    if (theme !== "light" && theme !== "dark")
+      throw new Error("Invalid title bar theme.");
+    if (process.platform !== "darwin")
+      window.setTitleBarOverlay(titleBarTheme(theme));
+  });
   handle("hyperion:close-window", (event) => {
     senderWindow(event).close();
   });
@@ -700,6 +713,15 @@ async function createWindow(detached?: DetachedTabRequest) {
     backgroundColor: "#f7f6f2",
     title: windowTitle,
     icon: applicationIcon,
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      height: 39,
+      ...titleBarTheme(nativeTheme.shouldUseDarkColors ? "dark" : "light"),
+    },
+    ...(process.platform === "darwin"
+      ? { trafficLightPosition: { x: 12, y: 12 } }
+      : {}),
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(currentDirectory, "preload.cjs"),
       contextIsolation: true,

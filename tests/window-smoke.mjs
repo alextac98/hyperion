@@ -243,6 +243,18 @@ async function run() {
     await openPage(source, otherId);
     await openPage(source, noteId);
 
+    await until(
+      () => js(source, "Boolean(document.querySelector('[data-window-top-edge]'))"),
+      "Title bar geometry did not initialize",
+    );
+    assert.equal(await js(source, "window.hyperionDesktop.platform"), process.platform);
+    assert.ok(await js(source, `(() => {
+      const strip = document.querySelector('.dv-tabs-and-actions-container');
+      const toolbar = document.querySelector('[data-workspace-active] .topbar');
+      return strip.getBoundingClientRect().top === 0 && toolbar.closest('.workspace-panel') !== null &&
+        !document.querySelector('.workspace > .topbar');
+    })()`), "Tabs must share the window's top edge and page controls must belong to a panel");
+
     const outside = { x: 1300, y: 130 };
     const originalTitle = await js(source, `${editor}.doc.root.props.title.toString()`);
     const literalTitle = '<img src=x onerror="alert(1)"> & moving tab';
@@ -320,6 +332,54 @@ async function run() {
       "PASS: in-window tab drags still split panes without opening another window",
     );
 
+    await until(() => js(source, `Array.from(document.querySelectorAll('.workspace-panel:not([hidden])')).every(panel => {
+      const store = panel.querySelector('doc-title')?.doc;
+      return store?.root && panel.querySelector('.breadcrumbs strong')?.textContent === store.root.props.title.toString();
+    })`), "Each pane must display its own page title");
+    const pane = id => `Array.from(document.querySelectorAll('.workspace-panel:not([hidden])')).find(panel => panel.querySelector('doc-title')?.doc.id === ${JSON.stringify(id)})`;
+    const titles = await js(source, `Array.from(document.querySelectorAll('.workspace-panel:not([hidden])')).map(panel => {
+      const store = panel.querySelector('doc-title').doc;
+      const title = store.root.props.title.toString();
+      store.history.undoManager.stopCapturing();
+      store.root.props.title.insert('Pane edit ', 0);
+      return { id: store.id, title };
+    })`);
+    await js(source, `${pane(otherId)}.querySelector('[aria-label=Undo]').click()`);
+    assert.equal(await js(source, `${pane(otherId)}.querySelector('doc-title').doc.root.props.title.toString()`), titles.find(item => item.id === otherId).title);
+    assert.equal(await js(source, `${pane(noteId)}.querySelector('doc-title').doc.root.props.title.toString()`), `Pane edit ${titles.find(item => item.id === noteId).title}`);
+    await js(source, `${pane(otherId)}.querySelector('[aria-label=Redo]').click()`);
+    assert.equal(await js(source, `${pane(otherId)}.querySelector('doc-title').doc.root.props.title.toString()`), `Pane edit ${titles.find(item => item.id === otherId).title}`);
+    for (const id of [otherId, noteId]) await js(source, `${pane(id)}.querySelector('[aria-label=Undo]').click()`);
+
+    await js(source, "document.querySelector('[aria-label=\"Collapse sidebar\"]').click()");
+    await until(() => js(source, `Array.from(document.querySelectorAll('.workspace-sidebar-toggle')).filter(button => getComputedStyle(button).display !== 'none').length === 1`), "A collapsed sidebar must expose one toggle in the first tab strip");
+    assert.ok(await js(source, `(() => {
+      const area = navigator.windowControlsOverlay?.getTitlebarAreaRect();
+      if (!navigator.windowControlsOverlay?.visible) return true;
+      return Array.from(document.querySelectorAll('[data-window-top-edge] .dv-tab, [data-window-top-edge] .tab-home, [data-window-top-edge] .workspace-sidebar-toggle')).filter(element => getComputedStyle(element).display !== 'none').every(element => {
+        const box = element.getBoundingClientRect();
+        return box.left >= area.x && box.right <= area.x + area.width;
+      });
+    })()`), "Tabs and buttons must remain clear of native window controls");
+    await js(source, "Array.from(document.querySelectorAll('.workspace-sidebar-toggle')).find(button => getComputedStyle(button).display !== 'none').click()");
+    await until(() => js(source, "Boolean(document.querySelector('.sidebar-open'))"), "The tab strip toggle must reopen the sidebar");
+    await openPage(source, noteId);
+
+    // A toolbar in the inactive pane must open context for its own page.
+    await js(source, `${pane(otherId)}.querySelector('[aria-label="More page actions"]').click()`);
+    await until(() => js(source, "Boolean(document.querySelector('.note-menu'))"), "Inactive pane menu did not open");
+    await js(source, "Array.from(document.querySelectorAll('.note-menu button')).find(button => button.textContent.includes('Page properties')).click()");
+    await until(() => js(source, "Boolean(document.querySelector('.page-context-drawer'))"), "Pane properties did not open");
+    assert.equal(await js(source, "document.querySelector('.page-context-drawer').closest('.workspace-panel').querySelector('doc-title').doc.id"), otherId);
+    assert.ok(await js(source, `(() => {
+      const panel = ${pane(otherId)}.getBoundingClientRect();
+      const drawer = document.querySelector('.page-context-drawer').getBoundingClientRect();
+      return drawer.left >= panel.left && drawer.right <= panel.right;
+    })()`), "Page context must stay within its own pane");
+    await js(source, "document.querySelector('[aria-label=\"Close page context\"]').click()");
+    await openPage(source, noteId);
+    console.log("PASS: top-edge tabs, sidebar access, and each pane's title, undo/redo, and page context remain independent");
+
     await js(source, `${editor}.doc.root.props.title.insert('Detached ', 0)`);
     await beginDrag(source, noteId);
     mouse(source, "mouseMove", outside);
@@ -386,7 +446,7 @@ async function run() {
     assert.ok(
       await js(
         destination,
-        "document.querySelector('.topbar').scrollWidth <= innerWidth",
+        "document.querySelector('.workspace-panel[data-workspace-active=true] .topbar').scrollWidth <= innerWidth",
       ),
       "Page controls must fit a narrow window",
     );

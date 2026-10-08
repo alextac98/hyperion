@@ -10,7 +10,7 @@ import type { WorkspaceTab, TabAction } from "./application/workspace-tabs";
 import type { NavigationLocation } from "./application/navigation-history";
 import { useWorkspaceTabs } from "./hooks/useWorkspaceTabs";
 import { usePageContext, type PageContextView } from "./hooks/usePageContext";
-import { WorkspaceLayout, type WorkspaceLayoutHandle } from "./components/WorkspaceLayout";
+import { WorkspaceLayout, WorkspacePage, type WorkspaceLayoutHandle } from "./components/WorkspaceLayout";
 import { locationKey } from "./application/workspace-tabs";
 import { layoutPanes } from "./application/workspace-layout";
 import { useMouseNavigation } from "./hooks/useMouseNavigation";
@@ -261,7 +261,7 @@ export default function HyperionApp() {
   const [settingsTab, setSettingsTab] = useState<"general" | "updates">(
     "general",
   );
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState<string | null>(null);
   const [pageContextMenu, setPageContextMenu] =
     useState<PageContextMenuState | null>(null);
   const [composer, setComposer] = useState<Composer>(null);
@@ -280,7 +280,7 @@ export default function HyperionApp() {
     setComparison(null);
     setPageSearchOpen(false);
     setPageSearchQuery("");
-    setMoreOpen(false);
+    setMoreOpen(null);
     setPageContextMenu(null);
   }, [tabState.active]);
   useEffect(() => {
@@ -672,6 +672,9 @@ export default function HyperionApp() {
             : "light"
           : preferences.theme;
       document.documentElement.dataset.theme = resolved;
+      void desktop
+        ?.updateTitleBarTheme(resolved)
+        .catch((error) => setDataError(errorMessage(error)));
     };
     apply();
     media.addEventListener("change", apply);
@@ -743,7 +746,7 @@ export default function HyperionApp() {
     (id: string) => {
       setComparison(null);
       openTab({ view: "note", id });
-      setMoreOpen(false);
+      setMoreOpen(null);
       setEditorStore(null);
       setPageContextMenu(null);
       setPageSearchOpen(false);
@@ -757,7 +760,7 @@ export default function HyperionApp() {
   const selectTemplate = useCallback(
     (id: string) => {
       openTab({ view: "template", id });
-      setMoreOpen(false);
+      setMoreOpen(null);
       setEditorStore(null);
       setPageContextMenu(null);
       setPageSearchOpen(false);
@@ -928,7 +931,7 @@ export default function HyperionApp() {
       if (event.key === "Escape") {
         closeSearch();
         closePageSearch();
-        setMoreOpen(false);
+        setMoreOpen(null);
         setVaultMenuOpen(false);
         setPageContextMenu(null);
         setTemplatePicker(null);
@@ -1039,7 +1042,7 @@ export default function HyperionApp() {
     openTab(
       nextView === "tags" ? { view: "tags", tag: null } : { view: nextView },
     );
-    setMoreOpen(false);
+    setMoreOpen(null);
     setPageContextMenu(null);
     if (window.innerWidth <= 720) setSidebarOpen(false);
   };
@@ -1199,7 +1202,7 @@ export default function HyperionApp() {
     const bounds = event.currentTarget.getBoundingClientRect();
     const anchorX = event.clientX || bounds.left + Math.min(bounds.width, 44);
     const anchorY = event.clientY || bounds.top + bounds.height;
-    setMoreOpen(false);
+    setMoreOpen(null);
     setVaultMenuOpen(false);
     setPageContextMenu({
       noteId,
@@ -1293,7 +1296,7 @@ export default function HyperionApp() {
   };
 
   const togglePageContext = (next: PageContextView) => {
-    setMoreOpen(false);
+    setMoreOpen(null);
     setPageSearchOpen(false);
     setComparison(null);
     pageContext.toggle(next);
@@ -1301,11 +1304,15 @@ export default function HyperionApp() {
 
   const openPageContext = (next: PageContextView) => {
     // The menu item unmounts, so keep a connected trigger for drawer focus return.
-    document.querySelector<HTMLButtonElement>(".topbar-more > button")?.focus({
-      preventScroll: true,
-    });
+    document
+      .querySelector<HTMLButtonElement>(
+        '.workspace-panel[data-workspace-active="true"] .topbar-more > button',
+      )
+      ?.focus({
+        preventScroll: true,
+      });
     if (pageContext.view !== next) togglePageContext(next);
-    else setMoreOpen(false);
+    else setMoreOpen(null);
   };
 
   const exportVault = async () => {
@@ -1435,19 +1442,6 @@ export default function HyperionApp() {
               trash: "Trash",
             } as const
           )[view as Exclude<View, "note" | "template">];
-  const activeTemplatePage = activeTemplate
-    ? templatePageRecord(activeTemplate)
-    : undefined;
-  const activeAncestors =
-    view === "note" && activeNote?.kind === "note"
-      ? ancestorPath(organizedNotes, activeNote)
-      : [];
-  const connections = activeNote ? pageConnections(activeNote, activeNotes) : null;
-  const connectionCount = new Set(
-    [...(connections?.outgoing ?? []), ...(connections?.backlinks ?? [])].map(
-      note => note.id,
-    ),
-  ).size;
   useEffect(() => {
     if (isPageWindow) document.title = `${heading || "Untitled"} — Hyperion`;
   }, [isPageWindow, heading]);
@@ -1484,6 +1478,16 @@ export default function HyperionApp() {
         className={`sidebar${sidebarOpen ? " sidebar-open" : ""}${IS_DEVELOPMENT_BUILD ? " sidebar-development" : ""}`}
         aria-label={IS_DEVELOPMENT_BUILD ? "Sidebar (development build)" : undefined}
       >
+        <div className="sidebar-titlebar">
+          <span className="sidebar-app-name">Hyperion</span>
+          <button
+            className="icon-button subtle"
+            aria-label="Collapse sidebar"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <SidebarSimple size={18} />
+          </button>
+        </div>
         <div className="workspace-header">
           {IS_DEVELOPMENT_BUILD && <DevelopmentBlueprint />}
           <div className="vault-switcher-wrap">
@@ -1552,13 +1556,7 @@ export default function HyperionApp() {
               </div>
             )}
           </div>
-          <button
-            className="icon-button subtle"
-            aria-label="Collapse sidebar"
-            onClick={() => setSidebarOpen(false)}
-          >
-            <SidebarSimple size={18} />
-          </button>
+
         </div>
 
         <div className="new-note-actions">
@@ -1724,237 +1722,17 @@ export default function HyperionApp() {
       </aside>)}
 
       <section className="workspace">
-        <header className="topbar">
-          <div className="topbar-left">
-            {!isPageWindow && !sidebarOpen && (
-              <button
-                className="icon-button"
-                aria-label="Open sidebar"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <SidebarSimple size={19} />
-              </button>
-            )}
-            {view === "note" && activeNote && (
-              <button
-                disabled={!!pageComparison}
-                className={`icon-button topbar-favorite${activeNote.favorite ? " active" : ""}`}
-                aria-label={
-                  activeNote.favorite
-                    ? "Remove from favorites"
-                    : "Add to favorites"
-                }
-                title={
-                  activeNote.favorite
-                    ? "Remove from favorites"
-                    : "Add to favorites"
-                }
-                onClick={() =>
-                  updateNoteById(
-                    activeNote.id,
-                    { favorite: !activeNote.favorite },
-                    true,
-                  )
-                }
-              >
-                <Star
-                  size={17}
-                  weight={activeNote.favorite ? "fill" : "regular"}
-                />
-              </button>
-            )}
-            {isPageWindow && (
-              <span className="page-window-vault" title={activeVault?.name}>
-                {activeVault?.name}
-              </span>
-            )}
-            <div className="breadcrumbs">
-              {!isPageWindow && view === "note" && activeNote?.kind === "journal" && (
-                <span className="breadcrumb-parent">
-                  <button onClick={() => navigateView("journal")}>
-                    <CalendarBlank size={12} />
-                    Journal
-                  </button>
-                  <CaretRight size={12} />
-                </span>
-              )}
-              {!isPageWindow && view === "template" && (
-                <span className="breadcrumb-parent">
-                  <button onClick={() => navigateView("templates")}>
-                    <Stack size={12} />
-                    Templates
-                  </button>
-                  <CaretRight size={12} />
-                </span>
-              )}
-              {activeAncestors.map((ancestor) => (
-                <span className="breadcrumb-parent" key={ancestor.id}>
-                  <button onClick={() => selectNote(ancestor.id)}>
-                    <PageIcon note={ancestor} size={12} />
-                    {ancestor.title}
-                  </button>
-                  <CaretRight size={12} />
-                </span>
-              ))}
-              {view === "note" && activeNote && (
-                <PageIcon note={activeNote} size={13} />
-              )}
-              {view === "template" && activeTemplatePage && (
-                <PageIcon note={activeTemplatePage} size={13} />
-              )}
-              <strong>{heading ?? "Untitled"}</strong>
-            </div>
-          </div>
-          <div className="topbar-actions">
-            {isPageWindow && (
-              <button
-                className="page-window-return"
-                disabled={operationBusy}
-                title="Move this page back to the main window"
-                aria-label="Move to main window"
-                onClick={() => {
-                  const tab = tabState.tabs.find(tab => tab.id === tabState.active);
-                  if (tab) returnTab(tab);
-                }}
-              >
-                <ArrowBendUpLeft size={16} /> Main window
-              </button>
-            )}
-            {((view === "note" && activeNote) ||
-              (view === "template" && activeTemplate)) && (
-              <div className="topbar-history" aria-label="Editing history">
-                <button
-                  className="icon-button"
-                  aria-label="Undo"
-                  title="Undo"
-                  onClick={() => editorStore?.undo()}
-                  disabled={!editorStore || !!pageComparison}
-                >
-                  <ArrowCounterClockwise size={16} />
-                </button>
-                <button
-                  className="icon-button"
-                  aria-label="Redo"
-                  title="Redo"
-                  onClick={() => editorStore?.redo()}
-                  disabled={!editorStore || !!pageComparison}
-                >
-                  <ArrowClockwise size={16} />
-                </button>
-              </div>
-            )}
-            <span
-              className={`save-status ${saveStatus}`}
-              title={saves.getError()}
-            >
-              {saveStatus === "saved" ? (
-                <Check size={13} weight="bold" />
-              ) : saveStatus === "saving" ? (
-                <span className="saving-spinner" />
-              ) : null}
-              {saveStatus === "saved"
-                ? platformRuntime.kind === "browser-development"
-                  ? "Saved to development server"
-                  : "Saved locally"
-                : saveStatus === "error"
-                  ? "Save failed"
-                  : "Saving"}
-            </span>
-            {saveStatus === "error" && (
-              <button
-                onClick={() =>
-                  void flushAll().catch((error) => setDataError(String(error)))
-                }
-              >
-                Retry save
-              </button>
-            )}
-            {view === "note" && activeNote && (
-              <div className="more-wrap topbar-more">
-                <button
-                  className="icon-button"
-                  disabled={!!pageComparison}
-                  aria-label="More page actions"
-                  title="More actions"
-                  onClick={() => setMoreOpen((open) => !open)}
-                >
-                  <DotsThree size={21} weight="bold" />
-                </button>
-                {moreOpen && (
-                  <div className="popover note-menu">
-                    <button onClick={() => openPageContext("outline")}>
-                      <ListBullets size={17} /> Outline
-                    </button>
-                    <button onClick={() => openPageContext("connections")}>
-                      <Link size={17} /> Connections
-                      {connectionCount > 0 && (
-                        <span className="note-menu-count" aria-hidden="true">
-                          {connectionCount}
-                        </span>
-                      )}
-                    </button>
-                    <button onClick={() => openPageContext("history")}>
-                      <ClockCounterClockwise size={17} /> Version history
-                    </button>
-                    <button onClick={() => openPageContext("properties")}>
-                      <Info size={17} /> Page properties
-                    </button>
-                    <div className="popover-divider" />
-                    <button
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setComposer({
-                          type: "rename",
-                          noteId: activeNote.id,
-                          value: activeNote.title,
-                        });
-                      }}
-                    >
-                      <PencilSimple size={17} /> Rename{" "}
-                      {activeNote.kind === "journal" ? "entry" : "page"}
-                    </button>
-                    <button onClick={() => void duplicateNote(activeNote)}>
-                      <FilePlus size={17} /> Duplicate{" "}
-                      {activeNote.kind === "journal" ? "entry" : "page"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMoreOpen(false);
-                        setComposer({
-                          type: "template",
-                          noteId: activeNote.id,
-                          value: activeNote.title,
-                        });
-                      }}
-                    >
-                      <Stack size={17} /> Save as template
-                    </button>
-                    <button
-                      className="archive"
-                      onClick={() => archiveNote(activeNote)}
-                    >
-                      <Archive size={17} /> Archive
-                    </button>
-                    <button
-                      className="danger"
-                      onClick={() => trashNote(activeNote)}
-                    >
-                      <Trash size={17} /> Trash
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </header>
-
         <div className="content-shell">
           <section className="main-content">
             <WorkspaceLayout
               ref={workspaceLayout}
               onDetach={detachTab}
-              canDetach={tab => tab.location.view === "note" || tab.location.view === "template"}
+              canDetach={(tab) =>
+                tab.location.view === "note" || tab.location.view === "template"
+              }
               pageWindow={isPageWindow}
+              showSidebarToggle={!isPageWindow && !sidebarOpen}
+              onOpenSidebar={() => setSidebarOpen(true)}
               onReturn={isPageWindow ? returnTab : undefined}
               onBeginTabDrag={desktop?.beginTabDrag}
               onEndTabDrag={desktop?.endTabDrag}
@@ -2022,12 +1800,37 @@ export default function HyperionApp() {
                 const activeTag =
                   location.view === "tags" ? location.tag : null;
                 const selected = tab.id === tabState.active;
+                const comparing = selected && !!pageComparison;
+                const heading =
+                  activeNote?.title ??
+                  activeTemplate?.name ??
+                  {
+                    home: "Home",
+                    journal: "Journal",
+                    tags: "Tags",
+                    templates: "Templates",
+                    archive: "Archive",
+                    trash: "Trash",
+                  }[view as Exclude<View, "note" | "template">];
+                const activeAncestors =
+                  activeNote?.kind === "note"
+                    ? ancestorPath(organizedNotes, activeNote)
+                    : [];
+                const connections = activeNote
+                  ? pageConnections(activeNote, activeNotes)
+                  : null;
+                const connectionCount = new Set(
+                  [
+                    ...(connections?.outgoing ?? []),
+                    ...(connections?.backlinks ?? []),
+                  ].map((note) => note.id),
+                ).size;
                 const onStoreReady = (store: EditorStore) => {
                   tabStores.current.set(tab.id, store);
                   if (selected) setEditorStore(store);
                 };
                 return (
-                  <div
+                  <WorkspacePage
                     key={`${vaultId}:${tab.id}`}
                     id={`panel-${tab.id}`}
                     className="workspace-panel"
@@ -2044,6 +1847,325 @@ export default function HyperionApp() {
                       if (!selected && !operationBusy)
                         dispatchTab({ type: "focus", id: tab.id });
                     }}
+                    toolbar={
+                      <header className="topbar">
+                        <div className="topbar-left">
+                          {view === "note" && activeNote && (
+                            <button
+                              disabled={comparing}
+                              className={`icon-button topbar-favorite${activeNote.favorite ? " active" : ""}`}
+                              aria-label={
+                                activeNote.favorite
+                                  ? "Remove from favorites"
+                                  : "Add to favorites"
+                              }
+                              title={
+                                activeNote.favorite
+                                  ? "Remove from favorites"
+                                  : "Add to favorites"
+                              }
+                              onClick={() =>
+                                updateNoteById(
+                                  activeNote.id,
+                                  { favorite: !activeNote.favorite },
+                                  true,
+                                )
+                              }
+                            >
+                              <Star
+                                size={17}
+                                weight={
+                                  activeNote.favorite ? "fill" : "regular"
+                                }
+                              />
+                            </button>
+                          )}
+                          {isPageWindow && (
+                            <span
+                              className="page-window-vault"
+                              title={activeVault?.name}
+                            >
+                              {activeVault?.name}
+                            </span>
+                          )}
+                          <div className="breadcrumbs">
+                            {!isPageWindow &&
+                              view === "note" &&
+                              activeNote?.kind === "journal" && (
+                                <span className="breadcrumb-parent">
+                                  <button
+                                    onClick={() => navigateView("journal")}
+                                  >
+                                    <CalendarBlank size={12} />
+                                    Journal
+                                  </button>
+                                  <CaretRight size={12} />
+                                </span>
+                              )}
+                            {!isPageWindow && view === "template" && (
+                              <span className="breadcrumb-parent">
+                                <button
+                                  onClick={() => navigateView("templates")}
+                                >
+                                  <Stack size={12} />
+                                  Templates
+                                </button>
+                                <CaretRight size={12} />
+                              </span>
+                            )}
+                            {activeAncestors.map((ancestor) => (
+                              <span
+                                className="breadcrumb-parent"
+                                key={ancestor.id}
+                              >
+                                <button onClick={() => selectNote(ancestor.id)}>
+                                  <PageIcon note={ancestor} size={12} />
+                                  {ancestor.title}
+                                </button>
+                                <CaretRight size={12} />
+                              </span>
+                            ))}
+                            {view === "note" && activeNote && (
+                              <PageIcon note={activeNote} size={13} />
+                            )}
+                            {view === "template" && activeTemplatePage && (
+                              <PageIcon note={activeTemplatePage} size={13} />
+                            )}
+                            <strong>{heading ?? "Untitled"}</strong>
+                          </div>
+                        </div>
+                        <div className="topbar-actions">
+                          {isPageWindow && (
+                            <button
+                              className="page-window-return"
+                              disabled={operationBusy}
+                              title="Move this page back to the main window"
+                              aria-label="Move to main window"
+                              onClick={() => {
+                                returnTab(tab);
+                              }}
+                            >
+                              <ArrowBendUpLeft size={16} /> Main window
+                            </button>
+                          )}
+                          {((view === "note" && activeNote) ||
+                            (view === "template" && activeTemplate)) && (
+                            <div
+                              className="topbar-history"
+                              aria-label="Editing history"
+                            >
+                              <button
+                                className="icon-button"
+                                aria-label="Undo"
+                                title="Undo"
+                                onClick={() =>
+                                  tabStores.current.get(tab.id)?.undo()
+                                }
+                                disabled={
+                                  !tabStores.current.has(tab.id) || comparing
+                                }
+                              >
+                                <ArrowCounterClockwise size={16} />
+                              </button>
+                              <button
+                                className="icon-button"
+                                aria-label="Redo"
+                                title="Redo"
+                                onClick={() =>
+                                  tabStores.current.get(tab.id)?.redo()
+                                }
+                                disabled={
+                                  !tabStores.current.has(tab.id) || comparing
+                                }
+                              >
+                                <ArrowClockwise size={16} />
+                              </button>
+                            </div>
+                          )}
+                          <span
+                            className={`save-status ${saveStatus}`}
+                            title={saves.getError()}
+                          >
+                            {saveStatus === "saved" ? (
+                              <Check size={13} weight="bold" />
+                            ) : saveStatus === "saving" ? (
+                              <span className="saving-spinner" />
+                            ) : null}
+                            {saveStatus === "saved"
+                              ? platformRuntime.kind === "browser-development"
+                                ? "Saved to development server"
+                                : "Saved locally"
+                              : saveStatus === "error"
+                                ? "Save failed"
+                                : "Saving"}
+                          </span>
+                          {saveStatus === "error" && (
+                            <button
+                              onClick={() =>
+                                void flushAll().catch((error) =>
+                                  setDataError(String(error)),
+                                )
+                              }
+                            >
+                              Retry save
+                            </button>
+                          )}
+                          {view === "note" && activeNote && (
+                            <div className="more-wrap topbar-more">
+                              <button
+                                className="icon-button"
+                                disabled={comparing}
+                                aria-label="More page actions"
+                                title="More actions"
+                                onClick={() => {
+                                  if (!selected)
+                                    flushSync(() =>
+                                      dispatchTab({
+                                        type: "focus",
+                                        id: tab.id,
+                                      }),
+                                    );
+                                  setMoreOpen((open) =>
+                                    open === tab.id ? null : tab.id,
+                                  );
+                                }}
+                              >
+                                <DotsThree size={21} weight="bold" />
+                              </button>
+                              {moreOpen === tab.id && (
+                                <div className="popover note-menu">
+                                  <button
+                                    onClick={() => openPageContext("outline")}
+                                  >
+                                    <ListBullets size={17} /> Outline
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      openPageContext("connections")
+                                    }
+                                  >
+                                    <Link size={17} /> Connections
+                                    {connectionCount > 0 && (
+                                      <span
+                                        className="note-menu-count"
+                                        aria-hidden="true"
+                                      >
+                                        {connectionCount}
+                                      </span>
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() => openPageContext("history")}
+                                  >
+                                    <ClockCounterClockwise size={17} /> Version
+                                    history
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      openPageContext("properties")
+                                    }
+                                  >
+                                    <Info size={17} /> Page properties
+                                  </button>
+                                  <div className="popover-divider" />
+                                  <button
+                                    onClick={() => {
+                                      setMoreOpen(null);
+                                      setComposer({
+                                        type: "rename",
+                                        noteId: activeNote.id,
+                                        value: activeNote.title,
+                                      });
+                                    }}
+                                  >
+                                    <PencilSimple size={17} /> Rename{" "}
+                                    {activeNote.kind === "journal"
+                                      ? "entry"
+                                      : "page"}
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      void duplicateNote(activeNote)
+                                    }
+                                  >
+                                    <FilePlus size={17} /> Duplicate{" "}
+                                    {activeNote.kind === "journal"
+                                      ? "entry"
+                                      : "page"}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setMoreOpen(null);
+                                      setComposer({
+                                        type: "template",
+                                        noteId: activeNote.id,
+                                        value: activeNote.title,
+                                      });
+                                    }}
+                                  >
+                                    <Stack size={17} /> Save as template
+                                  </button>
+                                  <button
+                                    className="archive"
+                                    onClick={() => archiveNote(activeNote)}
+                                  >
+                                    <Archive size={17} /> Archive
+                                  </button>
+                                  <button
+                                    className="danger"
+                                    onClick={() => trashNote(activeNote)}
+                                  >
+                                    <Trash size={17} /> Trash
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </header>
+                    }
+                    context={
+                      selected &&
+                      pageContext.view &&
+                      view === "note" &&
+                      activeNote && (
+                        <PageContextDrawer
+                          view={pageContext.view}
+                          pinned={pageContext.pinned}
+                          busy={operationBusy}
+                          onPin={pageContext.togglePin}
+                          onClose={closePageContext}
+                        >
+                          {pageContext.view === "outline" ? (
+                            <DocumentOutline store={editorStore} />
+                          ) : pageContext.view === "history" ? (
+                            <PageHistory
+                              key={`${vaultId}:${activeNote.id}`}
+                              vaultId={vaultId}
+                              noteId={activeNote.id}
+                              selectedId={pageComparison?.revision.id}
+                              onSelect={(value) => {
+                                setMoreOpen(null);
+                                setPageSearchOpen(false);
+                                setComparison(value);
+                              }}
+                            />
+                          ) : pageContext.view === "properties" ? (
+                            <PageProperties note={activeNote} />
+                          ) : (
+                            <PageConnections
+                              key={activeNote.id}
+                              note={activeNote}
+                              notes={activeNotes}
+                              onSelect={selectNote}
+                              onChange={(patch) =>
+                                updateNoteById(activeNote.id, patch, true)
+                              }
+                            />
+                          )}
+                        </PageContextDrawer>
+                      )
+                    }
                   >
                     {view === "note" && activeNote ? (
                       <>
@@ -2101,7 +2223,7 @@ export default function HyperionApp() {
                               <PageTags
                                 key={activeNote.id}
                                 note={activeNote}
-                                onChange={patch =>
+                                onChange={(patch) =>
                                   updateNoteById(activeNote.id, patch, true)
                                 }
                               />
@@ -2260,49 +2382,11 @@ export default function HyperionApp() {
                         onDelete={permanentlyDelete}
                       />
                     )}
-                  </div>
+                  </WorkspacePage>
                 );
               }}
             />
           </section>
-
-          {pageContext.view && view === "note" && activeNote && (
-            <PageContextDrawer
-              view={pageContext.view}
-              pinned={pageContext.pinned}
-              busy={operationBusy}
-              onPin={pageContext.togglePin}
-              onClose={closePageContext}
-            >
-              {pageContext.view === "outline" ? (
-                <DocumentOutline store={editorStore} />
-              ) : pageContext.view === "history" ? (
-                <PageHistory
-                  key={`${vaultId}:${activeNote.id}`}
-                  vaultId={vaultId}
-                  noteId={activeNote.id}
-                  selectedId={pageComparison?.revision.id}
-                  onSelect={(value) => {
-                    setMoreOpen(false);
-                    setPageSearchOpen(false);
-                    setComparison(value);
-                  }}
-                />
-              ) : pageContext.view === "properties" ? (
-                <PageProperties note={activeNote} />
-              ) : (
-                <PageConnections
-                  key={activeNote.id}
-                  note={activeNote}
-                  notes={activeNotes}
-                  onSelect={selectNote}
-                  onChange={(patch) =>
-                    updateNoteById(activeNote.id, patch, true)
-                  }
-                />
-              )}
-            </PageContextDrawer>
-          )}
         </div>
       </section>
 
