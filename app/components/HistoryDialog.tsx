@@ -2,7 +2,7 @@ import { Dialog } from "./Dialog";
 import { useEffect, useRef, useState } from "react";
 import type { PageRevision } from "../platform/desktop-api";
 import { requireDataService, desktopWindow } from "../platform/runtime";
-import { rememberRestoredPage } from "../hooks/useWorkspaceTabs";
+import { rememberRestoredPage } from "../application/restore-navigation";
 import { previewRevision, stopEditorWorkspaces } from "../editor/editor-client";
 import { dataOperation } from "../lib/data-operations";
 

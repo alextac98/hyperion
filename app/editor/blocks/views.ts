@@ -15,6 +15,7 @@ import { migrateMeetingNotes } from "../../../blocks/meeting/notes";
 import { initialMeetingDate } from "../../../blocks/meeting/definition";
 import { UnavailableBlock } from "./unavailable";
 import { retiredBlockFlavours, canInsertSlashItem } from "./insertion-policy";
+import { appendColumn, MIN_COLUMNS } from "./columns";
 
 type BlockViewModule = {
   flavour: string;
@@ -125,6 +126,9 @@ export function customBlockInsertion() {
                 store.transact(() =>
                   migrateMeetingNotes(store.doc.yBlocks, id),
                 );
+              if (definition.flavour === "hyperion:columns")
+                for (let index = 0; index < MIN_COLUMNS; index++)
+                  appendColumn(store, id);
               store.captureSync();
               activateInsertedBlock(std, id);
             },

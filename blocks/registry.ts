@@ -6,6 +6,7 @@ import type {
 } from "./contract.js";
 import { meetingDefinition } from "./meeting/definition.js";
 import { dateDefinition } from "./date/definition.js";
+import { columnsDefinition } from "./columns/definition.js";
 
 export function createBlockRegistry(definitions: readonly BlockDefinition[]) {
   const registry = new Map<string, BlockDefinition>();
@@ -26,7 +27,11 @@ export function createBlockRegistry(definitions: readonly BlockDefinition[]) {
 }
 
 /** Add bundled data definitions here; views are loaded separately by the editor. */
-export const blockRegistry = createBlockRegistry([dateDefinition, meetingDefinition]);
+export const blockRegistry = createBlockRegistry([
+  dateDefinition,
+  meetingDefinition,
+  columnsDefinition,
+]);
 
 export function blockText(value: unknown): string {
   if (typeof value === "string") return value;

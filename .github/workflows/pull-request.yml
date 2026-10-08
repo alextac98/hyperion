@@ -21,11 +21,50 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: '24.21.0'
+          node-version: "24.21.0"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm check:desktop
+
+  integration:
+    name: Desktop integration tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.21.0"
+          cache: pnpm
+      - name: Install virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: pnpm install --frozen-lockfile
+      - name: Configure Electron sandbox
+        run: |
+          node -e "require('electron')"
+          electron_sandbox_path="$(node -p "require('node:path').join(require('node:path').dirname(require('electron')), 'chrome-sandbox')")"
+          sudo chown root:root "$electron_sandbox_path"
+          sudo chmod 4755 "$electron_sandbox_path"
+      - name: Run desktop integration suite
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" pnpm test:integration
       - name: Native window integration
-        run: xvfb-run -a -s '-screen 0 2300x1080x24' node scripts/run-electron-test.mjs tests/window-smoke.mjs --no-sandbox
+        run: xvfb-run -a -s '-screen 0 2300x1080x24' node scripts/run-electron-test.mjs tests/window-smoke.mjs
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-integration-failures
+          path: /tmp/hyperion-*failure*.png
+          if-no-files-found: ignore
+      - name: Upload columns interaction evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: columns-interaction-evidence
+          path: |
+            /tmp/hyperion-column-layout-actions.png
+            /tmp/hyperion-column-reorder-actions.png
+          if-no-files-found: ignore

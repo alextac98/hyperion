@@ -7,35 +7,11 @@ import {
 import type { NavigationLocation } from "../application/navigation-history";
 import { uiStorage } from "../lib/ui-storage";
 import type { WindowSession } from "../../electron/window-session";
-
-export function windowTabsKey(vaultId: string, session?: WindowSession) {
-  return session && session.id !== "main"
-    ? `hyperion:tabs:${session.id}:${vaultId}`
-    : `hyperion:tabs:${vaultId}`;
-}
-
-export function rememberRestoredPage(
-  vaultId: string,
-  noteId: string,
-  session?: WindowSession,
-) {
-  const location = { view: "note" as const, id: noteId };
-  const key = windowTabsKey(vaultId, session);
-  const state = tabsReducer(
-    restoreTabs(uiStorage.getItem(key), () => true, location),
-    { type: "open", location },
-  );
-  uiStorage.setItem(
-    key,
-    JSON.stringify({
-      version: 2,
-      locations: state.tabs.map((tab) => tab.location),
-      active: state.active,
-      layout: state.layout,
-    }),
-  );
-  uiStorage.setItem(`hyperion:last-note:${vaultId}`, noteId);
-}
+import { windowTabsKey } from "../application/restore-navigation";
+export {
+  rememberRestoredPage,
+  windowTabsKey,
+} from "../application/restore-navigation";
 
 export function useWorkspaceTabs(
   vaultId: string,

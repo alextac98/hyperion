@@ -44,10 +44,14 @@ for (const renderer of ["built", "development"]) {
         server = development.server;
         environment.HYPERION_CLIPBOARD_DEV_URL = development.url;
       }
-      child = spawn(await desktopRuntime(), ["tests/clipboard-smoke.mjs"], {
-        env: environment,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      child = spawn(
+        await desktopRuntime(),
+        ["scripts/electron-test-entry.mjs", "tests/clipboard-smoke.mjs"],
+        {
+          env: environment,
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
       let output = "";
       child.stdout.on("data", (chunk) => {
         output += chunk;

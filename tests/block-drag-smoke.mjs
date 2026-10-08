@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { blockDragScenarios } from "./block-drag-scenarios.mjs";
+import { blockActionsScenarios } from "./block-actions-scenarios.mjs";
 import { createFirstVault } from "./vault-setup-helpers.mjs";
 
 void (async () => {
@@ -47,6 +48,9 @@ void (async () => {
       if (event.level === "error") errors.push(event.message);
     });
     const vaultId = await createFirstVault(js, until);
+    await js(
+      "window.addEventListener('unhandledrejection', event => { window.blockDragErrors ??= []; window.blockDragErrors.push(event.reason?.stack ?? String(event.reason)); })",
+    );
     await until(
       () =>
         js(
@@ -56,7 +60,95 @@ void (async () => {
     );
     const fixture = await js(`(${blockDragScenarios.toString()})()`);
     console.log(
-      "PASS: block dragging, six-dot grip, formatting, nested lists, tables, custom blocks, multiple selection, undo/redo, keyboard and cancellation",
+      "PASS: block dragging closes open menus; six-dot grip, formatting, nested lists, tables, custom blocks, multiple selection, undo/redo, keyboard and cancellation",
+    );
+    // Use actual pointer input: synthetic click() skips the native hover styles
+    // that can move the grip before a user's mouse-down reaches it.
+    for (const id of fixture.expected) {
+      window.webContents.sendInputEvent({ type: "mouseMove", x: 10, y: 10 });
+      const point = await js(`(async () => {
+        const widget = document.querySelector('affine-drag-handle-widget');
+        widget.std.selection.clear();
+        widget.std.host.focus({preventScroll:true});
+        const block = widget.std.view.getBlock(${JSON.stringify(id)});
+        block.scrollIntoView({block:'center'});
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        const rect = block.getBoundingClientRect();
+        return {x:Math.round(rect.left+40), y:Math.round(rect.top+12)};
+      })()`);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        window.webContents.sendInputEvent({ type: "mouseMove", ...point });
+        await js("new Promise(requestAnimationFrame)");
+      }
+      await until(
+        () =>
+          js(
+            `document.querySelector('affine-drag-handle-widget').anchorBlockId.value === ${JSON.stringify(id)}`,
+          ),
+        "Native pointer did not reveal the expected block grip",
+      );
+      const bounds = () =>
+        js(`(() => {
+        const rect = document.querySelector('affine-drag-handle-widget').dragHandleGrabber.getBoundingClientRect();
+        return {left:rect.left, top:rect.top, width:rect.width, height:rect.height};
+      })()`);
+      const before = await bounds();
+      const clickPoint = {
+        x: Math.round(before.left + before.width / 2),
+        y: Math.round(before.top + before.height - 1),
+      };
+      window.webContents.sendInputEvent({ type: "mouseMove", ...clickPoint });
+      await until(
+        () =>
+          js(
+            "document.querySelector('affine-drag-handle-widget').isDragHandleHovered",
+          ),
+        "Native pointer did not enter the grip",
+      );
+      await js("new Promise(requestAnimationFrame)");
+      const hovered = await bounds();
+      for (const key of Object.keys(before))
+        assert.ok(
+          Math.abs(before[key] - hovered[key]) < 0.5,
+          `Hover changed the grip ${key} for ${id}: ${before[key]} -> ${hovered[key]}`,
+        );
+      window.webContents.sendInputEvent({
+        type: "mouseDown",
+        button: "left",
+        clickCount: 1,
+        ...clickPoint,
+      });
+      window.webContents.sendInputEvent({
+        type: "mouseUp",
+        button: "left",
+        clickCount: 1,
+        ...clickPoint,
+      });
+      await until(
+        () =>
+          js(
+            "Boolean(document.querySelector('.editor-action-menu[aria-label=\"Block actions\"]'))",
+          ),
+        "Clicking the original grip position missed its menu",
+      );
+      window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
+      window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
+      await until(
+        () => js("!document.querySelector('.editor-action-menu')"),
+        "Native Escape did not dismiss the grip menu",
+      );
+    }
+    console.log(
+      "PASS: native pointer hover keeps the grip and click target fixed for paragraphs, headings, lists, tables and custom blocks",
+    );
+    assert.deepEqual(await js("window.blockDragErrors ?? []"), []);
+    await js(
+      `(${blockActionsScenarios.toString()})(${JSON.stringify({ table: fixture.expected.at(-1), custom: fixture.expected[0] })})`,
+    );
+    assert.deepEqual(await js("window.blockDragErrors ?? []"), []);
+    console.log(
+      "PASS: shared block menu, keyboard navigation, move/delete/undo/redo, nested lists, tables, custom blocks and last-block focus",
     );
     await saved();
     await js(
@@ -140,6 +232,14 @@ void (async () => {
       true,
     );
     console.log("PASS: read-only history has no draggable grip");
+    assert.equal(
+      await js(`(() => {
+      const widget = document.querySelector('.history-preview affine-drag-handle-widget');
+      widget.dragHandleGrabber.click();
+      return !document.querySelector('.editor-action-menu');
+    })()`),
+      true,
+    );
     assert.deepEqual(errors, []);
   } catch (error) {
     console.error(error);

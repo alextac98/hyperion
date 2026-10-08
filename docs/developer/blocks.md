@@ -40,6 +40,50 @@ Respect `store.readonly` for history previews. Group a discrete action with
 Use accessible labels and keyboard-operable controls. Views can implement
 `onInsert()` to focus or open their controls.
 
+## Columns interaction
+
+`/columns` inserts a layout with two equal-width columns. Each column contains
+ordinary page blocks, including rich text, headings, lists, tables and attachments.
+Use **Add column** for up to four columns. Each column has a header grip: drag it
+to reorder the entire column, click for **Move left**, **Move right** and
+**Remove column (keep content)**, or use Alt+Left/Right while the grip is focused.
+Removing a column moves its blocks into the previous column; removing the first
+column prepends its content to the next. Order, IDs, formatting and nested content
+stay intact. A layout always has at least two columns.
+
+The layout's **Column layout actions** button opens the shared block menu with
+**Move up**, **Move down**, **Unwrap columns** and **Delete block**. Unwrapping
+returns the columns' blocks to the page at the layout's position in reading order.
+Deleting removes the entire layout and its contents. Every action supports
+undo/redo, including restoring the full subtree after deletion.
+
+Drag blocks between columns with the usual grip, or move the entire layout
+together. Click an empty column to start
+writing in it again. Columns stack vertically when the available block width is
+520px or less, including narrow workspace panes and nested layouts.
+
+The `hyperion:columns` definition has ordered `affine:note` children; their content
+uses the existing persistence, search, outline, history and portable data paths.
+Nested notes cannot merge into the page title on Backspace. Layout controls are
+hidden in read-only history and drag previews.
+
+`pnpm test:columns` exercises insertion, column limits, content-preserving removal,
+column reordering by drag/menu/keyboard, unwrapping, deletion, dragging between
+columns, undo/redo, native typing, responsive layout, indexing,
+reopening and read-only history. It requires a graphical desktop session (or Xvfb
+on Linux) and runs as part of `pnpm test:integration`.
+
+## Shared block actions
+
+Click a block's six-dot grip, or press Enter/Space while it is focused, to open
+**Move up**, **Move down** and **Delete block**. Dragging the grip and Alt+Up/Down
+continue to reorder blocks. The menu supports arrow keys, Home/End and Escape;
+dismissal returns focus to the grip, and deletion returns focus to the editor.
+Deleting a note's last block leaves an editable empty paragraph in the same undo
+step. Page and note containers have no destructive actions, and read-only history
+has no editing controls. `pnpm test:block-drag` covers these actions on text, nested
+lists, tables and custom blocks as part of the CI integration suite.
+
 ## Meeting interaction
 
 `/meeting` inserts a `hyperion:meeting` block with a title/date and three tabs:

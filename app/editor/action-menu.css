@@ -1,0 +1,40 @@
+.editor-action-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-width: 180px;
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 24px #0002;
+  font: 13px var(--font-sans, sans-serif);
+}
+.editor-action-menu button {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.editor-action-menu button:hover:not(:disabled),
+.editor-action-menu button:focus-visible {
+  background: var(--hover);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.editor-action-menu button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.editor-action-menu button.danger {
+  color: var(--danger, #c13b3b);
+}

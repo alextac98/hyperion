@@ -4,6 +4,7 @@ import {
 } from "@blocksuite/affine/widgets/drag-handle";
 import { LifeCycleWatcher, TextSelection } from "@blocksuite/affine/std";
 import styles from "./block-drag-handle.css?inline";
+import { openBlockActions } from "./block-actions";
 
 const headingToggleSelector =
   ".affine-paragraph-rich-text-wrapper > blocksuite-toggle-button > .toggle-icon";
@@ -20,6 +21,7 @@ export class BlockDragHandleExtension extends LifeCycleWatcher {
   private selectionFrame = 0;
   private dropCaptureTimer?: ReturnType<typeof setTimeout>;
   private headingCleanup?: () => void;
+  private closeActions?: () => void;
 
   override created() {
     const stopMonitoring = this.std.dnd.monitor({
@@ -52,23 +54,74 @@ export class BlockDragHandleExtension extends LifeCycleWatcher {
         style.textContent = styles;
         widget.shadowRoot.append(style);
 
+        const container = widget.dragHandleContainer;
+        // The native bar expands by changing its padding on pointer entry.
+        // Keep our compact grip at its existing first-line position instead.
+        widget.disposables.addFromEvent(
+          container,
+          "pointerenter",
+          () => {
+            if (!widget.isBlockDragHandleVisible) return;
+            const padding = getComputedStyle(container);
+            container.style.setProperty(
+              "--hyperion-grip-padding-top",
+              padding.paddingTop,
+            );
+            container.style.setProperty(
+              "--hyperion-grip-padding-bottom",
+              padding.paddingBottom,
+            );
+            container.setAttribute("data-hover-position", "");
+          },
+          { capture: true },
+        );
+        widget.disposables.addFromEvent(container, "pointerleave", () => {
+          container.removeAttribute("data-hover-position");
+        });
+
         const grip = widget.dragHandleGrabber;
         grip.setAttribute("role", "button");
         grip.tabIndex = 0;
-        grip.setAttribute("aria-label", "Move block");
+        grip.setAttribute("aria-label", "Block actions");
+        grip.setAttribute("aria-haspopup", "menu");
+        grip.setAttribute("aria-expanded", "false");
         grip.setAttribute(
           "aria-description",
-          "Drag to move. Press Alt and the up or down arrow to reorder.",
+          "Click for block actions or drag to move. Press Alt and the up or down arrow to reorder.",
         );
         grip.setAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown");
-        grip.title = "Drag to move · Alt+↑/↓ to reorder";
+        grip.title =
+          "Click for block actions · Drag to move · Alt+↑/↓ to reorder";
+        const open = () => {
+          const block = widget.anchorBlockComponent.peek();
+          if (!block || widget.store.readonly || widget.dragging) return;
+          this.closeActions = openBlockActions(
+            this.std,
+            block.model.id,
+            grip,
+            () => {
+              if (
+                !widget.isConnected ||
+                !widget.store.getModelById(block.model.id)
+              )
+                return;
+              widget.anchorBlockId.value = block.model.id;
+              widget.pointerEventWatcher.showDragHandleOnHoverBlock();
+              grip.focus({ preventScroll: true });
+            },
+          );
+        };
+        widget.disposables.addFromEvent(grip, "click", (event) => {
+          event.stopPropagation();
+          open();
+        });
         widget.disposables.addFromEvent(grip, "keydown", (event) => {
           const block = widget.anchorBlockComponent.peek();
           if (!block || widget.store.readonly || widget.dragging) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             event.stopPropagation();
-            widget.selectionHelper.setSelectedBlocks([block]);
+            open();
           } else if (
             event.altKey &&
             !event.ctrlKey &&
@@ -203,6 +256,7 @@ export class BlockDragHandleExtension extends LifeCycleWatcher {
   }
 
   override unmounted() {
+    this.closeActions?.();
     this.unsubscribe?.();
     this.headingCleanup?.();
     cancelAnimationFrame(this.selectionFrame);

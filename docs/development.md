@@ -191,7 +191,25 @@ its API tests. Server provisioning and agent process supervision are separate.
 - `pnpm lint`: checks TypeScript and React code.
 - `pnpm test:integration`: builds both processes and runs the native Electron smoke test
   against a temporary isolated vault, including sidebar history, pending-edit diffs,
-  read-only previews, native clipboard commands and retained-tab isolation, native recovery dialogs and both restore paths; requires a graphical desktop session.
+  read-only previews, native clipboard commands and retained-tab isolation, custom
+  blocks, block dragging, columns, meetings, vault setup, native recovery dialogs
+  and both restore paths; requires a graphical desktop session.
+
+Pull requests run lint, unit tests and type checks, plus the full desktop
+integration suite in a separate Ubuntu job under Xvfb. Failed desktop runs upload
+their screenshots as the `desktop-integration-failures` artifact. To run the same
+suite on a Linux machine without a graphical session, install Xvfb and use:
+
+```sh
+xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" pnpm test:integration
+```
+
+Run individual Electron smoke tests through
+`node scripts/run-electron-test.mjs tests/blocks-smoke.mjs`. The launcher sets the
+application version from `package.json` before importing the test, so the updater
+can initialize in a standalone Electron process. The test process stays alive
+after the last window closes to finish assertions and cleanup; tests exit
+explicitly with `app.exit()` so failures return a nonzero status.
 
 See [Database migration regression tests](migration-tests.md) for fixture contents,
 what the migration checks verify, and how to add coverage for future releases.

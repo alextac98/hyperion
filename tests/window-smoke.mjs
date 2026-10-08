@@ -971,6 +971,7 @@ async function run() {
         app.exit(1);
       }
     });
+    process.env.HYPERION_TEST_QUIT_READY = "1";
     app.quit();
   } catch (error) {
     console.error(error.stack);

@@ -1,5 +1,5 @@
 import { createFirstVault } from "./vault-setup-helpers.mjs";
-// Run with: env -u ELECTRON_RUN_AS_NODE pnpm exec electron tests/electron-smoke.mjs
+// Run with: node scripts/run-electron-test.mjs
 import { app, BrowserWindow } from 'electron';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
@@ -21,6 +21,8 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     throw new Error(message);
   };
   const js = source => window.webContents.executeJavaScript(source, true);
+  // Visited tabs retain their editors; assertions and edits must use the active page.
+  const editor = `document.querySelector('.workspace-panel[data-workspace-active="true"] .note-workspace doc-title')`;
   try {
     await import(pathToFileURL(join(testDirectory, '../dist-electron/main.js')).href);
     assert.equal(app.getName(), '[Dev] Hyperion');
@@ -31,9 +33,9 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     assert.equal(window.getTitle(), '[Dev] Hyperion');
     window.webContents.on('console-message', (_event, level, message) => { if (level >= 2) console.error('renderer:', message); });
     const vaultId = await createFirstVault(js, until);
-    await until(() => js('Boolean(document.querySelector(".workspace-panel[data-workspace-active=true] doc-title")?.doc?.root)'), 'Editor did not load');
+    await until(() => js(`Boolean(${editor}?.doc?.root)`), 'Editor did not load');
     await until(() => js('document.querySelector(".save-status")?.textContent.includes("Saved locally")'), 'Initial save did not finish');
-    const identity = await js(`(() => { const store=document.querySelector('.workspace-panel[data-workspace-active=true] doc-title').doc; return { noteId:store.id, vaultId:${JSON.stringify(vaultId)} }; })()`);
+    const identity = await js(`(() => { const store=${editor}.doc; return { noteId:store.id, vaultId:${JSON.stringify(vaultId)} }; })()`);
     // Home cards keep icons, dates, titles and tags visually separated.
     await js(`Array.from(document.querySelectorAll('.sidebar button')).find(b=>b.textContent==='Home').click()`);
     await until(() => js('Boolean(document.querySelector(".note-card"))'), 'Home cards did not load');
@@ -53,19 +55,28 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await window.webContents.capturePage().then(image=>writeFileSync('/tmp/hyperion-home-spacing.png',image.toPNG()));
     window.setSize(1440, 940);
     await js(`document.querySelector('[data-page-id="'+${JSON.stringify(identity.noteId)}+'"] .organizer-page-link').click()`);
-    await until(() => js('Boolean(document.querySelector(".workspace-panel[data-workspace-active=true] doc-title")?.doc?.root)'), 'Editor did not return');
+    await until(() => js(`Boolean(${editor}?.doc?.root)`), 'Editor did not return');
     // Edit through the real editor store and wait for the renderer's save acknowledgement.
-    await js(`(() => { const store=document.querySelector('.workspace-panel[data-workspace-active=true] doc-title').doc; store.root.props.title.insert('Smoke ', 0); })()`);
+    await js(`(() => { const store=${editor}.doc; store.root.props.title.insert('Smoke ', 0); })()`);
     await until(() => js(`window.hyperionDesktop.repositoryExecute({operation:'listNotes',vaultId:${JSON.stringify(vaultId)}}).then(notes=>notes.some(n=>n.title.startsWith('Smoke ')))`), 'Editor title was not persisted');
     await until(() => js('document.querySelector(".save-status")?.textContent.includes("Saved locally")'), 'Edit save did not finish');
     // Native Windows/Linux commands and DOM thumb buttons share app history.
     const otherId = await js(`Array.from(document.querySelectorAll('[data-page-id]')).find(row=>row.dataset.pageId!==${JSON.stringify(identity.noteId)}).dataset.pageId`);
-    const activePage = id => js(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(document.querySelector('.organizer-page-row.active')?.dataset.pageId===${JSON.stringify(id)}))))`);
-    const thumb = button => js(`['mousedown','mouseup','auxclick'].forEach(type=>document.body.dispatchEvent(new MouseEvent(type,{button:${button},bubbles:true,cancelable:true})))`);
+    const settled = () => js('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    const activePage = async id => {
+      if (!await js(`${editor}?.doc?.id===${JSON.stringify(id)}`)) return false;
+      await settled();
+      return js(`${editor}?.doc?.id===${JSON.stringify(id)}`);
+    };
+    const thumb = async button => {
+      await settled();
+      await js(`['mousedown','mouseup','auxclick'].forEach(type=>document.body.dispatchEvent(new MouseEvent(type,{button:${button},bubbles:true,cancelable:true})))`);
+    };
     await js(`document.querySelector('[data-page-id="'+${JSON.stringify(otherId)}+'"] .organizer-page-link').click()`);
     await until(() => activePage(otherId), 'Second page did not open');
     await js(`Array.from(document.querySelectorAll('.sidebar button')).find(b=>b.textContent==='Home').click()`);
     await until(() => js('Boolean(document.querySelector(".workspace-panel[data-workspace-active=true] .home-view"))'), 'Home did not open');
+    await settled();
     window.emit('app-command', {}, 'browser-backward');
     await until(() => activePage(otherId), 'Native Back did not return to second page');
     await thumb(3);
@@ -92,11 +103,11 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await wait(150);
     assert.ok(await activePage(otherId), 'Vertical swipes must not navigate');
 
-    await until(() => js(`document.querySelector('.workspace-panel[data-workspace-active=true] doc-title')?.doc?.id===${JSON.stringify(otherId)}`), 'Second editor did not load');
-    await js(`(() => { const title=document.querySelector('.workspace-panel[data-workspace-active=true] doc-title').doc.root.props.title; title.insert(' Navigation saved', title.length); })()`);
+    await until(() => js(`${editor}?.doc?.id===${JSON.stringify(otherId)}`), 'Second editor did not load');
+    await js(`(() => { const title=${editor}.doc.root.props.title; title.insert(' Navigation saved', title.length); })()`);
     await thumb(3);
     await until(() => js(`window.hyperionDesktop.repositoryExecute({operation:'listNotes',vaultId:${JSON.stringify(vaultId)}}).then(notes=>notes.find(n=>n.id===${JSON.stringify(otherId)})?.title.endsWith(' Navigation saved'))`), 'Mouse navigation lost a pending edit');
-    await until(() => js(`document.querySelector('.workspace-panel[data-workspace-active=true] doc-title')?.doc?.id===${JSON.stringify(identity.noteId)}`), 'Original editor did not return');
+    await until(() => js(`${editor}?.doc?.id===${JSON.stringify(identity.noteId)}`), 'Original editor did not return');
     await js(`window.hyperionDesktop.repositoryExecute({operation:'captureAutomaticRevisions'})`);
     const automatic = await js(`window.hyperionDesktop.repositoryExecute({operation:'listRevisions',vaultId:${JSON.stringify(vaultId)},noteId:${JSON.stringify(identity.noteId)}}).then(versions=>versions[0])`);
     await js(`document.querySelector('[aria-label="More page actions"]').click()`);
@@ -121,14 +132,15 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     await js(`Array.from(document.querySelectorAll('.page-comparison button')).find(b=>b.textContent==='Back to editing').click()`);
     // Immediately open comparison after editing: capture must drain pending writes.
-    await js(`document.querySelector('.workspace-panel[data-workspace-active=true] .note-workspace doc-title').doc.root.props.title.insert('Changed ',0); document.querySelector('.page-history nav button').click();`);
-    await until(() => js('Array.from(document.querySelectorAll(".diff-after .diff-text")).some(text=>text.textContent.includes("Changed Smoke"))'), 'Comparison missed pending title edit');
-    assert.ok(await js('Array.from(document.querySelectorAll(".diff-before .diff-text")).some(text=>text.textContent.includes("Smoke"))'));
+    const titleChange = `document.querySelector('.page-change[aria-label="Page title and layout"]')`;
+    await js(`${editor}.doc.root.props.title.insert('Changed ',0); document.querySelector('.page-history nav button').click();`);
+    await until(() => js(`${titleChange}?.querySelector(".diff-after .diff-text")?.textContent.includes("Changed Smoke")`), 'Comparison missed pending title edit');
+    assert.ok(await js(`${titleChange}?.querySelector(".diff-before .diff-text")?.textContent.includes("Smoke")`));
     assert.equal(await js('document.querySelector("[aria-label=Undo]").disabled'), true);
-    assert.equal(await js('Array.from(document.querySelectorAll(".diff-text ins")).find(text=>text.textContent==="Changed ")?.textContent'), 'Changed ');
-    assert.ok(await js(`(() => { const a=document.querySelector('.diff-before').getBoundingClientRect(); const b=document.querySelector('.diff-after').getBoundingClientRect(); return Math.abs(a.top-b.top)<1 && a.right<=b.left+1; })()`));
+    assert.equal(await js(`${titleChange}?.querySelector(".diff-text ins")?.textContent`), 'Changed ');
+    assert.ok(await js(`(() => { const a=${titleChange}.querySelector('.diff-before').getBoundingClientRect(); const b=${titleChange}.querySelector('.diff-after').getBoundingClientRect(); return Math.abs(a.top-b.top)<1 && a.right<=b.left+1; })()`));
     await js(`Array.from(document.querySelectorAll('.diff-layout button')).find(button=>button.textContent==='Unified').click()`);
-    await until(() => js(`(() => { const a=document.querySelector('.diff-before').getBoundingClientRect(); const b=document.querySelector('.diff-after').getBoundingClientRect(); return b.top>=a.bottom && Math.abs(a.left-b.left)<1; })()`), 'Unified comparison layout did not settle');
+    await until(() => js(`(() => { const a=${titleChange}.querySelector('.diff-before').getBoundingClientRect(); const b=${titleChange}.querySelector('.diff-after').getBoundingClientRect(); return b.top>=a.bottom && Math.abs(a.left-b.left)<1; })()`), 'Unified comparison layout did not settle');
     await js(`Array.from(document.querySelectorAll('.diff-layout button')).find(button=>button.textContent==='Side by side').click()`);
 
     await window.webContents.capturePage().then(image => writeFileSync('/tmp/hyperion-history-diff.png', image.toPNG()));
@@ -142,7 +154,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await until(() => js('document.querySelector(".page-comparison .history-preview doc-title")?.doc?.root?.props.title.toString().startsWith("Changed Smoke ")'), 'Current rich preview has stale text');
     // The sidebar follows navigation and does not leak the selected page's history.
     await js(`Array.from(document.querySelectorAll('[data-page-id]')).find(row=>row.dataset.pageId!==${JSON.stringify(identity.noteId)}).querySelector('.organizer-page-link').click()`);
-    await until(() => js(`!document.querySelector('.page-comparison') && document.querySelector('.workspace-panel[data-workspace-active=true] .note-workspace doc-title')?.doc?.id!==${JSON.stringify(identity.noteId)}`), 'Page navigation retained old comparison');
+    await until(() => js(`!document.querySelector('.page-comparison') && ${editor}?.doc?.id===${JSON.stringify(otherId)}`), 'Page navigation retained old comparison');
     await until(() => js(`document.querySelector('.page-history nav')?.getAttribute('aria-busy')==='false'`), 'Next page history did not load');
     assert.equal(await js(`document.querySelector('.page-history')?.textContent.includes('Smoke checkpoint')`), false);
     await js(`document.querySelector('[data-page-id="'+${JSON.stringify(identity.noteId)}+'"] .organizer-page-link').click()`);
@@ -169,7 +181,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     const exported = await js(`window.hyperionDesktop.repositoryExecute({operation:'exportVault',vaultId:${JSON.stringify(vaultId)}})`);
     // Restoring in place preserves the current version and reloads the original page.
     await js(`window.confirm=()=>true; Array.from(document.querySelectorAll('.page-comparison button')).find(b=>b.textContent==='Restore this version').click()`);
-    await until(() => js(`!document.querySelector('.page-comparison') && document.querySelector('.workspace-panel[data-workspace-active=true] .note-workspace doc-title')?.doc?.root?.props.title.toString().startsWith('Smoke ')`), 'Restored original did not load');
+    await until(() => js(`!document.querySelector('.page-comparison') && ${editor}?.doc?.root?.props.title.toString().startsWith('Smoke ')`), 'Restored original did not load');
     const history = await js(`window.hyperionDesktop.repositoryExecute({operation:'listRevisions',vaultId:${JSON.stringify(vaultId)},noteId:${JSON.stringify(identity.noteId)}})`);
     assert.ok(history.some(version=>version.label==='Before restore' && version.note.title.startsWith('Changed Smoke ')));
     await js(`document.querySelector('[aria-label="More page actions"]').click()`);
@@ -178,7 +190,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await js(`Array.from(document.querySelectorAll('.page-history nav button')).find(b=>b.textContent.includes('Smoke checkpoint')).click()`);
     await until(() => js('Boolean(document.querySelector(".page-comparison"))'), 'Comparison did not reopen');
     await js(`Array.from(document.querySelectorAll('.page-comparison button')).find(b=>b.textContent==='Restore as a copy').click()`);
-    await until(() => js(`document.querySelector('.workspace-panel[data-workspace-active=true] .note-workspace doc-title')?.doc?.root?.props.title.toString().endsWith('(restored)')`), 'Restored copy did not load after reload');
+    await until(() => js(`${editor}?.doc?.root?.props.title.toString().endsWith('(restored)')`), 'Restored copy did not load after reload');
     assert.equal(exported.version, 9); assert.ok(exported.revisions.some(r=>r.label==='Smoke checkpoint'));
     assert.ok(identity.noteId);
     // Import the real rich bundle, then reload into its new vault and open its document.
@@ -187,8 +199,8 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     const importedPage = importedNotes.find(note=>note.title.startsWith('Changed Smoke '));
     assert.ok(importedPage);
     await js(`localStorage.setItem('hyperion:current-vault',${JSON.stringify(imported.vault.id)});localStorage.setItem('hyperion:last-note:'+${JSON.stringify(imported.vault.id)},${JSON.stringify(importedPage.id)});location.reload();`);
-    await until(()=>js(`document.querySelector('.workspace-panel[data-workspace-active=true] doc-title')?.doc?.root?.props.title.toString().startsWith('Changed Smoke ')`),'Imported rich page did not load');
-    assert.ok(await js(`document.querySelector('.workspace-panel[data-workspace-active=true] doc-title').doc.getModelsByFlavour('affine:paragraph').length > 1`));
+    await until(()=>js(`${editor}?.doc?.root?.props.title.toString().startsWith('Changed Smoke ')`),'Imported rich page did not load');
+    assert.ok(await js(`${editor}.doc.getModelsByFlavour('affine:paragraph').length > 1`));
     const backup = await js('window.hyperionDesktop.createBackup()'); assert.ok(backup.path.startsWith((await js('window.hyperionDesktop.storageInfo()')).directory));
     await js(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Settings').click()`);
     await until(()=>js(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Data')`),'Data settings tab missing');
@@ -209,19 +221,17 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
     await js(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Settings').click()`);
     await until(()=>js(`Array.from(document.querySelectorAll('.settings-dialog button')).some(b=>b.textContent==='Appearance')`),'Appearance tab missing');
     await js(`Array.from(document.querySelectorAll('.settings-dialog button')).find(b=>b.textContent==='Appearance').click()`);
-    await js(`document.querySelector('.workspace-panel[data-workspace-active=true] doc-title').doc.root.props.title.insert('Brand ', 0); document.querySelector('.brand-guide-link').click();`);
+    await js(`${editor}.doc.root.props.title.insert('Brand ', 0); document.querySelector('.brand-guide-link').click();`);
     await until(()=>js('Boolean(document.querySelector(".brand-page"))'),'Brand guide did not open in the desktop app');
     assert.equal(await js('Boolean(window.hyperionDesktop)'), true);
     await until(()=>js(`Array.from(document.querySelectorAll('.brand-page img')).every(image=>image.complete && image.naturalWidth>0)`),'Packaged brand images did not load');
     await js(`document.querySelector('.brand-header button').click()`);
     assert.ok(await js(`['light','dark'].includes(document.documentElement.dataset.theme)`));
     await js(`document.querySelector('.brand-back').click()`);
-    await until(()=>js(`document.querySelector('.workspace-panel[data-workspace-active=true] doc-title')?.doc?.root?.props.title.toString().startsWith('Brand Changed Smoke')`),'Pending edit was not preserved across the brand guide visit');
+    await until(()=>js(`${editor}?.doc?.root?.props.title.toString().startsWith('Brand Changed Smoke')`),'Pending edit was not preserved across the brand guide visit');
     const currentDatabasePath = (await js('window.hyperionDesktop.storageInfo()')).databasePath;
     // Real window-close handshake must drain edits before the window disappears.
-    await js(`document.querySelector('.workspace-panel[data-workspace-active=true] doc-title').doc.root.props.title.insert('Closing ', 0);`);
-    // Keep the test process alive long enough to assert the durable close result.
-    app.removeAllListeners('window-all-closed');
+    await js(`${editor}.doc.root.props.title.insert('Closing ', 0);`);
     window.close();
     await until(() => BrowserWindow.getAllWindows().length===0, 'Save-aware close did not complete');
     const { DatabaseSync } = await import('node:sqlite');

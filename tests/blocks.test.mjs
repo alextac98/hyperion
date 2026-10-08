@@ -11,6 +11,7 @@ const result = await build({
   export * from './blocks/date/definition.ts';
   export * from './blocks/meeting/definition.ts';
   export * from './blocks/meeting/notes.ts';
+  export * from './blocks/columns/definition.ts';
   export * from './blocks/date/inline.ts';
   export { remapDocument, restoreDocument, documentMetadata, assetReferences } from './electron/data-format.ts';
   export { pageChanges } from './app/lib/page-diff.ts';
@@ -31,6 +32,7 @@ const {
   createBlockRegistry,
   dateDefinition,
   meetingDefinition,
+  columnsDefinition,
   initialMeetingDate,
   migrateMeetingNotes,
   recordingKeys,
@@ -99,6 +101,112 @@ test("registry rejects collisions, malformed IDs, versions and defaults", () => 
       ]),
     /defaults/,
   );
+});
+
+test("columns preserve ordered rich children, references and projections through import and restore", () => {
+  const doc = fixture("hyperion:columns");
+  const blocks = doc.getMap("blocks");
+  const columns = blocks.get("date");
+  columns.get("sys:children").push(["left", "right"]);
+  for (const [id, children] of [
+    ["left", ["heading"]],
+    ["right", ["text", "image"]],
+  ])
+    blocks.set(
+      id,
+      new Y.Map([
+        ["sys:flavour", "affine:note"],
+        ["sys:version", 1],
+        ["sys:children", Y.Array.from(children)],
+      ]),
+    );
+  blocks.set(
+    "heading",
+    new Y.Map([
+      ["sys:flavour", "affine:paragraph"],
+      ["prop:type", "h2"],
+      ["prop:text", new Y.Text("Left heading")],
+    ]),
+  );
+  const text = new Y.Text();
+  blocks.set(
+    "text",
+    new Y.Map([
+      ["sys:flavour", "affine:paragraph"],
+      ["prop:text", text],
+    ]),
+  );
+  text.insert(0, "Right text", {
+    bold: true,
+    reference: { type: "LinkedPage", pageId: "old-page" },
+  });
+  blocks.set(
+    "image",
+    new Y.Map([
+      ["sys:flavour", "affine:image"],
+      ["prop:sourceId", "column-asset"],
+    ]),
+  );
+  assert.equal(isBlockAvailable(readBlock("date", columns)), true);
+  assert.equal(
+    isBlockAvailable({ ...readBlock("date", columns), version: 2 }),
+    false,
+  );
+  assert.equal(blockRegistry.get("hyperion:columns"), columnsDefinition);
+  assert.deepEqual(readDocumentMetadata(blocks), {
+    title: "Review",
+    body: "Left heading\nRight text",
+  });
+  assert.deepEqual(
+    projectBlock(readBlock("heading", blocks.get("heading"))).outline,
+    { title: "Left heading", level: 2 },
+  );
+  assert.deepEqual(assetReferences(Y.encodeStateAsUpdate(doc)), [
+    "column-asset",
+  ]);
+
+  for (const payload of [
+    Buffer.from(
+      remapDocument(encoded(doc), new Map([["old-page", "new-page"]])),
+      "base64",
+    ),
+    restoreDocument(
+      Y.encodeStateAsUpdate(new Y.Doc()),
+      Y.encodeStateAsUpdate(doc),
+    ),
+  ]) {
+    const copy = new Y.Doc();
+    Y.applyUpdate(copy, payload);
+    const saved = copy.getMap("blocks");
+    assert.deepEqual(saved.get("date").get("sys:children").toArray(), [
+      "left",
+      "right",
+    ]);
+    assert.deepEqual(saved.get("right").get("sys:children").toArray(), [
+      "text",
+      "image",
+    ]);
+    assert.equal(
+      saved.get("text").get("prop:text").toDelta()[0].attributes.bold,
+      true,
+    );
+    assert.equal(saved.get("image").get("prop:sourceId"), "column-asset");
+    assert.equal(documentMetadata(payload).body, "Left heading\nRight text");
+    copy.destroy();
+  }
+  const before = {
+    note: { title: "Review", body: "" },
+    document: encoded(doc),
+  };
+  columns.get("sys:children").delete(1, 1);
+  assert.ok(
+    pageChanges(before, { ...before, document: encoded(doc) }).some(
+      (change) =>
+        change.label === "Columns" &&
+        change.detail === "Block order or layout changed",
+    ),
+  );
+  doc.destroy();
 });
 
 test("date projects identically for live metadata, persisted history and diffs", () => {

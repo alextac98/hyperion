@@ -122,7 +122,10 @@ void (async () => {
     await input("#vault-name", "Personal");
     await js('document.querySelector(".vault-setup form").requestSubmit()');
     await until(
-      () => js('Boolean(document.querySelector("doc-title")?.doc?.root)'),
+      () =>
+        js(
+          'Boolean(document.querySelector(".workspace-panel[data-workspace-active=true] .note-workspace doc-title")?.doc?.root)',
+        ),
       "Starter editor did not load",
     );
     await saved();
@@ -146,18 +149,21 @@ void (async () => {
       `document.querySelector('[data-page-id="${make.id}"] .organizer-page-link').click()`,
     );
     await until(
-      () => js('Boolean(document.querySelector("affine-table"))'),
+      () =>
+        js(
+          'Boolean(document.querySelector(".workspace-panel[data-workspace-active=true] .note-workspace affine-table"))',
+        ),
       "Real table did not render",
     );
     assert.ok(
       await js(
-        'document.querySelector("affine-callout").textContent.includes("Give a useful thought its own space")',
+        'document.querySelector(".workspace-panel[data-workspace-active=true] .note-workspace affine-callout").textContent.includes("Give a useful thought its own space")',
       ),
       "Callout text did not render",
     );
     assert.ok(
       await js(
-        'document.querySelector(".blocksuite-mount").textContent.includes("Sketch a first version")',
+        'document.querySelector(".workspace-panel[data-workspace-active=true] .note-workspace .blocksuite-mount").textContent.includes("Sketch a first version")',
       ),
       "Table content missing",
     );
@@ -247,7 +253,10 @@ void (async () => {
     choices.push({ canceled: false, filePaths: [personal] });
     await click(".vault-open-option button", "Open existing vault…");
     await until(
-      () => js('Boolean(document.querySelector("doc-title")?.doc?.root)'),
+      () =>
+        js(
+          'Boolean(document.querySelector(".workspace-panel[data-workspace-active=true] .note-workspace doc-title")?.doc?.root)',
+        ),
       "Existing vault did not reopen",
     );
     assert.equal((await rpc("listVaults"))[0].id, first.id);
@@ -260,12 +269,12 @@ void (async () => {
     await until(
       () =>
         js(
-          `document.querySelector('doc-title')?.doc.id===${JSON.stringify(welcome.id)}`,
+          `document.querySelector('.workspace-panel[data-workspace-active=true] .note-workspace doc-title')?.doc.id===${JSON.stringify(welcome.id)}`,
         ),
       "Welcome did not open",
     );
     await js(
-      "document.querySelector('doc-title').doc.root.props.title.insert('My ',0)",
+      "document.querySelector('.workspace-panel[data-workspace-active=true] .note-workspace doc-title').doc.root.props.title.insert('My ',0)",
     );
     await click(".sidebar button", "Settings");
     await click(".settings-body nav button", "Data");
@@ -292,7 +301,7 @@ void (async () => {
     await until(
       () =>
         js(
-          'document.querySelector("doc-title")?.doc?.root?.props?.title?.toString() === "My Welcome"',
+          'document.querySelector(".workspace-panel[data-workspace-active=true] .note-workspace doc-title")?.doc?.root?.props?.title?.toString() === "My Welcome"',
         ),
       "Move lost the final title or did not reopen",
     );
