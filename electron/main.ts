@@ -362,7 +362,7 @@ function registerDesktopHandlers() {
     if (state.pending || state.detaching || state.navigation || preparingQuit) return false;
     const request = tabDragRequest.parse(value);
     for (const window of windows.keys()) stopTabDrag(window);
-    const preview = createTabDragPreview(source, request.rect);
+    const preview = createTabDragPreview(request.preview, source.webContents.getZoomFactor());
     state.drag = { token: request.token, location: request.location, preview };
     try {
       await preview.ready;

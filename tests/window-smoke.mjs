@@ -113,6 +113,30 @@ async function run() {
       () => dragPreview()?.isVisible(),
       "Native tab preview did not appear",
     );
+    await until(
+      () => js(window, `document.body.hasAttribute('data-native-tab-drag-preview')`),
+      "Renderer did not switch to the native preview",
+    );
+    assert.equal(
+      await js(window, `Array.from(document.querySelectorAll('.dv-tab-ghost-drag')).every(ghost => getComputedStyle(ghost).display === 'none') && document.querySelectorAll('.dv-tab-ghost-drag').length === 1`),
+      true,
+      "Dockview's inline styles must not leave a second ghost on the source window",
+    );
+    const expected = await js(window, `(() => {
+      const tab = Array.from(document.querySelectorAll('.dv-tab')).find(tab => tab.dataset.tabPanelId === ${JSON.stringify(JSON.stringify({ view: "note", id }))});
+      const box = tab.getBoundingClientRect();
+      return {title: tab.querySelector('.workspace-tab-content').title, width: Math.round(box.width), height: Math.round(box.height), emoji: tab.querySelector('.page-icon-glyph')?.textContent ?? null, svg: Boolean(tab.querySelector('.workspace-tab-content > svg'))};
+    })()`);
+    const actual = await js(dragPreview(), `(() => {
+      const tab = document.querySelector('.tab'), box = tab.getBoundingClientRect();
+      return {title: tab.querySelector('.tab-title').textContent, width: box.width, height: box.height, emoji: tab.querySelector('.emoji')?.textContent ?? null, svg: Boolean(tab.querySelector('img[src^="data:image/svg+xml,"]')), imageLoaded: Array.from(tab.querySelectorAll('img')).every(image => image.complete && image.naturalWidth > 0)};
+    })()`);
+    assert.equal(actual.title, expected.title);
+    assert.equal(actual.emoji, expected.emoji);
+    assert.equal(actual.svg, expected.svg);
+    assert.equal(actual.imageLoaded, true, "Preview icons must render");
+    assert.equal(actual.width, Math.ceil(expected.width * window.webContents.getZoomFactor()));
+    assert.equal(actual.height, Math.ceil(expected.height * window.webContents.getZoomFactor()));
     assert.equal(
       dragPreview().isFocusable(),
       false,
@@ -220,7 +244,26 @@ async function run() {
     await openPage(source, noteId);
 
     const outside = { x: 1300, y: 130 };
+    const originalTitle = await js(source, `${editor}.doc.root.props.title.toString()`);
+    const literalTitle = '<img src=x onerror="alert(1)"> & moving tab';
+    await js(source, `(() => {const title = ${editor}.doc.root.props.title; title.delete(0, title.length); title.insert(${JSON.stringify(literalTitle)}, 0);})()`);
+    await until(
+      () => js(source, `Array.from(document.querySelectorAll('.workspace-tab-content')).some(tab => tab.title === ${JSON.stringify(literalTitle)})`),
+      "Tab title did not update",
+    );
+    const originalTheme = await js(source, `document.documentElement.getAttribute('data-theme')`);
+    await js(source, `document.documentElement.setAttribute('data-theme', 'dark')`);
     await beginDrag(source, noteId);
+    assert.equal(await js(dragPreview(), `getComputedStyle(document.querySelector('.tab')).backgroundColor`), 'rgb(25, 26, 24)', "Preview must retain the source's dark theme");
+    assert.equal(
+      await js(dragPreview(), `document.querySelector('.tab-title img, .tab-title script') === null`),
+      true,
+      "Page titles must render as text in the preview",
+    );
+    // Moving around the source must keep one clean preview despite live drop outlines.
+    mouse(source, "mouseMove", { x: 500, y: 400 });
+    await wait(100);
+    assert.equal(await js(dragPreview(), `document.querySelector('.tab-title').textContent`), literalTitle);
     mouse(source, "mouseMove", outside);
     source.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" });
     source.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
@@ -236,10 +279,18 @@ async function run() {
       1,
       "Escape must cancel detachment",
     );
+    assert.equal(await js(source, `document.querySelector('.dv-tab-ghost-drag') === null && !document.body.hasAttribute('data-native-tab-drag-preview')`), true);
+    await js(source, `${originalTheme === null ? "document.documentElement.removeAttribute('data-theme')" : `document.documentElement.setAttribute('data-theme', ${JSON.stringify(originalTheme)})`}`);
+    await js(source, `(() => {const title = ${editor}.doc.root.props.title; title.delete(0, title.length); title.insert(${JSON.stringify(originalTitle)}, 0);})()`);
     console.log(
-      "PASS: dragging outside then pressing Escape keeps the tab in its window",
+      "PASS: one clean, safely rendered tab preview inside/outside the source; Escape removes both previews and keeps the tab",
     );
 
+    // Exercise a vector icon as well as the initial emoji, through the actual picker.
+    await js(source, `document.querySelector('.page-icon-button').click()`);
+    await until(() => js(source, `Boolean(document.querySelector('.page-icon-remove'))`), "Page icon picker did not open");
+    await js(source, `document.querySelector('.page-icon-remove').click()`);
+    await until(() => js(source, `Boolean(document.querySelector('.dv-active-tab .workspace-tab-content > svg'))`), "Removing the emoji did not restore the vector page icon");
     await beginDrag(source, noteId);
     mouse(source, "mouseMove", { x: 500, y: 400 });
     mouse(source, "mouseUp", { x: 500, y: 400 });

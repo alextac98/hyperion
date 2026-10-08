@@ -22,11 +22,18 @@ export const detachedTabRequest = z.object({
 export const tabDragRequest = z.object({
   token: z.string().uuid(),
   location: windowLocation,
-  rect: z.object({
-    x: z.number().int().min(0),
-    y: z.number().int().min(0),
+  preview: z.object({
     width: z.number().int().min(1).max(600),
     height: z.number().int().min(1).max(100),
+    title: z.string().max(4096),
+    icon: z.union([
+      z.object({ type: z.literal("emoji"), value: z.string().max(128) }),
+      z.object({ type: z.literal("svg"), value: z.string().max(16384) }),
+    ]).nullable(),
+    // Theme colors only: no CSS declarations or HTML can enter the preview.
+    background: z.string().max(128).regex(/^[#\w(),.%\s/-]+$/),
+    foreground: z.string().max(128).regex(/^[#\w(),.%\s/-]+$/),
+    accent: z.string().max(128).regex(/^[#\w(),.%\s/-]+$/),
   }),
 });
 

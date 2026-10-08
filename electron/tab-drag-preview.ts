@@ -3,15 +3,23 @@ import type { TabDragRequest } from "./window-session.js";
 
 export const TAB_DRAG_PREVIEW_TITLE = "Hyperion tab drag preview";
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, character => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]!);
+}
+
 // A DOM drag ghost is clipped at the edge of its renderer. This small,
 // non-interactive native window keeps the tab visible over the desktop too.
 export function createTabDragPreview(
-  source: BrowserWindow,
-  rect: TabDragRequest["rect"],
+  preview: TabDragRequest["preview"],
+  zoom: number,
 ) {
+  const width = Math.ceil(preview.width * zoom);
+  const height = Math.ceil(preview.height * zoom);
   const window = new BrowserWindow({
-    width: rect.width + 24,
-    height: rect.height + 24,
+    width: width + 24,
+    height: height + 24,
     title: TAB_DRAG_PREVIEW_TITLE,
     frame: false,
     transparent: true,
@@ -39,14 +47,25 @@ export function createTabDragPreview(
   window.once("closed", () => clearInterval(timer));
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   const ready = (async () => {
-    const image = await source.webContents.capturePage(rect);
-    if (window.isDestroyed()) return;
+    // Render tab content rather than capturing the live source. Dockview's
+    // focus/drop outlines and moving DOM ghost can overlap a screenshot.
+    const icon = !preview.icon ? "" : preview.icon.type === "emoji"
+      ? `<span class="tab-icon emoji">${escapeHtml(preview.icon.value)}</span>`
+      : `<img class="tab-icon" alt="" src="${escapeHtml(`data:image/svg+xml,${encodeURIComponent(preview.icon.value)}`)}">`;
     const html = `<!doctype html><html><head>
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">
       <style>html,body{margin:0;background:transparent;overflow:hidden}
-      img{display:block;margin:8px;width:${rect.width}px;height:${rect.height}px;box-sizing:border-box;
-      border:2px solid #4664ed;border-radius:7px;box-shadow:0 3px 9px #0004;opacity:.96}</style>
-      </head><body><img alt="Moving tab" src="${image.toDataURL()}"></body></html>`;
+      .tab{display:flex;align-items:center;gap:${8 * zoom}px;margin:8px;padding:0 ${10 * zoom}px;
+      width:${width}px;height:${height}px;box-sizing:border-box;overflow:hidden;
+      font:${12 * zoom}px ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      border:2px solid;border-radius:7px;box-shadow:0 3px 9px #0004;opacity:.96}
+      .tab-icon{width:${14 * zoom}px;height:${14 * zoom}px;flex:none}
+      .emoji{font-size:${14 * zoom}px;line-height:1;font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif}
+      .tab-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .tab-close{flex:none;margin-left:auto;font-size:${16 * zoom}px;opacity:.65}</style>
+      </head><body><div class="tab" style="background:${escapeHtml(preview.background)};color:${escapeHtml(preview.foreground)};border-color:${escapeHtml(preview.accent)}">
+      ${icon}<span class="tab-title">${escapeHtml(preview.title)}</span><span class="tab-close" aria-hidden="true">×</span>
+      </div></body></html>`;
     await window.loadURL(
       `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
     );

@@ -63,6 +63,31 @@ type Props = {
 };
 export type WorkspaceLayoutHandle = { placeTab: (id: string, target: TabDropTarget) => void };
 
+function tabPreview(element: HTMLElement, title: string): TabDragRequest["preview"] {
+  const box = element.getBoundingClientRect();
+  const style = getComputedStyle(element);
+  const content = element.querySelector(".workspace-tab-content");
+  const emoji = content?.querySelector(".page-icon-glyph");
+  const svg = content?.querySelector<SVGElement>(":scope > svg");
+  let icon: TabDragRequest["preview"]["icon"] = null;
+  if (emoji) icon = { type: "emoji", value: (emoji.textContent ?? "").slice(0, 128) };
+  else if (svg) {
+    const copy = svg.cloneNode(true) as SVGElement;
+    copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    copy.style.color = getComputedStyle(svg).color;
+    icon = { type: "svg", value: copy.outerHTML };
+  }
+  return {
+    width: Math.max(1, Math.min(600, Math.round(box.width))),
+    height: Math.max(1, Math.min(100, Math.round(box.height))),
+    title: title.slice(0, 4096),
+    icon,
+    background: style.getPropertyValue("--bg").trim(),
+    foreground: style.getPropertyValue("--text").trim(),
+    accent: style.getPropertyValue("--accent").trim(),
+  };
+}
+
 function tabStrip(group: HTMLElement, viewport: HTMLElement) {
   const header = group.querySelector<HTMLElement>(".dv-tabs-and-actions-container");
   if (!header) return null;
@@ -661,13 +686,9 @@ export function WorkspaceLayout({ ref, ...props }: Props) {
             const token = crypto.randomUUID();
             draggedTab = { id: panel.id, pointerId, element, token };
             element.setPointerCapture?.(pointerId);
-            const box = element.getBoundingClientRect();
-            const x = Math.max(0, Math.round(box.x));
-            const y = Math.max(0, Math.round(box.y));
-            const width = Math.min(600, Math.round(Math.min(box.right, window.innerWidth) - x));
-            const height = Math.min(100, Math.round(Math.min(box.bottom, window.innerHeight) - y));
-            if (width > 0 && height > 0 && latest.current.onBeginTabDrag)
-              void latest.current.onBeginTabDrag({ token, location: latest.current.state.tabs.find(tab => tab.id === panel.id)!.location, rect: { x, y, width, height } }).then(visible => {
+            const tab = latest.current.state.tabs.find(tab => tab.id === panel.id);
+            if (tab && latest.current.onBeginTabDrag)
+              void latest.current.onBeginTabDrag({ token, location: tab.location, preview: tabPreview(element, latest.current.label(tab)) }).then(visible => {
                 if (visible && draggedTab?.token === token)
                   document.body.setAttribute("data-native-tab-drag-preview", "true");
               }).catch(() => { /* Dockview's in-window preview remains available. */ });
