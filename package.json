@@ -31,7 +31,7 @@
     "test:clipboard": "pnpm build:web && pnpm build:electron && node --test tests/clipboard-integration.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern dist-electron --ignore-pattern release",
     "test:updates": "pnpm build:web && pnpm build:electron && node scripts/run-electron-test.mjs tests/update-preview-smoke.mjs",
-    "test:integration": "pnpm build:web && pnpm build:electron && node --test tests/electron-test-runner.test.mjs && node scripts/run-electron-test.mjs && node --test tests/clipboard-integration.test.mjs && node scripts/run-electron-test.mjs tests/blocks-smoke.mjs && node scripts/run-electron-test.mjs tests/block-drag-smoke.mjs && node scripts/run-electron-test.mjs tests/columns-smoke.mjs && node scripts/run-electron-test.mjs tests/meeting-smoke.mjs && node scripts/run-electron-test.mjs tests/vault-setup-smoke.mjs && node scripts/run-electron-test.mjs tests/feedback-smoke.mjs",
+    "test:integration": "pnpm build:web && pnpm build:electron && node --test tests/electron-test-runner.test.mjs tests/capture-page.test.mjs && node scripts/run-electron-test.mjs && node --test tests/clipboard-integration.test.mjs && node scripts/run-electron-test.mjs tests/blocks-smoke.mjs && node scripts/run-electron-test.mjs tests/block-drag-smoke.mjs && node scripts/run-electron-test.mjs tests/columns-smoke.mjs && node scripts/run-electron-test.mjs tests/meeting-smoke.mjs && node scripts/run-electron-test.mjs tests/vault-setup-smoke.mjs && node scripts/run-electron-test.mjs tests/feedback-smoke.mjs",
     "check:web": "node scripts/check-types.mjs",
     "format": "prettier --write app blocks scripts tests docs package.json tsconfig.json",
     "test:app": "node scripts/test-app.mjs",
