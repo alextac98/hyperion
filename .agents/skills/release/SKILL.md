@@ -43,6 +43,7 @@ current version numbers, schema versions, or platform lists into this skill.
   `pnpm test` already includes the migration suite through `test:desktop`.
   Use `pnpm test:migrations` for targeted diagnosis or reruns after migration
   changes, rather than counting it as independent extra coverage.
+
 - Inspect migration assertions as well as their exit status. Verify older
   supported schemas and skipped-version upgrades, preservation of documents,
   attachments and history, pre-upgrade backups, integrity/foreign-key checks,
@@ -78,6 +79,16 @@ just commit titles. Produce user-facing release notes grouped into features,
 fixes, breaking changes, and upgrade/data changes as applicable. Separate
 internal maintenance from user-visible behavior. Cite relevant PRs or files,
 explain removed behavior and required user actions, and identify known issues.
+
+Compare the README screenshot with the candidate's interface. When significant
+UI changes make it outdated (for example, navigation, tabs, toolbars, or page
+layout), refresh the referenced image during release preparation. Capture the
+running candidate with synthetic notes in a disposable vault/profile; never use
+personal data or fabricate UI. Inspect the image for readable text, representative
+content, and transient menus, dialogs, loading states, or errors. Update the
+README image description if needed, and include the screenshot in the preparation
+diff and validation evidence. Keep the current image when it still represents the
+interface accurately.
 
 Summarize release risk with concrete evidence: affected paths, tests that cover
 them, and remaining gaps (for example, power loss or unavailable platform tests).
