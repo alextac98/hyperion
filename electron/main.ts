@@ -577,14 +577,15 @@ function registerDesktopHandlers() {
     });
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
-  handle(channels.openVault, async () => {
+  handle(channels.openVault, async (event) => {
     const result = await dialog.showOpenDialog({
       title: "Open an existing Hyperion vault folder",
       properties: ["openDirectory"],
     });
-    return result.canceled || !result.filePaths[0]
-      ? null
-      : databaseInstance().openVault(result.filePaths[0]);
+    if (result.canceled || !result.filePaths[0]) return null;
+    const vault = databaseInstance().openVault(result.filePaths[0]);
+    broadcast("hyperion:repository-changed", { operation: "openVault", vaultId: String(vault.id) }, senderWindow(event));
+    return vault;
   });
   handle(channels.showVaultFolder, async (event) => {
     const error = await shell.openPath(

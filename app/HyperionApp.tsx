@@ -622,6 +622,17 @@ export default function HyperionApp() {
           if (!disposed) timer = setTimeout(refresh, 100);
           return;
         }
+        const localTitles = new Map(readNotes().map(note => [note.id, note.title]));
+        for (const note of notes) {
+          const pendingTitle = titleTimers.current[note.id];
+          // Preserve the alias baseline while a local rename is still settling.
+          if (pendingTitle && localTitles.get(note.id) === note.title) continue;
+          if (pendingTitle) {
+            clearTimeout(pendingTitle);
+            delete titleTimers.current[note.id];
+          }
+          stableTitles.current[note.id] = note.title;
+        }
         setNotes(notes);
         setTemplates(templates);
         setVaults(vaults);
@@ -629,12 +640,12 @@ export default function HyperionApp() {
       }).catch(error => { if (!disposed) setDataError(errorMessage(error)); });
     };
     const unsubscribe = desktop.onRepositoryChanged(request => {
-      if (request.vaultId !== vaultId && !["createVault", "updateVault", "importVault"].includes(request.operation)) return;
+      if (request.vaultId !== vaultId && !["createVault", "updateVault", "importVault", "openVault", "closeVault", "deleteVault"].includes(request.operation)) return;
       clearTimeout(timer);
       timer = setTimeout(refresh, 50);
     });
     return () => { disposed = true; clearTimeout(timer); unsubscribe(); };
-  }, [vaultId, loading, vaultReady, setNotes, setTemplates]);
+  }, [vaultId, loading, vaultReady, setNotes, setTemplates, readNotes]);
 
   const detachTab = desktop ? (tab: WorkspaceTab, position?: { x: number; y: number }) => {
     void dataOperation(async () => {

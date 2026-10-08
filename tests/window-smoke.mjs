@@ -457,6 +457,37 @@ async function run() {
       "PASS: both windows reload their own tab sessions independently",
     );
 
+    // A remote rename of an unmounted page must become the next alias baseline.
+    const aliasId = notes.find(note => note.id !== noteId && note.id !== otherId).id;
+    assert.equal(await js(source, `Array.from(document.querySelectorAll('doc-title')).some(title => title.doc?.id === ${JSON.stringify(aliasId)})`), false);
+    const originalAliasTitle = await js(destination, `(async () => {
+      const data = window.hyperionDesktop;
+      const note = (await data.repositoryExecute({operation:'listNotes',vaultId:${JSON.stringify(vaultId)}})).find(note => note.id === ${JSON.stringify(aliasId)});
+      await data.repositoryExecute({operation:'saveNote',note:{...note,title:'Remote rename',aliases:[...note.aliases,note.title],updatedAt:new Date().toISOString()}});
+      return note.title;
+    })()`);
+    await until(
+      () => js(source, `document.querySelector('[data-page-id="'+${JSON.stringify(aliasId)}+'"] .organizer-page-link')?.textContent.includes('Remote rename')`),
+      "Remote title did not reach the unmounted page",
+    );
+    await js(source, `document.querySelector('[data-page-id="'+${JSON.stringify(aliasId)}+'"] .organizer-page-link').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:300,clientY:250}))`);
+    await js(source, `Array.from(document.querySelectorAll('[role=menuitem]')).find(button => button.textContent.trim() === 'Rename').click()`);
+    await until(() => js(source, `Boolean(document.querySelector('input[aria-label="Page title"]'))`), "Rename dialog did not open");
+    await js(source, `(() => {
+      const input = document.querySelector('input[aria-label="Page title"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Local rename');
+      input.dispatchEvent(new Event('input',{bubbles:true}));
+    })()`);
+    await js(source, `document.querySelector('input[aria-label="Page title"]').closest('form').requestSubmit()`);
+    let renamed;
+    await until(async () => {
+      renamed = (await js(source, `window.hyperionDesktop.repositoryExecute({operation:'listNotes',vaultId:${JSON.stringify(vaultId)}})`)).find(note => note.id === aliasId);
+      return renamed.title === 'Local rename';
+    }, "Local rename did not save");
+    assert.ok(renamed.aliases.includes('Remote rename'), "The remote title must be retained as an alias after a local rename");
+    assert.equal(renamed.aliases.filter(alias => alias === originalAliasTitle).length, 1, "The older alias must not be duplicated");
+    console.log("PASS: renaming a remotely updated, unmounted page preserves its latest title as an alias");
+
     const originalStorage = await js(
       destination,
       "window.hyperionDesktop.storageInfo()",
@@ -519,7 +550,40 @@ async function run() {
       (await js(source, "window.hyperionDesktop.windowSession()")).vaultId,
       "other-vault",
     );
+    // A page window on vault A changes the registry while the primary stays on B.
+    const registryDirectory = join(directory, "registry-only-vault");
+    await js(destination, `(async () => {
+      const data = window.hyperionDesktop;
+      const vault = (await data.repositoryExecute({operation:'listVaults'})).find(vault => vault.id === ${JSON.stringify(vaultId)});
+      const preferences = await data.repositoryExecute({operation:'getPreferences',vaultId:vault.id});
+      await data.repositoryExecute({operation:'createVault',directory:${JSON.stringify(registryDirectory)},vault:{...vault,id:'registry-only',name:'Registry-only vault'},preferences:{...preferences,vaultId:'registry-only'},notes:[],collections:[],documents:{}});
+    })()`);
     await js(source, "document.querySelector('.workspace-button').click()");
+    const registryVisible = () => js(source, `Array.from(document.querySelectorAll('.vault-menu button strong')).some(name => name.textContent === 'Registry-only vault')`);
+    await until(registryVisible, "A globally created vault did not reach the primary");
+    await js(destination, `window.hyperionDesktop.repositoryExecute({operation:'closeVault',vaultId:'registry-only'})`);
+    await until(async () => !(await registryVisible()), "A closed vault remained in another vault's menu");
+    await js(source, `window.__openVaultEvents = []; window.__stopVaultEvents = window.hyperionDesktop.onRepositoryChanged(request => {if(request.operation === 'openVault') window.__openVaultEvents.push(request)}); true`);
+    const showOpenDialog = dialog.showOpenDialog;
+    try {
+      dialog.showOpenDialog = async () => ({canceled:true,filePaths:[]});
+      assert.equal(await js(destination, `window.hyperionDesktop.openVault()`), null);
+      dialog.showOpenDialog = async () => ({canceled:false,filePaths:[join(directory, 'missing-vault')]});
+      await assert.rejects(js(destination, `window.hyperionDesktop.openVault()`), /existing vault folder/);
+      await wait(100);
+      assert.equal(await js(source, `window.__openVaultEvents.length`), 0, "Cancelled or failed opens must not announce a vault");
+      dialog.showOpenDialog = async () => ({canceled:false,filePaths:[registryDirectory]});
+      assert.equal((await js(destination, `window.hyperionDesktop.openVault()`)).id, 'registry-only');
+    } finally {
+      dialog.showOpenDialog = showOpenDialog;
+    }
+    await until(registryVisible, "Opening an existing vault did not refresh another vault's menu");
+    assert.equal(await js(source, `window.__openVaultEvents.length`), 1);
+    await js(source, `window.__stopVaultEvents(); true`);
+    await js(destination, `window.hyperionDesktop.repositoryExecute({operation:'deleteVault',id:'registry-only',vaultId:'registry-only'})`);
+    await until(async () => !(await registryVisible()), "A deleted vault remained in another vault's menu");
+    assert.equal((await js(source, "window.hyperionDesktop.windowSession()")).vaultId, 'other-vault');
+    console.log("PASS: close, open, and delete refresh vault menus across different vaults; failed/cancelled opens emit no change");
     await js(
       source,
       `Array.from(document.querySelectorAll('.vault-menu button')).find(button=>!button.textContent.includes('Other vault') && button.querySelector('strong')).click()`,
