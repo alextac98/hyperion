@@ -1,9 +1,11 @@
 import type { KnowledgeRepository } from "../lib/local-database";
 import type { HyperionDataApi } from "./desktop-api";
+import type { WindowSession } from "../../electron/window-session";
 import { createSqliteEditorStorage } from "./sqlite-editor-storage";
 import { SqliteKnowledgeRepository } from "./sqlite-repository";
 export type { LocalAiStatus, StorageInfo } from "./desktop-api";
 export const desktop = window.hyperionDesktop;
+export let desktopWindow: WindowSession | undefined;
 let data: HyperionDataApi | undefined = desktop;
 let browser:
   | Awaited<
@@ -27,6 +29,7 @@ export function requireDataService() {
 export let knowledgeRepository: KnowledgeRepository =
   new SqliteKnowledgeRepository(data!);
 export async function initializeRuntime() {
+  if (desktop) desktopWindow = await desktop.windowSession();
   if (!desktop && import.meta.env.DEV && window.hyperionBrowserDevelopment) {
     const { connectBrowserDevelopment } = await import("./browser-development");
     browser = await connectBrowserDevelopment(

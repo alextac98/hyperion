@@ -11,7 +11,7 @@ import { usePageContext } from "../app/hooks/usePageContext";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
-import { act, StrictMode, useState } from "react";
+import { act, StrictMode, useState, useLayoutEffect } from "react";
 import { createBlankNote } from "../app/lib/local-database";
 import { reconcilePageLinks } from "../app/lib/page-links";
 import { movePage, patchPage } from "../app/application/page-operations";
@@ -137,6 +137,26 @@ test("navigation history bounds retained visits", () => {
   let count = 0;
   while (history.move("back", () => true)) count++;
   assert.equal(count, 99);
+});
+
+test("mouse Back uses the location committed before passive effects run", async () => {
+  let visit!: () => void;
+  function Probe() {
+    const [location, setLocation] = useState<NavigationLocation>({ view: "note", id: "a" });
+    visit = () => setLocation({ view: "note", id: "b" });
+    useMouseNavigation({ vaultId: "vault", loading: false, location,
+      isBlocked: () => false, isAvailable: () => true, onNavigate: setLocation });
+    useLayoutEffect(() => {
+      if (location.view === "note" && location.id === "b")
+        document.body.dispatchEvent(new dom.window.MouseEvent("auxclick", { button: 3, bubbles: true, cancelable: true }));
+    }, [location]);
+    return <span>{location.view === "note" ? location.id : location.view}</span>;
+  }
+  const view = await mount(<Probe />);
+  try {
+    await act(async () => visit());
+    assert.equal(view.host.textContent, "a", "Back must include the committed visit before another input arrives");
+  } finally { await view.unmount(); }
 });
 
 test("mouse navigation handles thumb buttons, native commands, blocking, vault resets and cleanup", async () => {
@@ -1071,7 +1091,6 @@ test("nested note groups follow expand and collapse without changing page select
 
 // Workspace tabs use document identity, independently of mutable page titles.
 import { initialTabs, locationKey, restoreTabs, tabsReducer } from "../app/application/workspace-tabs";
-import { rememberRestoredPage } from "../app/application/restore-navigation";
 
 test("workspace tabs open beside active, deduplicate and return to most recent on close", () => {
   const a = { view: "note", id: "a" } as const;
@@ -1104,7 +1123,8 @@ test("workspace tabs restore only available unique destinations and lazily visit
   assert.equal(pruned.tabs[0].visited, true);
 });
 
-import { useWorkspaceTabs } from "../app/hooks/useWorkspaceTabs";
+import { useWorkspaceTabs, windowTabsKey, rememberRestoredPage } from "../app/hooks/useWorkspaceTabs";
+import type { WindowSession } from "../electron/window-session";
 import { canSplitPane, layoutMinimum, layoutPanes, restoreLayout } from "../app/application/workspace-layout";
 
 function splitSession() {
@@ -1210,6 +1230,51 @@ test("pane focus and close preserve layout and choose a remaining tab in the sam
   assert.equal(tabsReducer(restored, { type: "close", id: ids[1] }).active, ids[0], "unvisited siblings are preferred over another pane on close");
 });
 
+test("detached workspaces start with only the transferred tab and persist independently of the primary window", async () => {
+  localStorage.clear();
+  const session: WindowSession = { id: "detached", kind: "page", vaultId: "vault", location: { view: "note", id: "transferred" } };
+  let source: ReturnType<typeof useWorkspaceTabs>;
+  let destination: ReturnType<typeof useWorkspaceTabs>;
+  function Probe() {
+    source = useWorkspaceTabs("vault", true);
+    destination = useWorkspaceTabs("vault", true, session);
+    return null;
+  }
+  const ui = await mount(<Probe />);
+  try {
+    await act(async () => {
+      source.restore("vault", () => true, { view: "home" });
+      destination.restore("vault", () => true, { view: "home" });
+    });
+    assert.deepEqual(destination!.state.tabs.map(tab => tab.location), [session.location]);
+    await act(async () => source.open({ view: "note", id: "source-only" }));
+    await act(async () => destination.open({ view: "note", id: "destination-only" }));
+    assert.equal(windowTabsKey("vault", { ...session, id: "main" }), "hyperion:tabs:vault");
+    assert.deepEqual(JSON.parse(localStorage.getItem(windowTabsKey("vault"))!).locations,
+      [{ view: "home" }, { view: "note", id: "source-only" }]);
+    assert.deepEqual(JSON.parse(localStorage.getItem(windowTabsKey("vault", session))!).locations,
+      [session.location, { view: "note", id: "destination-only" }]);
+    await act(async () => destination.restore("vault", () => true, { view: "home" }));
+    assert.deepEqual(destination!.location, { view: "note", id: "destination-only" }, "reload restores this window's current session");
+    await act(async () => destination.restore("vault", location => location.view !== "note", { view: "home" }));
+    assert.deepEqual(destination!.location, { view: "home" }, "missing transferred pages recover to Home");
+    rememberRestoredPage("vault", "restored-copy", session);
+    await act(async () => destination.restore("vault", () => true, { view: "home" }));
+    assert.deepEqual(destination!.location, { view: "note", id: "restored-copy" }, "restoring a copy opens it after reload in the requesting window");
+    assert.equal(JSON.parse(localStorage.getItem(windowTabsKey("vault"))!).active, locationKey({ view: "note", id: "source-only" }), "restore must preserve the other window's active tab");
+    const { ids, layout } = splitSession();
+    localStorage.setItem(windowTabsKey("vault", session), JSON.stringify({ version: 2, locations: ids.map(id => JSON.parse(id)), active: ids[2], layout }));
+    rememberRestoredPage("vault", "split-restored-copy", session);
+    await act(async () => destination.restore("vault", () => true, { view: "home" }));
+    const copyId = locationKey({ view: "note", id: "split-restored-copy" });
+    assert.equal(destination!.state.active, copyId);
+    assert.equal(destination!.state.layout?.activeGroup, "top");
+    assert.deepEqual(layoutPanes(destination!.state.layout)[1].views, [ids[2], copyId]);
+    assert.equal(layoutPanes(destination!.state.layout)[1].activeView, copyId);
+    assert.equal(JSON.parse(localStorage.getItem(windowTabsKey("vault"))!).active, locationKey({ view: "note", id: "source-only" }), "a split restore must preserve the primary window's session");
+  } finally { await ui.unmount(); }
+});
+
 test("workspace sessions stay isolated by vault and recover from unavailable destinations", async () => {
   localStorage.clear();
   let workspace: ReturnType<typeof useWorkspaceTabs>;
@@ -1254,6 +1319,12 @@ test("docking preserves mounted page state, tab order, keyboard moves and close 
   });
   const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
   const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+  const bounds = HTMLElement.prototype.getBoundingClientRect;
+  HTMLElement.prototype.getBoundingClientRect = function () {
+    return this.classList.contains("workspace-layout-viewport")
+      ? new dom.window.DOMRect(0, 0, 1100, 800)
+      : bounds.call(this);
+  };
   Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get() { return 1100; } });
   Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get() { return 800; } });
   let ui: Awaited<ReturnType<typeof mount>> | undefined;
@@ -1267,6 +1338,7 @@ test("docking preserves mounted page state, tab order, keyboard moves and close 
       const [current, dispatch] = useReducer(tabsReducer, state);
       state = current;
       return <WorkspaceLayout state={current} dispatch={dispatch} disabled={false}
+        onDetach={() => { throw new Error("An in-window drop must not detach a tab"); }}
         canOpenPage={page => page.vaultId === "vault"}
         label={tab => tab.location.view === "note" ? tab.location.id : "Home"}
         icon={() => null}
@@ -1359,6 +1431,7 @@ test("docking preserves mounted page state, tab order, keyboard moves and close 
     } finally { source.remove(); }
   } finally {
     await ui?.unmount();
+    HTMLElement.prototype.getBoundingClientRect = bounds;
     globals.forEach((name, index) => {
       if (previous[index]) Object.defineProperty(globalThis, name, previous[index]!);
       else Reflect.deleteProperty(globalThis, name);

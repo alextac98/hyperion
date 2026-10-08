@@ -37,7 +37,8 @@
     "test:app": "node scripts/test-app.mjs",
     "test:block-drag": "pnpm build:web && pnpm build:electron && node scripts/run-electron-test.mjs tests/block-drag-smoke.mjs",
     "test:columns": "pnpm build:web && pnpm build:electron && node scripts/run-electron-test.mjs tests/columns-smoke.mjs",
-    "test:blocks": "node --test tests/blocks.test.mjs tests/meeting-audio.test.mjs"
+    "test:blocks": "node --test tests/blocks.test.mjs tests/meeting-audio.test.mjs",
+    "test:windows": "pnpm build:web && pnpm build:electron && node scripts/run-electron-test.mjs tests/window-smoke.mjs"
   },
   "dependencies": {
     "@blocksuite/affine": "^0.22.4",

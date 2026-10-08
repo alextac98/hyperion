@@ -1,7 +1,7 @@
-import { rememberRestoredPage } from "../application/restore-navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageComparison, PageRevision, PageSnapshot, RevisionCapture } from "../platform/desktop-api";
-import { requireDataService } from "../platform/runtime";
+import { requireDataService, desktopWindow } from "../platform/runtime";
+import { rememberRestoredPage } from "../application/restore-navigation";
 import { previewRevision, stopEditorWorkspaces } from "../editor/editor-client";
 import { dataOperation } from "../lib/data-operations";
 import { PageDiffViewer } from "./PageDiffViewer";
@@ -95,7 +95,7 @@ export function PageHistoryPreview({ comparison, onClose }: { comparison: PageCo
       await dataOperation(async () => {
         const note = await requireDataService().repositoryExecute<{ id: string }>({ operation: "restoreRevision", vaultId: revision.vaultId, revisionId: revision.id, asCopy });
         await stopEditorWorkspaces();
-        rememberRestoredPage(revision.vaultId, note.id);
+        rememberRestoredPage(revision.vaultId, note.id, desktopWindow);
         window.location.reload();
       });
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); setWorking(false); }

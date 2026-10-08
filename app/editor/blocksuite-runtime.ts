@@ -248,8 +248,8 @@ export async function importEditorDocuments(
 
 export async function removeEditorDocument(vaultId: string, noteId: string) {
   const workspace = await getVaultWorkspace(vaultId);
-  if (workspace.getDoc(noteId)) workspace.removeDoc(noteId);
   await platformRuntime.deleteEditorDocument(vaultId, noteId);
+  if (workspace.getDoc(noteId)) workspace.removeDoc(noteId);
   storePromises.delete(`${vaultId}:${noteId}`);
 }
 

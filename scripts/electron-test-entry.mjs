@@ -12,8 +12,11 @@ app.setVersion(manifest.version);
 
 // The application quits when its last window closes on Linux/Windows. Keep the
 // test alive for its remaining assertions and cleanup; tests call app.exit()
-// explicitly with their result. Otherwise a failed assertion can exit with 0.
-app.on("before-quit", (event) => event.preventDefault());
+// explicitly with their result. Tests of the actual quit handshake opt in once
+// their will-quit assertions are installed. Otherwise a failure can exit with 0.
+app.on("before-quit", (event) => {
+  if (process.env.HYPERION_TEST_QUIT_READY !== "1") event.preventDefault();
+});
 
 try {
   await import(

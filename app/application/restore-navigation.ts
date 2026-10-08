@@ -1,11 +1,22 @@
 import { uiStorage } from "../lib/ui-storage";
 import { restoreTabs, tabsReducer } from "./workspace-tabs";
 import { layoutPanes } from "./workspace-layout";
+import type { WindowSession } from "../../electron/window-session";
+
+export function windowTabsKey(vaultId: string, session?: WindowSession) {
+  return session && session.id !== "main"
+    ? `hyperion:tabs:${session.id}:${vaultId}`
+    : `hyperion:tabs:${vaultId}`;
+}
 
 /** A restore reload must select its result, even when a tab session is saved. */
-export function rememberRestoredPage(vaultId: string, noteId: string) {
+export function rememberRestoredPage(
+  vaultId: string,
+  noteId: string,
+  session?: WindowSession,
+) {
   const location = { view: "note", id: noteId } as const;
-  const key = `hyperion:tabs:${vaultId}`;
+  const key = windowTabsKey(vaultId, session);
   const state = tabsReducer(
     restoreTabs(uiStorage.getItem(key), () => true, location),
     { type: "open", location },

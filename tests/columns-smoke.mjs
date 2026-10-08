@@ -58,13 +58,24 @@ void (async () => {
     );
     const fixture = await js(`(${columnsScenarios.toString()})()`);
     console.log(
-      "PASS: columns insert, reorder by pointer/menu/keyboard, preserve content on removal, unwrap, delete, undo/redo and stack in narrow layouts",
+      "PASS: columns reorder inside boxes, in gaps, whitespace and outer edges; removal collapses two columns without losing content; shared grip unwrap/delete and undo/redo work",
     );
     await js(`(async () => {
       const layout = document.querySelector('[data-block-id="${fixture.id}"]');
       layout.scrollIntoView({block:'center'});
       await new Promise(requestAnimationFrame);
-      layout.querySelector('.columns-layout-menu').click();
+      const drag = document.querySelector('affine-drag-handle-widget');
+      drag.std.selection.clear();
+      const rect = layout.getBoundingClientRect();
+      for (let index = 0; index < 2; index++) {
+        layout.dispatchEvent(new PointerEvent('pointermove', {
+          bubbles:true, composed:true,
+          clientX:rect.left+40, clientY:rect.top+12,
+        }));
+        await new Promise(requestAnimationFrame);
+      }
+      if (drag.anchorBlockId.value !== '${fixture.id}') throw new Error('Shared layout grip is missing');
+      drag.dragHandleGrabber.click();
       await new Promise(requestAnimationFrame);
     })()`);
     await writeFile(

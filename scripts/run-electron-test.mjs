@@ -8,6 +8,7 @@ const child = spawn(
   [
     fileURLToPath(new URL("./electron-test-entry.mjs", import.meta.url)),
     process.argv[2] ?? "tests/electron-smoke.mjs",
+    ...process.argv.slice(3),
   ],
   { env: environment, stdio: "inherit" },
 );

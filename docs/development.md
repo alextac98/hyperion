@@ -164,6 +164,13 @@ its API tests. Server provisioning and agent process supervision are separate.
   publication (including same-turn history/close barriers), and React interactions in jsdom. Native dialog focus containment
   still requires a browser check; the DOM tests verify the modal API contract.
 - `pnpm check:desktop`: checks the native boundary and data implementation types.
+- `pnpm test:windows`: builds and runs native tab detachment and drag previews,
+  cancellation, split panes, editor synchronization, page-window layout and return,
+  window sessions, backups, and save-on-close/quit checks. Closing the primary
+  saves and closes its page windows; a failed save keeps the whole set open.
+  On headless Linux, use `xvfb-run -a pnpm test:windows`. The tests use a temporary
+  vault and profile. Storage changes, permanent deletion, and version replacement
+  require closing other windows displaying that vault first.
 - `pnpm test:blocks`: checks custom block contracts, migrations, references and retirement.
 - `pnpm test:migrations`: runs the frozen-database upgrade, preservation and rollback suite.
 - `pnpm test:desktop`: validates worktree isolation, development reset and renderer URL handling, plus

@@ -1,8 +1,8 @@
-import { rememberRestoredPage } from "../application/restore-navigation";
 import { Dialog } from "./Dialog";
 import { useEffect, useRef, useState } from "react";
 import type { PageRevision } from "../platform/desktop-api";
-import { requireDataService } from "../platform/runtime";
+import { requireDataService, desktopWindow } from "../platform/runtime";
+import { rememberRestoredPage } from "../application/restore-navigation";
 import { previewRevision, stopEditorWorkspaces } from "../editor/editor-client";
 import { dataOperation } from "../lib/data-operations";
 
@@ -42,7 +42,7 @@ export function HistoryDialog({ vaultId, noteId, onClose }: { vaultId: string; n
     await dataOperation(async () => {
       const note = await requireDataService().repositoryExecute<{ id: string }>({ operation: "restoreRevision", vaultId, revisionId: selected.id, asCopy });
       await stopEditorWorkspaces();
-      rememberRestoredPage(vaultId, note.id);
+      rememberRestoredPage(vaultId, note.id, desktopWindow);
       window.location.reload();
     });
   });

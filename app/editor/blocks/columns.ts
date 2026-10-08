@@ -44,9 +44,12 @@ export function moveColumn(
 }
 
 export function removeColumn(store: Store, columns: BlockModel, id: string) {
-  if (store.readonly || columns.children.length <= MIN_COLUMNS) return;
+  if (store.readonly) return;
   const index = columns.children.findIndex((column) => column.id === id);
   if (index < 0) return;
+  // Removing either of the last two columns returns their content to the page.
+  if (columns.children.length <= MIN_COLUMNS)
+    return unwrapColumns(store, columns);
   const column = columns.children[index];
   const neighbor = columns.children[index - 1] ?? columns.children[index + 1];
   // Move complete subtrees before deleting the empty container. IDs, rich text,
@@ -68,6 +71,14 @@ export function unwrapColumns(store: Store, columns: BlockModel) {
   const parent = store.getParent(columns);
   if (store.readonly || !parent) return;
   const children = columns.children.flatMap((column) => [...column.children]);
+  const index = parent.children.indexOf(columns);
+  let focus =
+    children[0]?.id ??
+    (parent.children[index + 1] ?? parent.children[index - 1])?.id;
+  const needsParagraph =
+    !children.length &&
+    parent.children.length === 1 &&
+    parent.flavour === "affine:note";
   store.transact(() => {
     // Move each contiguous group separately: the native cross-parent move
     // advances its insertion index once per group, not by the group's size.
@@ -76,6 +87,8 @@ export function unwrapColumns(store: Store, columns: BlockModel) {
         store.moveBlocks([...column.children], parent, columns, true);
     }
     store.deleteBlock(columns);
+    if (needsParagraph)
+      focus = store.addBlock("affine:paragraph", { text: new Text() }, parent);
   });
-  return children[0]?.id;
+  return focus;
 }

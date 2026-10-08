@@ -37,6 +37,11 @@ export async function columnsScenarios() {
   );
   check(columnIds.length === 2, "Insertion must create two columns");
   check(
+    !view().querySelector(".columns-layout-menu") &&
+      view().querySelectorAll(".columns-toolbar button").length === 1,
+    "Layout actions should only appear on the shared block grip",
+  );
+  check(
     columns.children.every((child) => !child.isPageBlock()),
     "Nested columns must not merge into the page title",
   );
@@ -164,8 +169,8 @@ export async function columnsScenarios() {
     count() === 2 &&
       [...document.querySelectorAll(".editor-action-menu button")].find(
         (button) => button.textContent === "Remove column (keep content)",
-      ).disabled,
-    "Minimum column count is not enforced",
+      ).disabled === false,
+    "Removing one of two columns must remain available",
   );
   document.querySelector(".editor-action-menu").dispatchEvent(
     new KeyboardEvent("keydown", {
@@ -379,8 +384,14 @@ export async function columnsScenarios() {
     "Column reorder lost keyboard focus",
   );
 
-  const dragColumn = async (sourceId, targetId, before, narrow = false) => {
-    if (narrow) view().style.width = "420px";
+  const dragColumn = async (
+    sourceId,
+    targetId,
+    before,
+    { narrow = false, region = "box" } = {},
+  ) => {
+    view().style.width = narrow ? "420px" : "600px";
+    await frame();
     await frame();
     const dataTransfer = new DataTransfer();
     const options = {
@@ -392,7 +403,7 @@ export async function columnsScenarios() {
     grip(sourceId).dispatchEvent(new DragEvent("dragstart", options));
     const target = view().querySelector(`[data-column-id="${targetId}"]`);
     const rect = target.getBoundingClientRect();
-    const point = narrow
+    let point = narrow
       ? {
           clientX: rect.left + 10,
           clientY: before ? rect.top + 2 : rect.bottom - 2,
@@ -401,8 +412,40 @@ export async function columnsScenarios() {
           clientX: before ? rect.left + 2 : rect.right - 2,
           clientY: rect.top + 10,
         };
-    target.dispatchEvent(new DragEvent("dragover", { ...options, ...point }));
-    target.dispatchEvent(new DragEvent("drop", { ...options, ...point }));
+    const grid = view().querySelector(".columns-grid");
+    const viewport = view().closest(".hyperion-blocksuite-viewport");
+    let destination = target;
+    if (region === "edge") {
+      point = narrow
+        ? {
+            clientX: rect.left + 10,
+            clientY: before ? rect.top - 8 : rect.bottom + 8,
+          }
+        : {
+            clientX: before ? rect.left - 24 : rect.right + 24,
+            clientY: rect.top + 10,
+          };
+      const bounds = viewport.getBoundingClientRect();
+      check(
+        point.clientX >= bounds.left && point.clientX <= bounds.right,
+        "Edge-drop fixture must remain inside the editor pane",
+      );
+      destination = viewport;
+    } else if (region === "gap") {
+      point.clientX = before ? rect.left - 12 : rect.right + 12;
+      destination = grid;
+    } else if (region === "whitespace") {
+      point.clientY = grid.getBoundingClientRect().bottom - 2;
+      check(
+        point.clientY > rect.bottom,
+        "Whitespace fixture must be below the shorter column",
+      );
+      destination = grid;
+    }
+    const over = new DragEvent("dragover", { ...options, ...point });
+    destination.dispatchEvent(over);
+    check(over.defaultPrevented, `Column drop was not accepted in ${region}`);
+    destination.dispatchEvent(new DragEvent("drop", { ...options, ...point }));
     grip(sourceId).dispatchEvent(new DragEvent("dragend", options));
     await view().updateComplete;
     view().style.removeProperty("width");
@@ -414,7 +457,7 @@ export async function columnsScenarios() {
     () => order()[0] === columnIds[0],
     "Pointer column reorder undo failed",
   );
-  await dragColumn(columnIds[0], columnIds[1], false, true);
+  await dragColumn(columnIds[0], columnIds[1], false, { narrow: true });
   check(order()[0] === columnIds[1], "Stacked column drag failed");
   store.undo();
   await until(
@@ -422,6 +465,84 @@ export async function columnsScenarios() {
     "Stacked column drag undo failed",
   );
   await view().updateComplete;
+
+  for (const [sourceId, targetId, before, options] of [
+    [columnIds[0], columnIds[1], false, { region: "edge" }],
+    [columnIds[1], columnIds[0], true, { region: "edge" }],
+    [columnIds[1], columnIds[0], true, { region: "whitespace" }],
+    [columnIds[0], columnIds[1], false, { narrow: true, region: "edge" }],
+  ]) {
+    await dragColumn(sourceId, targetId, before, options);
+    check(
+      order().join() === [...columnIds].reverse().join(),
+      `Column drag failed outside a box: ${JSON.stringify(options)}`,
+    );
+    store.undo();
+    await until(
+      () => order().join() === columnIds.join(),
+      "Outside-box column drag undo failed",
+    );
+    await view().updateComplete;
+  }
+
+  await add();
+  const gapColumnIds = order();
+  await dragColumn(columnIds[0], gapColumnIds[2], true, { region: "gap" });
+  check(
+    order().join() ===
+      [gapColumnIds[1], gapColumnIds[0], gapColumnIds[2]].join(),
+    "Dropping in the gap did not reorder columns",
+  );
+  store.undo();
+  await until(
+    () => order().join() === gapColumnIds.join(),
+    "Gap drag undo failed",
+  );
+  store.undo();
+  await until(() => count() === 2, "Gap fixture cleanup failed");
+  await view().updateComplete;
+
+  // A final drop outside the row must not reuse an earlier valid dragover.
+  const grid = view().querySelector(".columns-grid");
+  const gridBounds = grid.getBoundingClientRect();
+  const outsideOptions = {
+    bubbles: true,
+    cancelable: true,
+    dataTransfer: new DataTransfer(),
+    clientX: gridBounds.right - 2,
+    clientY: gridBounds.top + 10,
+  };
+  grip(columnIds[0]).dispatchEvent(new DragEvent("dragstart", outsideOptions));
+  grid.dispatchEvent(new DragEvent("dragover", outsideOptions));
+  await frame();
+  check(
+    view().querySelector('[data-drop="after"]'),
+    "Drop indicator is missing",
+  );
+  grid.dispatchEvent(
+    new DragEvent("drop", { ...outsideOptions, clientY: gridBounds.top - 40 }),
+  );
+  grip(columnIds[0]).dispatchEvent(new DragEvent("dragend", outsideOptions));
+  await frame();
+  check(
+    order().join() === columnIds.join() &&
+      !view().querySelector('[data-drop="after"]'),
+    "Dropping outside the row used a stale target",
+  );
+
+  const otherPane = document.createElement("div");
+  otherPane.className = "hyperion-blocksuite-viewport";
+  document.body.append(otherPane);
+  grip(columnIds[0]).dispatchEvent(new DragEvent("dragstart", outsideOptions));
+  const foreignDrop = new DragEvent("dragover", outsideOptions);
+  otherPane.dispatchEvent(foreignDrop);
+  otherPane.dispatchEvent(new DragEvent("drop", outsideOptions));
+  grip(columnIds[0]).dispatchEvent(new DragEvent("dragend", outsideOptions));
+  otherPane.remove();
+  check(
+    !foreignDrop.defaultPrevented && order().join() === columnIds.join(),
+    "Column drag escaped into another editor pane",
+  );
 
   const canceled = new DataTransfer();
   grip(columnIds[0]).dispatchEvent(
@@ -442,6 +563,17 @@ export async function columnsScenarios() {
     order().join() === columnIds.join() && !drag.dragging,
     "Canceling a column drag changed content or started block dragging",
   );
+  const idleDrag = new DragEvent("dragover", outsideOptions);
+  let reachedGrid = false;
+  grid.addEventListener(
+    "dragover",
+    () => {
+      reachedGrid = true;
+    },
+    { once: true },
+  );
+  grid.dispatchEvent(idleDrag);
+  check(reachedGrid, "Column drag interception remained active after dragend");
 
   // Remove a chosen first column without losing content or reversing reading order.
   await add();
@@ -468,10 +600,99 @@ export async function columnsScenarios() {
   const layoutIndex = layoutParent.children.findIndex(
     (child) => child.id === id,
   );
-  await menuAction(
-    view().querySelector(".columns-layout-menu"),
-    "Unwrap columns",
+  // Either of the last two columns can be removed without trapping a layout.
+  for (const columnId of columnIds) {
+    await menuAction(grip(columnId), "Remove column (keep content)");
+    check(
+      !model() && columnIds.every((column) => !store.getModelById(column)),
+      "Two-column removal left a layout or empty column container",
+    );
+    check(
+      layoutParent.children
+        .slice(layoutIndex, layoutIndex + contentIds.length)
+        .map((child) => child.id)
+        .join() === contentIds.join() &&
+        store.getParent(nested).id === list &&
+        store.getModelById(heading).props.text.yText.toDelta()[0].attributes
+          .bold &&
+        store.getModelById(table).props.cells["row:column"].text.toString() ===
+          "Column cell",
+      "Two-column removal lost content, formatting or reading order",
+    );
+    store.undo();
+    await until(
+      () => view()?.querySelector(".column-grip"),
+      "Column removal undo failed",
+    );
+    check(
+      order().join() === columnIds.join() &&
+        store.getParent(table).id === columnIds[1],
+      "One undo did not restore the complete two-column layout",
+    );
+    store.redo();
+    await until(() => !model(), "Two-column removal redo failed");
+    store.undo();
+    await until(
+      () => view()?.querySelector(".column-grip"),
+      "Column removal restore failed",
+    );
+  }
+
+  // Removing an entirely empty layout still leaves an editable page.
+  store.captureSync();
+  store.transact(() => {
+    for (const child of [...layoutParent.children])
+      if (child.id !== id) store.deleteBlock(child);
+    for (const column of model().children)
+      for (const child of [...column.children]) store.deleteBlock(child);
+  });
+  store.captureSync();
+  await view().updateComplete;
+  await menuAction(grip(columnIds[1]), "Remove column (keep content)");
+  const placeholder = layoutParent.children[0];
+  check(
+    !model() &&
+      layoutParent.children.length === 1 &&
+      placeholder.flavour === "affine:paragraph" &&
+      !placeholder.props.text.length,
+    "Removing the last empty layout did not leave an editable paragraph",
   );
+  store.undo();
+  await until(
+    () => view()?.querySelector(".column-grip"),
+    "Empty layout removal undo failed",
+  );
+  check(
+    !store.getModelById(placeholder.id),
+    "Undo left a placeholder in the layout",
+  );
+  store.undo();
+  await until(
+    () => store.getModelById(table),
+    "Empty fixture undo lost rich content",
+  );
+  await view().updateComplete;
+
+  const layoutGrip = async () => {
+    std.selection.clear();
+    view().scrollIntoView({ block: "center" });
+    await frame();
+    const rect = view().getBoundingClientRect();
+    for (let index = 0; index < 2; index++) {
+      view().dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          composed: true,
+          clientX: rect.left + 40,
+          clientY: rect.top + 12,
+        }),
+      );
+      await frame();
+    }
+    check(drag.anchorBlockId.value === id, "Shared layout grip did not appear");
+    return drag.dragHandleGrabber;
+  };
+  await menuAction(await layoutGrip(), "Unwrap columns");
   check(
     !store.getModelById(id) &&
       columnIds.every((column) => !store.getModelById(column)),
@@ -491,29 +712,26 @@ export async function columnsScenarios() {
   );
   store.undo();
   await until(
-    () => view()?.querySelector(".columns-layout-menu"),
+    () => view()?.querySelector(".column-grip"),
     "Unwrap undo failed",
   );
   store.redo();
   await until(() => !store.getModelById(id), "Unwrap redo failed");
   store.undo();
   await until(
-    () => view()?.querySelector(".columns-layout-menu"),
+    () => view()?.querySelector(".column-grip"),
     "Unwrap did not restore original layout",
   );
 
   const subtree = [id, ...columnIds, ...contentIds, list, nested, table];
-  await menuAction(
-    view().querySelector(".columns-layout-menu"),
-    "Delete block",
-  );
+  await menuAction(await layoutGrip(), "Delete block");
   check(
     subtree.every((child) => !store.getModelById(child)),
     "Layout deletion left orphaned content",
   );
   store.undo();
   await until(
-    () => view()?.querySelector(".columns-layout-menu"),
+    () => view()?.querySelector(".column-grip"),
     "Delete layout undo failed",
   );
   check(
@@ -525,7 +743,7 @@ export async function columnsScenarios() {
   await until(() => !store.getModelById(id), "Delete layout redo failed");
   store.undo();
   await until(
-    () => view()?.querySelector(".columns-layout-menu"),
+    () => view()?.querySelector(".column-grip"),
     "Layout did not restore for persistence checks",
   );
 

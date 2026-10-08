@@ -4,12 +4,11 @@ import { DocModeProvider } from "@blocksuite/affine/shared/services";
 import { Text } from "@blocksuite/affine/store";
 import { repeat } from "lit/directives/repeat.js";
 import { openEditorActionMenu } from "../../app/editor/action-menu";
-import { focusBlock, openBlockActions } from "../../app/editor/block-actions";
+import { focusBlock } from "../../app/editor/block-actions";
 import {
   appendColumn,
   removeColumn,
   moveColumn,
-  MIN_COLUMNS,
   MAX_COLUMNS,
 } from "../../app/editor/blocks/columns";
 
@@ -77,8 +76,7 @@ export class ColumnsBlock extends BlockComponent {
     .column-header {
       margin-bottom: 6px;
     }
-    .column-grip,
-    .columns-layout-menu {
+    .column-grip {
       border: 0;
       border-radius: 4px;
       background: transparent;
@@ -88,16 +86,11 @@ export class ColumnsBlock extends BlockComponent {
       font-size: 12px;
       cursor: grab;
     }
-    .columns-layout-menu {
-      cursor: pointer;
-    }
-    .column-grip:hover,
-    .columns-layout-menu:hover {
+    .column-grip:hover {
       background: var(--hover);
       color: var(--text);
     }
-    .column-grip:focus-visible,
-    .columns-layout-menu:focus-visible {
+    .column-grip:focus-visible {
       outline: 2px solid var(--accent);
     }
     .columns-column[data-drop="before"] {
@@ -195,7 +188,6 @@ export class ColumnsBlock extends BlockComponent {
         },
         {
           label: "Remove column (keep content)",
-          disabled: this.model.children.length <= MIN_COLUMNS,
           run: () => {
             if (!this.editable) return;
             this.std.selection.clear();
@@ -213,51 +205,90 @@ export class ColumnsBlock extends BlockComponent {
     if (!this.editable || !event.dataTransfer) return event.preventDefault();
     event.stopPropagation();
     this.closeMenu?.();
+    this.endDrag();
     this.draggedColumn = id;
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("application/x-hyperion-column", id);
+    // Capture the whole row, including gaps and the editor gutters outside the
+    // individual boxes, without involving the native content-block drag engine.
+    this.ownerDocument.addEventListener("dragover", this.dragOver, true);
+    this.ownerDocument.addEventListener("drop", this.drop, true);
   }
 
-  private dragOver(event: DragEvent, id: string) {
-    if (!this.editable || !this.draggedColumn || this.draggedColumn === id)
+  private dropTarget(event: DragEvent) {
+    const grid = this.querySelector<HTMLElement>(".columns-grid");
+    if (!grid) return;
+    const viewport = this.closest(".hyperion-blocksuite-viewport");
+    const targetViewport =
+      event.target instanceof Element
+        ? event.target.closest(".hyperion-blocksuite-viewport")
+        : null;
+    if (targetViewport && targetViewport !== viewport) return;
+    // Nested layouts stay within their containing column; top-level layouts
+    // accept the surrounding space in their own editor pane.
+    const bounds = (
+      this.closest(".columns-column") ??
+      viewport ??
+      this
+    ).getBoundingClientRect();
+    const rect = grid.getBoundingClientRect();
+    if (
+      event.clientX < bounds.left ||
+      event.clientX > bounds.right ||
+      event.clientY < rect.top - 12 ||
+      event.clientY > rect.bottom + 12
+    )
       return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const nodes = (event.currentTarget as HTMLElement).parentElement!.children;
+    const nodes = [...grid.children] as HTMLElement[];
     const stacked =
       nodes.length > 1 &&
       Math.abs(
         nodes[0].getBoundingClientRect().left -
           nodes[1].getBoundingClientRect().left,
       ) < 1;
-    this.dropColumn = {
-      id,
-      before: stacked
-        ? event.clientY < rect.top + rect.height / 2
-        : event.clientX < rect.left + rect.width / 2,
-    };
-    this.requestUpdate();
+    const coordinate = stacked ? event.clientY : event.clientX;
+    for (const node of nodes) {
+      const box = node.getBoundingClientRect();
+      const midpoint = stacked
+        ? box.top + box.height / 2
+        : box.left + box.width / 2;
+      if (coordinate < midpoint)
+        return { id: node.dataset.columnId!, before: true };
+    }
+    const last = nodes.at(-1);
+    if (last) return { id: last.dataset.columnId!, before: false };
   }
 
-  private drop(event: DragEvent, id: string) {
-    if (!this.editable || !this.draggedColumn) return;
-    event.preventDefault();
+  private dragOver = (event: DragEvent) => {
+    if (!this.draggedColumn) return;
     event.stopPropagation();
-    this.dragOver(event, id);
-    if (this.dropColumn?.id === id)
+    this.dropColumn = this.editable ? this.dropTarget(event) : undefined;
+    if (this.dropColumn) event.preventDefault();
+    if (event.dataTransfer)
+      event.dataTransfer.dropEffect = this.dropColumn ? "move" : "none";
+    this.requestUpdate();
+  };
+
+  private drop = (event: DragEvent) => {
+    if (!this.draggedColumn) return;
+    event.stopPropagation();
+    const target = this.editable ? this.dropTarget(event) : undefined;
+    if (target) {
+      event.preventDefault();
       moveColumn(
         this.store,
         this.model,
         this.draggedColumn,
-        id,
-        this.dropColumn.before,
+        target.id,
+        target.before,
       );
+    }
     this.endDrag();
-  }
+  };
 
   private endDrag() {
+    this.ownerDocument.removeEventListener("dragover", this.dragOver, true);
+    this.ownerDocument.removeEventListener("drop", this.drop, true);
     this.draggedColumn = undefined;
     this.dropColumn = undefined;
     this.requestUpdate();
@@ -265,6 +296,7 @@ export class ColumnsBlock extends BlockComponent {
 
   override disconnectedCallback() {
     this.closeMenu?.();
+    this.endDrag();
     super.disconnectedCallback();
   }
 
@@ -307,24 +339,6 @@ export class ColumnsBlock extends BlockComponent {
             >
               Add column
             </button>
-            <button
-              type="button"
-              class="columns-layout-menu"
-              aria-label="Column layout actions"
-              aria-haspopup="menu"
-              aria-expanded="false"
-              title="Move, unwrap or delete the entire column layout"
-              @click=${(event: MouseEvent) => {
-                event.stopPropagation();
-                this.closeMenu = openBlockActions(
-                  this.std,
-                  this.model.id,
-                  event.currentTarget as HTMLElement,
-                );
-              }}
-            >
-              ⋯
-            </button>
           </div>`
         : nothing}
       <div
@@ -346,8 +360,6 @@ export class ColumnsBlock extends BlockComponent {
                   ? "before"
                   : "after"
                 : ""}
-              @dragover=${(event: DragEvent) => this.dragOver(event, column.id)}
-              @drop=${(event: DragEvent) => this.drop(event, column.id)}
             >
               ${this.editable
                 ? html`<div

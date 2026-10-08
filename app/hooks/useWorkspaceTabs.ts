@@ -6,8 +6,18 @@ import {
 } from "../application/workspace-tabs";
 import type { NavigationLocation } from "../application/navigation-history";
 import { uiStorage } from "../lib/ui-storage";
+import type { WindowSession } from "../../electron/window-session";
+import { windowTabsKey } from "../application/restore-navigation";
+export {
+  rememberRestoredPage,
+  windowTabsKey,
+} from "../application/restore-navigation";
 
-export function useWorkspaceTabs(vaultId: string, ready: boolean) {
+export function useWorkspaceTabs(
+  vaultId: string,
+  ready: boolean,
+  session?: WindowSession,
+) {
   const [state, dispatch] = useReducer(tabsReducer, undefined, () =>
     initialTabs(),
   );
@@ -20,23 +30,31 @@ export function useWorkspaceTabs(vaultId: string, ready: boolean) {
     ) => {
       let raw: string | null = null;
       try {
-        raw = uiStorage.getItem(`hyperion:tabs:${id}`);
+        raw = uiStorage.getItem(windowTabsKey(id, session));
       } catch {
         /* Storage is optional. */
       }
       scope.current = id;
       dispatch({
         type: "restore",
-        state: restoreTabs(raw, available, fallback),
+        state: restoreTabs(
+          raw,
+          available,
+          session?.vaultId === id &&
+            session.location &&
+            available(session.location)
+            ? session.location
+            : fallback,
+        ),
       });
     },
-    [],
+    [session],
   );
   useEffect(() => {
     if (!ready || scope.current !== vaultId) return;
     try {
       uiStorage.setItem(
-        `hyperion:tabs:${vaultId}`,
+        windowTabsKey(vaultId, session),
         JSON.stringify({
           version: 2,
           locations: state.tabs.map((tab) => tab.location),
@@ -47,7 +65,7 @@ export function useWorkspaceTabs(vaultId: string, ready: boolean) {
     } catch {
       /* Keep in-memory tabs usable. */
     }
-  }, [state, vaultId, ready]);
+  }, [state, vaultId, ready, session]);
   const open = useCallback(
     (location: NavigationLocation) => dispatch({ type: "open", location }),
     [],

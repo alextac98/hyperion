@@ -1,4 +1,13 @@
 import type { UpdateState } from "../../electron/updates";
+import type {
+  DetachedTabRequest,
+  EditorUpdate,
+  WindowSession,
+  TabDragRequest,
+  OpenWindowTab,
+  TabDropTargets,
+  TabDropTarget,
+} from "../../electron/window-session";
 import type { NoteRecord, VaultRecord } from "../lib/local-database";
 export type RevisionCapture = PageRevision & {
   captureStatus: "created" | "named" | "reused";
@@ -61,6 +70,24 @@ export interface HyperionDataApi {
 
 export interface HyperionDesktopApi extends HyperionDataApi {
   openFeedback(): Promise<void>;
+  windowSession(): Promise<WindowSession>;
+  detachTab(request: DetachedTabRequest): Promise<void>;
+  returnTab(request: DetachedTabRequest): Promise<void>;
+  closeWindow(): Promise<void>;
+  beginTabDrag(request: TabDragRequest): Promise<boolean>;
+  endTabDrag(token: string): Promise<void>;
+  updateTabDrag(
+    token: string,
+    position: { x: number; y: number },
+  ): Promise<void>;
+  updateTabDropTargets(targets: TabDropTargets): Promise<void>;
+  onTabDropHint(callback: (target: TabDropTarget | null) => void): () => void;
+  onOpenTab(callback: (request: OpenWindowTab) => Promise<void>): () => void;
+  workspaceReady(vaultId: string): Promise<void>;
+  onEditorUpdate(callback: (update: EditorUpdate) => void): () => void;
+  onRepositoryChanged(
+    callback: (request: RepositoryRequest) => void,
+  ): () => void;
   onNavigate(callback: (direction: "back" | "forward") => void): () => void;
   updateState(): Promise<UpdateState>;
   checkForUpdates(): Promise<UpdateState>;

@@ -50,6 +50,8 @@ jobs:
           sudo chmod 4755 "$electron_sandbox_path"
       - name: Run desktop integration suite
         run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" pnpm test:integration
+      - name: Native window integration
+        run: xvfb-run -a -s '-screen 0 2300x1080x24' node scripts/run-electron-test.mjs tests/window-smoke.mjs
       - name: Upload failure screenshots
         if: failure()
         uses: actions/upload-artifact@v7
