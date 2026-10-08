@@ -1,6 +1,6 @@
 # <img src="public/brand/hyperion-icon-128.png" alt="" width="40" height="40" align="absmiddle"> Hyperion
 
-![Hyperion desktop app showing the welcome page, note sidebar, and page details in dark mode](docs/assets/hyperion-screenshot.png)
+![Hyperion desktop app showing the Welcome starter page, workspace tabs, note sidebar, and pinned outline in dark mode](docs/assets/hyperion-screenshot.png)
 
 Hyperion is a local-first personal knowledge base for ideas, notes, meeting
 transcriptions, and more. It ships as an Electron desktop app with a React interface and a consistent
@@ -44,7 +44,7 @@ bundled Chromium runtime. SQLite stores all knowledge data locally.
   optional pins, and page properties and version history in the page menu
 - Sortable/filterable table and card views, favorites, journal, search,
   recoverable archives, and trash
-- Vault-scoped page templates with a searchable picker, direct template editing,
+- Vault-scoped page templates with direct editing and creation from the Templates view,
   and independently configurable defaults for new pages and journal entries
 - Working vault, editor, appearance, and data settings
 - Workspace tabs open or focus pages, templates, and library views, with reordering,

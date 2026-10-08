@@ -31,7 +31,7 @@ export function makeStarterPages(vaultId: string): StarterPage[] {
         },
         {
           type: "todo",
-          text: "Create a page with the New page button in the sidebar.",
+          text: "Create a page with the + beside Notes in the sidebar, or press Command/Ctrl+N.",
         },
         {
           type: "todo",
