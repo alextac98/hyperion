@@ -331,7 +331,12 @@ export class DesktopDatabase {
       case "importVault": return this.importVault(request.bundle);
       case "captureRevision": return transaction(db, () => this.captureRevision(id(request.vaultId), id(request.noteId), request.label == null ? null : string(request.label).trim() || null, "manual"));
       case "captureAutomaticRevisions": return transaction(db, () => {
-        for (const note of this.rows("notes").map(sqlRecord)) this.captureRevision(String(note.vaultId), String(note.id), null, "automatic");
+        if (request.noteIds !== undefined && !Array.isArray(request.noteIds)) throw new Error("Invalid note IDs");
+        // Scheduled captures name the paused pages; app startup and close capture every page.
+        const notes = request.noteIds === undefined
+          ? this.rows("notes").map(sqlRecord)
+          : (request.noteIds as unknown[]).flatMap(noteId => { const row = db.prepare("SELECT record FROM notes WHERE id=?").get(id(noteId)); return row ? [sqlRecord(row)] : []; });
+        for (const note of notes) this.captureRevision(String(note.vaultId), String(note.id), null, "automatic");
         db.prepare("DELETE FROM revisions WHERE label IS NULL AND reason='automatic' AND created_at < ? AND id NOT IN (SELECT id FROM (SELECT id,ROW_NUMBER() OVER(PARTITION BY vault_id,note_id ORDER BY created_at DESC,rowid DESC) AS position FROM revisions) WHERE position=1)").run(new Date(Date.now() - HISTORY_DAYS * 86400000).toISOString());
         return null;
       });

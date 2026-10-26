@@ -97,6 +97,8 @@ export type VaultPreferences = {
   editorWidth: "compact" | "comfortable" | "wide";
   spellcheck: boolean;
   meetingDefaultTab: "notes" | "transcript" | "summary";
+  /** Minutes of uninterrupted editing between automatic versions; null disables checkpoints. */
+  historyCheckpointMinutes: number | null;
   // Retained for compatibility with existing vault exports. Page context is UI state.
   showDetails: boolean;
   notesView: NotesViewPreference;
@@ -130,6 +132,7 @@ export const DEFAULT_PREFERENCES: Omit<VaultPreferences, "vaultId"> = {
   editorWidth: "comfortable",
   spellcheck: true,
   meetingDefaultTab: "notes",
+  historyCheckpointMinutes: 60,
   showDetails: false,
   notesView: "table",
   defaultTemplateIds: { note: null, journal: null },
@@ -140,6 +143,7 @@ export function normalizeVaultPreferences(
   preferences?: Partial<VaultPreferences> | null,
 ): VaultPreferences {
   const defaults = preferences?.defaultTemplateIds;
+  const checkpoint = preferences?.historyCheckpointMinutes;
   return {
     vaultId,
     theme: preferences?.theme ?? DEFAULT_PREFERENCES.theme,
@@ -150,6 +154,14 @@ export function normalizeVaultPreferences(
       preferences?.meetingDefaultTab === "transcript" || preferences?.meetingDefaultTab === "summary"
         ? preferences.meetingDefaultTab
         : "notes",
+    historyCheckpointMinutes:
+      checkpoint === null ||
+      (typeof checkpoint === "number" &&
+        Number.isInteger(checkpoint) &&
+        checkpoint >= 1 &&
+        checkpoint <= 1440)
+        ? checkpoint
+        : DEFAULT_PREFERENCES.historyCheckpointMinutes,
     showDetails: preferences?.showDetails ?? DEFAULT_PREFERENCES.showDetails,
     notesView: preferences?.notesView ?? DEFAULT_PREFERENCES.notesView,
     defaultTemplateIds: {

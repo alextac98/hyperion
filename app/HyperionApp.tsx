@@ -18,7 +18,7 @@ import { uiStorage } from "./lib/ui-storage";
 import { UpdateControls } from "./components/UpdateControls";
 import { FeedbackButton } from "./components/FeedbackButton";
 import { saves } from "./lib/save-coordinator";
-import { dataBusy, dataOperation, flushAll } from "./lib/data-operations";
+import { dataBusy, dataOperation, flushAll, flushEdits } from "./lib/data-operations";
 import { PageHistory, PageHistoryPreview } from "./components/PageHistory";
 import type { PageComparison } from "./platform/desktop-api";
 import { HistoryDialog } from "./components/HistoryDialog";
@@ -174,6 +174,7 @@ const FALLBACK_PREFERENCES: VaultPreferences = {
   editorWidth: "comfortable",
   spellcheck: true,
   meetingDefaultTab: "notes",
+  historyCheckpointMinutes: 60,
   showDetails: false,
   notesView: "table",
   defaultTemplateIds: { note: null, journal: null },
@@ -373,18 +374,23 @@ export default function HyperionApp() {
     if (!lastAutomaticBackup.current) lastAutomaticBackup.current = Date.now();
     let busy = false;
     const interval = setInterval(() => {
-      // Defer background snapshots so their editor lock cannot interrupt capture.
-      if (busy || dataBusy.getSnapshot() || meetingRecorder.getSnapshot() || hasMeetingTasks()) return;
+      // Defer the daily backup while recording or another data operation runs.
+      if (
+        busy ||
+        Date.now() - lastAutomaticBackup.current < 86400000 ||
+        dataBusy.getSnapshot() ||
+        meetingRecorder.getSnapshot() ||
+        hasMeetingTasks()
+      )
+        return;
       busy = true;
-      void dataOperation(async () => {
-        await requireDataService().repositoryExecute({
-          operation: "captureAutomaticRevisions",
-        });
-        if (Date.now() - lastAutomaticBackup.current >= 86400000) {
-          await requireDataService().createBackup(true);
-          lastAutomaticBackup.current = Date.now();
-        }
-      })
+      // Backups are atomic in the data service, so they never lock editors
+      // or cover the window while someone is typing.
+      void (async () => {
+        await flushEdits();
+        await requireDataService().createBackup(true);
+        lastAutomaticBackup.current = Date.now();
+      })()
         .catch((error) => setDataError(String(error)))
         .finally(() => {
           busy = false;
@@ -392,6 +398,32 @@ export default function HyperionApp() {
     }, 60000);
     return () => clearInterval(interval);
   }, [loading, vaultReady]);
+  // The data service saves automatic versions when edits pause. Leaving a page
+  // is a natural break, so save its version now instead of after the pause.
+  const openPageIds = tabState.tabs
+    .flatMap(({ location }) => (location.view === "note" ? [location.id] : []))
+    .sort()
+    .join("\n");
+  const openPages = useRef<{ vaultId: string; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    if (loading || !vaultReady) return;
+    const ids = new Set(openPageIds ? openPageIds.split("\n") : []);
+    const previous = openPages.current;
+    openPages.current = { vaultId, ids };
+    // Vault changes and data operations settle pending history themselves.
+    if (previous?.vaultId !== vaultId || dataBusy.getSnapshot()) return;
+    const left = [...previous.ids].filter((id) => !ids.has(id));
+    if (!left.length) return;
+    void flushEdits()
+      .then(() =>
+        requireDataService().repositoryExecute({
+          operation: "captureAutomaticRevisions",
+          vaultId,
+          noteIds: left,
+        }),
+      )
+      .catch((error) => setDataError(errorMessage(error)));
+  }, [openPageIds, vaultId, loading, vaultReady]);
 
   const activeVault = vaults.find((vault) => vault.id === vaultId);
   const activeNote = notes.find((note) => note.id === activeId);
