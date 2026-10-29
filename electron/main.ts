@@ -891,12 +891,15 @@ app.whenReady().then(async () => {
   if (development && dataDirectoryOverride && !isAbsolute(dataDirectoryOverride)) {
     throw new Error("HYPERION_DATA_DIRECTORY must be an absolute directory.");
   }
+  // Integration tests shorten the edit pause; packaged builds always use the default.
+  const historyPauseMs = app.isPackaged ? NaN : Number(process.env.HYPERION_HISTORY_PAUSE_MS);
   database = new VaultLibrary({
     defaultDirectory: dataDirectoryOverride || (app.isPackaged
       ? undefined
       : development
         ? development.desktopDirectory
         : join(homedir(), ".config", "hyperion-development")),
+    history: historyPauseMs > 0 ? { pauseMs: historyPauseMs } : undefined,
   });
   if (development) console.log(`Development branch: ${development.branch}\nWorktree: ${development.root}\nProfile: ${app.getPath("userData")}\nData: ${database.defaultDirectory}`);
   if (database.setupInfo().activeVaultId && !database.setupInfo().error) {

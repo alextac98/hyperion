@@ -18,7 +18,7 @@ import {
   UploadSimple,
   X,
 } from "@phosphor-icons/react";
-import { useId, useState } from "react";
+import { useState } from "react";
 import type {
   TemplateRecord,
   ThemePreference,
@@ -27,6 +27,8 @@ import type {
 } from "../lib/local-database";
 import type { StorageInfo } from "../platform/desktop-api";
 import { Dialog } from "./Dialog";
+import { HistoryCheckpointSetting } from "./HistoryCheckpointSetting";
+import { SettingToggle } from "./SettingToggle";
 import { HyperionMark } from "./HyperionMark";
 
 export function SettingsDialog({
@@ -330,6 +332,13 @@ export function SettingsDialog({
                   <p>{platformRuntime.kind === "browser-development" ? "Development data is stored on the machine running the server." : "Everything remains local unless you export it yourself."}</p>
                 </div>
                 <DataRecovery onHistory={onHistory} />
+                <HistoryCheckpointSetting
+                  key={preferences.historyCheckpointMinutes ?? "off"}
+                  minutes={preferences.historyCheckpointMinutes}
+                  onChange={(historyCheckpointMinutes) =>
+                    void onPreferences({ historyCheckpointMinutes })
+                  }
+                />
                 {brandError && <p className="data-error" role="alert">{brandError}</p>}
                 {storageInfo && (
                   <div className="data-setting storage-location-setting">
@@ -411,35 +420,5 @@ export function SettingsDialog({
         </footer>
       </section>
     </Dialog>
-  );
-}
-
-export function SettingToggle({
-  title,
-  description,
-  checked,
-  onChange,
-}: {
-  title: string;
-  description: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  const inputId = useId();
-  return (
-    <label className="setting-toggle" htmlFor={inputId}>
-      <span>
-        <strong>{title}</strong>
-        <small>{description}</small>
-      </span>
-      <input
-        id={inputId}
-        aria-label={title}
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <i />
-    </label>
   );
 }

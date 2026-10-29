@@ -49,6 +49,8 @@ export function record(value: unknown, kind: "vault" | "note" | "template" | "co
     if (typeof r.editorFontSize !== "number" || r.editorFontSize < 10 || r.editorFontSize > 72) throw new Error("Invalid font size");
     for (const key of ["spellcheck", "showDetails"]) if (typeof r[key] !== "boolean") throw new Error(`Invalid ${key}`);
     if (r.meetingDefaultTab !== undefined && !["notes", "transcript", "summary"].includes(String(r.meetingDefaultTab))) throw new Error("Invalid meeting default tab");
+    // Absent in older vaults, which use the default. Null disables history checkpoints.
+    if (r.historyCheckpointMinutes !== undefined && r.historyCheckpointMinutes !== null && (!Number.isInteger(r.historyCheckpointMinutes) || Number(r.historyCheckpointMinutes) < 1 || Number(r.historyCheckpointMinutes) > 1440)) throw new Error("Invalid history checkpoint interval");
     const defaults = object(r.defaultTemplateIds);
     for (const key of ["note", "journal"]) if (defaults[key] !== null) id(defaults[key]);
     return r;

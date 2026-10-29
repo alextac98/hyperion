@@ -16,12 +16,16 @@ export const dataBusy = {
     };
   },
 };
-export async function flushAll() {
-  await flushMeetingTasks();
-  await meetingRecorder.flush();
+/** Persist queued page edits without touching meeting capture. */
+export async function flushEdits() {
   await saves.flush();
   await flushEditorDocuments();
   await saves.flush();
+}
+export async function flushAll() {
+  await flushMeetingTasks();
+  await meetingRecorder.flush();
+  await flushEdits();
 }
 export async function dataOperation<T>(action: () => Promise<T>): Promise<T> {
   if (busy) throw new Error("Another data operation is still running");

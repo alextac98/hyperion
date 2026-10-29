@@ -12,7 +12,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 import { act, StrictMode, useState, useLayoutEffect } from "react";
-import { createBlankNote } from "../app/lib/local-database";
+import { createBlankNote, normalizeVaultPreferences } from "../app/lib/local-database";
+import { HistoryCheckpointSetting } from "../app/components/HistoryCheckpointSetting";
 import { reconcilePageLinks } from "../app/lib/page-links";
 import { movePage, patchPage } from "../app/application/page-operations";
 import { buildNoteSearchIndex, searchNotes } from "../app/lib/note-search";
@@ -829,6 +830,46 @@ test("page tags normalize additions, reject duplicates, and support keyboard can
     assert.equal(document.activeElement, add);
     await act(async () => ui.host.querySelector<HTMLButtonElement>('[aria-label="Remove tag ideas"]')!.click());
     assert.deepEqual(changes[1], { tags: [] });
+  } finally { await ui.unmount(); }
+});
+
+test("history checkpoints default to an hour, keep a disabled setting and reject invalid intervals", () => {
+  assert.equal(normalizeVaultPreferences("vault").historyCheckpointMinutes, 60);
+  assert.equal(normalizeVaultPreferences("vault", { historyCheckpointMinutes: null }).historyCheckpointMinutes, null);
+  assert.equal(normalizeVaultPreferences("vault", { historyCheckpointMinutes: 15 }).historyCheckpointMinutes, 15);
+  for (const historyCheckpointMinutes of [0, 1441, 2.5, "30" as unknown as number])
+    assert.equal(normalizeVaultPreferences("vault", { historyCheckpointMinutes }).historyCheckpointMinutes, 60);
+});
+
+test("the history checkpoint setting can be disabled, re-enabled and customized", async () => {
+  const changes: (number | null)[] = [];
+  const setValue = async (input: HTMLInputElement, value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    });
+  };
+  let ui = await mount(<HistoryCheckpointSetting minutes={60} onChange={minutes => changes.push(minutes)} />);
+  try {
+    const toggle = ui.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const minutes = ui.host.querySelector<HTMLInputElement>('input[type="number"]')!;
+    assert.equal(toggle.checked, true);
+    assert.equal(minutes.value, "60");
+    await setValue(minutes, "25");
+    await act(async () => minutes.dispatchEvent(new dom.window.FocusEvent("focusout", { bubbles: true })));
+    assert.deepEqual(changes.slice(), [25]);
+    await setValue(minutes, "0");
+    await act(async () => key(minutes, "Enter"));
+    assert.deepEqual(changes.slice(), [25], "invalid intervals are not saved");
+    assert.equal(minutes.value, "60", "an invalid entry reverts to the saved interval");
+    await act(async () => toggle.click());
+    assert.deepEqual(changes.slice(), [25, null]);
+  } finally { await ui.unmount(); }
+  ui = await mount(<HistoryCheckpointSetting minutes={null} onChange={minutes => changes.push(minutes)} />);
+  try {
+    assert.equal(ui.host.querySelector('input[type="number"]'), null, "the interval is hidden while disabled");
+    await act(async () => ui.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    assert.deepEqual(changes.slice(), [25, null, 60], "re-enabling restores the default interval");
   } finally { await ui.unmount(); }
 });
 

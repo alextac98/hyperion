@@ -196,8 +196,12 @@ Checksums detect accidental corruption; they are not cryptographic authenticatio
 
 Revisions store an independent encoded document, metadata, format version, label,
 capture time and immutable asset references. Yjs snapshot markers and undo stacks
-are not used as durable history. Automatic capture runs every minute for changed
-pages, at startup and before closing. Automatic versions expire after 30 days,
+are not used as durable history. The vault library groups edits into automatic
+versions: a page is captured after two minutes without edits, when it leaves the
+open tabs, when its vault closes, at startup and before closing. During long
+uninterrupted editing a checkpoint is also captured at a per-vault interval
+(`historyCheckpointMinutes`, 60 by default, `null` to disable). Capture runs in the
+data service and never locks editors. Automatic versions expire after 30 days,
 except the newest version of a page; named and pre-destructive-operation versions
 are retained. All captures deduplicate against the latest version using canonical
 page values, including formatting and layout. Edit timestamps, Yjs clocks and

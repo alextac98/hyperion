@@ -31,6 +31,11 @@ import {
   type StorageInfo,
 } from "./database.js";
 import { id, object, record, string, type RecordValue } from "./data-format.js";
+import {
+  DEFAULT_HISTORY_CHECKPOINT_MINUTES,
+  RevisionScheduler,
+  type SchedulerClock,
+} from "./revision-scheduler.js";
 
 type Entry = { vault: RecordValue; directory: string };
 type Registry = { version: 1; activeVaultId: string | null; entries: Entry[] };
@@ -106,10 +111,38 @@ export class VaultLibrary {
   private registry: Registry = { version: 1, activeVaultId: null, entries: [] };
   private connections = new Map<string, Connection>();
   private startupError = "";
+  private readonly revisions: RevisionScheduler;
 
   constructor(
-    options: { defaultDirectory?: string; followLegacyLocation?: boolean } = {},
+    options: {
+      defaultDirectory?: string;
+      followLegacyLocation?: boolean;
+      history?: { pauseMs?: number; clock?: SchedulerClock };
+    } = {},
   ) {
+    this.revisions = new RevisionScheduler({
+      ...options.history,
+      // Use open connections only: a closing vault may already be unregistered.
+      capture: (vaultId, noteIds) => {
+        this.connections.get(vaultId)?.database.repositoryExecute({
+          operation: "captureAutomaticRevisions",
+          vaultId,
+          noteIds,
+        });
+      },
+      checkpointMinutes: (vaultId) => {
+        const preferences = this.connections
+          .get(vaultId)
+          ?.database.repositoryExecute({
+            operation: "getPreferences",
+            vaultId,
+          }) as RecordValue | null | undefined;
+        const minutes = preferences?.historyCheckpointMinutes;
+        return minutes === undefined
+          ? DEFAULT_HISTORY_CHECKPOINT_MINUTES
+          : (minutes as number | null);
+      },
+    });
     this.defaultDirectory = resolve(
       options.defaultDirectory ?? join(homedir(), ".config", "hyperion"),
     );
@@ -466,6 +499,8 @@ export class VaultLibrary {
   }
   closeVault(vaultId: string) {
     this.entry(vaultId);
+    // Keep edits that have not reached their pause yet before the vault closes.
+    this.revisions.settle(vaultId);
     const entries = this.registry.entries.filter(
       (entry) => entry.vault.id !== vaultId,
     );
@@ -560,14 +595,20 @@ export class VaultLibrary {
         return this.create(request);
       case "importVault":
         return this.importVault(request.bundle);
-      case "captureAutomaticRevisions":
-        return (request.vaultId ?? this.registry.activeVaultId) &&
-          this.connections.has(String(request.vaultId ?? this.registry.activeVaultId))
-          ? this.database(String(request.vaultId ?? this.registry.activeVaultId)).repositoryExecute(request)
-          : null;
+      case "captureAutomaticRevisions": {
+        const vaultId = request.vaultId ?? this.registry.activeVaultId;
+        if (!vaultId || !this.connections.has(String(vaultId))) return null;
+        const result = this.database(String(vaultId)).repositoryExecute(request);
+        this.revisions.forget(
+          String(vaultId),
+          Array.isArray(request.noteIds) ? request.noteIds.map(String) : undefined,
+        );
+        return result;
+      }
       case "deleteVault": {
         const vaultId = id(request.id);
         const database = this.database(vaultId);
+        this.revisions.forget(vaultId);
         database.repositoryExecute(request);
         this.closeVault(vaultId);
         return null;
@@ -591,6 +632,11 @@ export class VaultLibrary {
       vaultId === undefined ? undefined : id(vaultId),
     );
     const result = database.repositoryExecute(request);
+    if (request.operation === "saveNote") {
+      const note = request.note as RecordValue;
+      this.revisions.edited(String(note.vaultId), String(note.id));
+    } else if (request.operation === "deleteNote")
+      this.revisions.forgetNote(String(request.id));
     if (request.operation === "updateVault") {
       const vault = record(request.vault, "vault");
       this.save({
@@ -620,7 +666,11 @@ export class VaultLibrary {
     return this.database(vaultId).editorPull(vaultId, documentId);
   }
   editorPush(vaultId: string, documentId: string, data: string) {
-    return this.database(vaultId).editorPush(vaultId, documentId, data);
+    const result = this.database(vaultId).editorPush(vaultId, documentId, data);
+    // Page documents share their note's ID; template documents have no history.
+    if (!documentId.startsWith("template:"))
+      this.revisions.edited(vaultId, documentId);
+    return result;
   }
   editorDelete(vaultId: string, documentId: string) {
     return this.database(vaultId).editorDelete(vaultId, documentId);
@@ -638,7 +688,10 @@ export class VaultLibrary {
     return this.database(vaultId).assetList(vaultId);
   }
   close() {
-    for (const vaultId of this.connections.keys()) this.disconnect(vaultId);
+    for (const vaultId of this.connections.keys()) {
+      this.revisions.settle(vaultId);
+      this.disconnect(vaultId);
+    }
   }
 }
 function realpathOrResolved(path: string): string {
